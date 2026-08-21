@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiError, QuizApi, normalizeBaseUrl } from "../public/js/api.js";
+import { ApiError, QuizApi, normalizeBaseUrl } from "../src/api.js";
 
 test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
   assert.equal(normalizeBaseUrl(" https://api.example.com///?ignored=yes#fragment "), "https://api.example.com");

@@ -1,0 +1,342 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, QuizApi, normalizeBaseUrl } from "./api.js";
+import {
+  clearAnswers,
+  clearSession,
+  consumePendingQuiz,
+  consumeReturnTo,
+  readAnswers,
+  readApiUrl,
+  readSession,
+  rememberPendingQuiz,
+  rememberReturnTo,
+  writeAnswers,
+  writeApiUrl,
+  writeSession
+} from "./session.js";
+import {
+  AttemptPage,
+  HomePage,
+  Layout,
+  LoginPage,
+  NotFoundPage,
+  QuizzesPage,
+  ResultsPage,
+  SettingsPage
+} from "./components.jsx";
+import { parseRoute, safeHash } from "./utils.js";
+
+function navigate(hash) {
+  globalThis.location.hash = safeHash(hash);
+}
+
+function friendlyError(error) {
+  return error instanceof Error
+    ? error.message
+    : "Сталася неочікувана помилка. Спробуйте ще раз.";
+}
+
+function pageTitle(name) {
+  return ({
+    quizzes: "Тести",
+    login: "Вхід",
+    settings: "Налаштування",
+    results: "Результати",
+    attempt: "Проходження тесту"
+  })[name] || "Сторінка";
+}
+
+function useRoute() {
+  const [route, setRoute] = useState(() => parseRoute());
+  useEffect(() => {
+    const onChange = () => setRoute(parseRoute());
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return route;
+}
+
+export default function App() {
+  const route = useRoute();
+  const [session, setSession] = useState(() => readSession());
+  const [apiUrl, setApiUrl] = useState(() => readApiUrl());
+  const [quizzes, setQuizzes] = useState(null);
+  const [quizzesLoading, setQuizzesLoading] = useState(false);
+  const [quizError, setQuizError] = useState("");
+  const [results, setResults] = useState(null);
+  const [resultsLoading, setResultsLoading] = useState(false);
+  const [resultError, setResultError] = useState("");
+  const [attempts, setAttempts] = useState({});
+  const [attemptLoading, setAttemptLoading] = useState({});
+  const [attemptErrors, setAttemptErrors] = useState({});
+  const [selections, setSelections] = useState({});
+  const [completions, setCompletions] = useState({});
+  const [actionBusy, setActionBusy] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+  const [connection, setConnection] = useState("idle");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [toasts, setToasts] = useState([]);
+  const quizzesRequest = useRef(false);
+  const resultsRequest = useRef(false);
+  const attemptRequests = useRef(new Set());
+
+  const api = useMemo(() => new QuizApi({
+    baseUrl: apiUrl,
+    getToken: () => session?.accessToken
+  }), [apiUrl, session?.accessToken]);
+
+  const toast = useCallback((message, tone = "success") => {
+    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    setToasts(current => [...current, { id, message, tone }]);
+    window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 4200);
+  }, []);
+
+  const handleAuthError = useCallback((error, returnTo) => {
+    if (!(error instanceof ApiError) || error.status !== 401) return false;
+    clearSession();
+    setSession(null);
+    rememberReturnTo(returnTo);
+    toast("Сесія завершилась. Увійдіть ще раз.", "error");
+    navigate("#/login");
+    return true;
+  }, [toast]);
+
+  const loadQuizzes = useCallback(async () => {
+    if (quizzesRequest.current) return;
+    quizzesRequest.current = true;
+    setQuizzesLoading(true);
+    setQuizError("");
+    try {
+      setQuizzes(await api.quizzes());
+    } catch (error) {
+      setQuizError(friendlyError(error));
+    } finally {
+      quizzesRequest.current = false;
+      setQuizzesLoading(false);
+    }
+  }, [api]);
+
+  const loadResults = useCallback(async () => {
+    if (!session || resultsRequest.current) return;
+    resultsRequest.current = true;
+    setResultsLoading(true);
+    setResultError("");
+    try {
+      setResults(await api.results());
+    } catch (error) {
+      if (!handleAuthError(error, "#/results")) setResultError(friendlyError(error));
+    } finally {
+      resultsRequest.current = false;
+      setResultsLoading(false);
+    }
+  }, [api, handleAuthError, session]);
+
+  const loadAttempt = useCallback(async attemptId => {
+    if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || attemptRequests.current.has(attemptId)) return;
+    attemptRequests.current.add(attemptId);
+    setAttemptLoading(current => ({ ...current, [attemptId]: true }));
+    setAttemptErrors(current => ({ ...current, [attemptId]: "" }));
+    try {
+      const attempt = await api.attempt(attemptId);
+      setAttempts(current => ({ ...current, [attemptId]: attempt }));
+      setSelections(current => current[attemptId]
+        ? current
+        : { ...current, [attemptId]: readAnswers(attemptId) });
+    } catch (error) {
+      if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
+        setAttemptErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));
+      }
+    } finally {
+      attemptRequests.current.delete(attemptId);
+      setAttemptLoading(current => ({ ...current, [attemptId]: false }));
+    }
+  }, [api, handleAuthError, session]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    document.title = `${route.name === "home" ? "Quiz Project" : pageTitle(route.name)} — Quiz Project`;
+  }, [route]);
+
+  useEffect(() => {
+    if (["home", "quizzes"].includes(route.name) && quizzes === null && !quizzesLoading) {
+      void loadQuizzes();
+    }
+  }, [loadQuizzes, quizzes, quizzesLoading, route.name]);
+
+  useEffect(() => {
+    if (route.name !== "results") return;
+    if (!session) {
+      rememberReturnTo("#/results");
+      navigate("#/login");
+      return;
+    }
+    if (results === null && !resultsLoading) void loadResults();
+  }, [loadResults, results, resultsLoading, route.name, session]);
+
+  useEffect(() => {
+    if (route.name !== "attempt") return;
+    const attemptId = Number(route.params[0]);
+    if (!session) {
+      rememberReturnTo(`#/attempt/${attemptId}`);
+      navigate("#/login");
+      return;
+    }
+    if (Number.isInteger(attemptId) && attemptId > 0 && !attempts[attemptId] && !attemptLoading[attemptId]) {
+      void loadAttempt(attemptId);
+    }
+  }, [attemptLoading, attempts, loadAttempt, route, session]);
+
+  useEffect(() => {
+    const onStorage = event => {
+      if (event.key !== "quizproject.apiUrl") return;
+      setApiUrl(readApiUrl());
+      setQuizzes(null);
+      setResults(null);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const startQuiz = useCallback(async quizId => {
+    if (!session) {
+      rememberReturnTo("#/quizzes");
+      rememberPendingQuiz(quizId);
+      navigate("#/login");
+      return;
+    }
+    setActionBusy(`start-${quizId}`);
+    try {
+      const attempt = await api.startAttempt(quizId);
+      setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
+      setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
+      navigate(`#/attempt/${attempt.attemptId}`);
+    } catch (error) {
+      if (!handleAuthError(error, "#/quizzes")) toast(friendlyError(error), "error");
+    } finally {
+      setActionBusy("");
+    }
+  }, [api, handleAuthError, session, toast]);
+
+  const submitLogin = useCallback(async event => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const username = String(data.get("username") || "").trim();
+    setActionBusy("login");
+    setLoginError("");
+    try {
+      const token = await api.login(username, String(data.get("password") || ""));
+      const nextSession = writeSession(token, username);
+      setSession(nextSession);
+      toast("Вхід успішний. Вітаємо!");
+
+      const pendingQuiz = consumePendingQuiz();
+      if (pendingQuiz) {
+        const authenticatedApi = new QuizApi({ baseUrl: apiUrl, getToken: () => nextSession.accessToken });
+        const attempt = await authenticatedApi.startAttempt(pendingQuiz);
+        setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
+        setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
+        consumeReturnTo();
+        navigate(`#/attempt/${attempt.attemptId}`);
+      } else {
+        navigate(consumeReturnTo());
+      }
+    } catch (error) {
+      setLoginError(error instanceof ApiError && [401, 403].includes(error.status)
+        ? "Невірний логін або пароль."
+        : friendlyError(error));
+    } finally {
+      setActionBusy("");
+    }
+  }, [api, apiUrl, toast]);
+
+  const logout = useCallback(() => {
+    clearSession();
+    setSession(null);
+    setResults(null);
+    toast("Ви вийшли з облікового запису.");
+    navigate("#/");
+  }, [toast]);
+
+  const toggleAnswer = useCallback((attemptId, answerId, checked) => {
+    setSelections(current => {
+      const next = new Set(current[attemptId] || readAnswers(attemptId));
+      if (checked) next.add(answerId);
+      else next.delete(answerId);
+      writeAnswers(attemptId, next);
+      return { ...current, [attemptId]: next };
+    });
+  }, []);
+
+  const completeAttempt = useCallback(async attemptId => {
+    const selected = selections[attemptId] || readAnswers(attemptId);
+    if (!window.confirm(`Надіслати ${selected.size} вибраних відповідей? Завершення не можна скасувати.`)) return;
+    setActionBusy(`complete-${attemptId}`);
+    try {
+      const result = await api.completeAttempt(attemptId, [...selected]);
+      setCompletions(current => ({ ...current, [attemptId]: result }));
+      setResults(null);
+      clearAnswers(attemptId);
+      toast("Тест завершено. Результат збережено.");
+    } catch (error) {
+      if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
+    } finally {
+      setActionBusy("");
+    }
+  }, [api, handleAuthError, selections, toast]);
+
+  const testConnection = useCallback(async value => {
+    setConnection("checking");
+    setSettingsError("");
+    try {
+      const probe = new QuizApi({ baseUrl: value });
+      const health = await probe.health();
+      if (String(health?.status).toUpperCase() === "UP") {
+        setConnection("ok");
+        return true;
+      }
+      setConnection("error");
+      setSettingsError("API відповів, але його стан не UP.");
+    } catch (error) {
+      setConnection("error");
+      setSettingsError(friendlyError(error));
+    }
+    return false;
+  }, []);
+
+  const saveApiUrl = useCallback(async value => {
+    try {
+      const normalized = normalizeBaseUrl(value);
+      writeApiUrl(normalized);
+      setApiUrl(normalized);
+      setQuizzes(null);
+      setResults(null);
+      if (await testConnection(normalized)) toast("Адресу API збережено.");
+    } catch (error) {
+      setConnection("error");
+      setSettingsError(error.message);
+    }
+  }, [testConnection, toast]);
+
+  let page;
+  if (route.name === "home") {
+    page = <HomePage session={session} quizzes={quizzes} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={loadQuizzes} onStart={startQuiz} />;
+  } else if (route.name === "quizzes") {
+    page = <QuizzesPage quizzes={quizzes} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onRetry={loadQuizzes} onStart={startQuiz} />;
+  } else if (route.name === "login") {
+    page = <LoginPage error={loginError} busy={actionBusy === "login"} onSubmit={submitLogin} />;
+  } else if (route.name === "settings") {
+    page = <SettingsPage apiUrl={apiUrl} connection={connection} error={settingsError} onSave={saveApiUrl} onTest={testConnection} />;
+  } else if (route.name === "results") {
+    page = <ResultsPage results={results} loading={resultsLoading} error={resultError} onRetry={loadResults} />;
+  } else if (route.name === "attempt") {
+    const attemptId = Number(route.params[0]);
+    const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
+    page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={invalid ? new Set() : selections[attemptId] || readAnswers(attemptId)} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={completeAttempt} />;
+  } else {
+    page = <NotFoundPage />;
+  }
+
+  return <Layout route={route} session={session} onLogout={logout} toasts={toasts}>{page}</Layout>;
+}

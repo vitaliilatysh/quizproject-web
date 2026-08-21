@@ -11,8 +11,12 @@ export class ApiError extends Error {
 export function normalizeBaseUrl(value) {
   const raw = String(value ?? "").trim();
   if (!raw) throw new TypeError("API URL не може бути порожнім.");
+
   const url = new URL(raw);
-  if (!/^https?:$/.test(url.protocol)) throw new TypeError("API URL має використовувати HTTP або HTTPS.");
+  if (!/^https?:$/.test(url.protocol)) {
+    throw new TypeError("API URL має використовувати HTTP або HTTPS.");
+  }
+
   url.pathname = url.pathname.replace(/\/+$/, "");
   url.search = "";
   url.hash = "";
@@ -30,11 +34,19 @@ export class QuizApi {
   async request(path, { method = "GET", body, authenticated = false } = {}) {
     const headers = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
+
     if (authenticated) {
       const token = this.getToken();
-      if (!token) throw new ApiError("Увійдіть, щоб продовжити.", { status: 401, code: "AUTH_REQUIRED", path });
+      if (!token) {
+        throw new ApiError("Увійдіть, щоб продовжити.", {
+          status: 401,
+          code: "AUTH_REQUIRED",
+          path
+        });
+      }
       headers.Authorization = `Bearer ${token}`;
     }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -46,7 +58,10 @@ export class QuizApi {
         signal: controller.signal
       });
       const contentType = response.headers.get("content-type") ?? "";
-      const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+      const payload = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+
       if (!response.ok) {
         const message = typeof payload === "object" && payload?.message
           ? payload.message
@@ -57,11 +72,16 @@ export class QuizApi {
           path: typeof payload === "object" ? payload?.path : path
         });
       }
+
       return payload;
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if (error?.name === "AbortError") {
-        throw new ApiError("Сервер не відповів вчасно. Спробуйте ще раз.", { code: "TIMEOUT", path, cause: error });
+        throw new ApiError("Сервер не відповів вчасно. Спробуйте ще раз.", {
+          code: "TIMEOUT",
+          path,
+          cause: error
+        });
       }
       throw new ApiError("Не вдалося з’єднатися з API. Перевірте адресу сервера та CORS.", {
         code: "NETWORK_ERROR",
@@ -78,7 +98,10 @@ export class QuizApi {
   }
 
   login(username, password) {
-    return this.request("/api/v1/auth/login", { method: "POST", body: { username, password } });
+    return this.request("/api/v1/auth/login", {
+      method: "POST",
+      body: { username, password }
+    });
   }
 
   quizzes() {
@@ -90,11 +113,16 @@ export class QuizApi {
   }
 
   startAttempt(quizId) {
-    return this.request(`/api/v1/quizzes/${Number(quizId)}/attempts`, { method: "POST", authenticated: true });
+    return this.request(`/api/v1/quizzes/${Number(quizId)}/attempts`, {
+      method: "POST",
+      authenticated: true
+    });
   }
 
   attempt(attemptId) {
-    return this.request(`/api/v1/attempts/${Number(attemptId)}`, { authenticated: true });
+    return this.request(`/api/v1/attempts/${Number(attemptId)}`, {
+      authenticated: true
+    });
   }
 
   completeAttempt(attemptId, answerIds) {

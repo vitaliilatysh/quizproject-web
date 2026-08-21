@@ -49,7 +49,9 @@ export function clearSession() {
 }
 
 export function readApiUrl() {
-  return localStorage.getItem(API_URL_KEY) || globalThis.QUIZ_PROJECT_API_URL || "http://localhost:8081";
+  return localStorage.getItem(API_URL_KEY)
+    || globalThis.QUIZ_PROJECT_API_URL
+    || "http://localhost:8081";
 }
 
 export function writeApiUrl(value) {
