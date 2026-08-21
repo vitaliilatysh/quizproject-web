@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { difficultyLabel, escapeHtml, formatCountdown, safeHash } from "../public/js/utils.js";
-
-test("escapeHtml neutralizes text inserted into templates", () => {
-  assert.equal(escapeHtml(`<img src=x onerror='boom'>&`), "&lt;img src=x onerror=&#39;boom&#39;&gt;&amp;");
-});
+import { difficultyLabel, formatCountdown, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
 
 test("difficultyLabel translates backend values", () => {
   assert.equal(difficultyLabel("EASY"), "Початковий");
@@ -20,4 +16,16 @@ test("formatCountdown never renders negative time", () => {
 test("safeHash rejects navigation outside the SPA", () => {
   assert.equal(safeHash("#/attempt/42"), "#/attempt/42");
   assert.equal(safeHash("https://evil.example"), "#/");
+});
+
+test("parseRoute extracts a route and its parameters", () => {
+  assert.deepEqual(parseRoute("#/attempt/42?source=history"), { name: "attempt", params: ["42"] });
+  assert.deepEqual(parseRoute(""), { name: "home", params: [] });
+});
+
+test("quizCountLabel follows Ukrainian plural forms", () => {
+  assert.equal(quizCountLabel(1), "тест");
+  assert.equal(quizCountLabel(3), "тести");
+  assert.equal(quizCountLabel(12), "тестів");
+  assert.equal(quizCountLabel(21), "тест");
 });

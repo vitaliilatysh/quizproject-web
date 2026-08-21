@@ -1,13 +1,3 @@
-export function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>'"]/g, character => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "'": "&#39;",
-    '"': "&quot;"
-  })[character]);
-}
-
 export function formatDate(value) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("uk-UA", {
@@ -46,7 +36,7 @@ export function difficultyTone(value) {
   return "green";
 }
 
-export function parseRoute(hash = location.hash) {
+export function parseRoute(hash = globalThis.location?.hash || "") {
   const route = hash.replace(/^#\/?/, "").split("?")[0];
   const [name = "", ...params] = route.split("/").filter(Boolean);
   return { name: name || "home", params };
@@ -54,4 +44,14 @@ export function parseRoute(hash = location.hash) {
 
 export function safeHash(value, fallback = "#/") {
   return /^#\/[a-z0-9/_-]*$/i.test(value || "") ? value : fallback;
+}
+
+export function quizCountLabel(count) {
+  const value = Math.abs(Number(count));
+  const lastTwo = value % 100;
+  const last = value % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return "тестів";
+  if (last === 1) return "тест";
+  if (last >= 2 && last <= 4) return "тести";
+  return "тестів";
 }
