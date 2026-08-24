@@ -136,4 +136,98 @@ export class QuizApi {
   results() {
     return this.request("/api/v1/results/me", { authenticated: true });
   }
+
+  adminStatus() {
+    return this.request("/api/v1/admin/status", { authenticated: true });
+  }
+
+  adminSubjects() {
+    return this.request("/api/v1/admin/subjects", { authenticated: true });
+  }
+
+  createSubject(name) {
+    return this.request("/api/v1/admin/subjects", {
+      method: "POST", authenticated: true, body: { name }
+    });
+  }
+
+  updateSubject(id, name) {
+    return this.request(`/api/v1/admin/subjects/${Number(id)}`, {
+      method: "PUT", authenticated: true, body: { name }
+    });
+  }
+
+  deleteSubject(id) {
+    return this.request(`/api/v1/admin/subjects/${Number(id)}`, {
+      method: "DELETE", authenticated: true
+    });
+  }
+
+  adminLevels() {
+    return this.request("/api/v1/admin/levels", { authenticated: true });
+  }
+
+  adminQuizzes() {
+    return this.request("/api/v1/admin/quizzes", { authenticated: true });
+  }
+
+  createQuiz(quiz) {
+    return this.request("/api/v1/admin/quizzes", {
+      method: "POST", authenticated: true, body: quiz
+    });
+  }
+
+  updateQuiz(id, quiz) {
+    return this.request(`/api/v1/admin/quizzes/${Number(id)}`, {
+      method: "PUT", authenticated: true, body: quiz
+    });
+  }
+
+  deleteQuiz(id) {
+    return this.request(`/api/v1/admin/quizzes/${Number(id)}`, {
+      method: "DELETE", authenticated: true
+    });
+  }
+
+  adminQuestions(quizId) {
+    return this.request(`/api/v1/admin/quizzes/${Number(quizId)}/questions`, {
+      authenticated: true
+    });
+  }
+
+  createQuestion(quizId, question) {
+    return this.request(`/api/v1/admin/quizzes/${Number(quizId)}/questions`, {
+      method: "POST", authenticated: true, body: question
+    });
+  }
+
+  updateQuestion(id, question) {
+    return this.request(`/api/v1/admin/questions/${Number(id)}`, {
+      method: "PUT", authenticated: true, body: question
+    });
+  }
+
+  deleteQuestion(id) {
+    return this.request(`/api/v1/admin/questions/${Number(id)}`, {
+      method: "DELETE", authenticated: true
+    });
+  }
+
+  adminUsers() {
+    return this.request("/api/v1/admin/users", { authenticated: true });
+  }
+
+  updateUserStatus(id, status) {
+    return this.request(`/api/v1/admin/users/${Number(id)}/status`, {
+      method: "PATCH", authenticated: true, body: { status }
+    });
+  }
+
+  adminResults({ from, to } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const query = params.size ? `?${params}` : "";
+    return this.request(`/api/v1/admin/results${query}`, { authenticated: true });
+  }
 }
