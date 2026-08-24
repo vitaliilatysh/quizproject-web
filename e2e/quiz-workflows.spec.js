@@ -83,8 +83,10 @@ test("student completes a quiz and sees the persisted result", async ({ page }, 
     has: page.getByText("correct", { exact: true })
   });
   await expect(correctAnswers).toHaveCount(6);
-  for (const answer of await correctAnswers.all()) {
-    await answer.getByRole("checkbox").check();
+  for (let index = 0; index < 6; index += 1) {
+    const checkbox = correctAnswers.nth(index).getByRole("checkbox");
+    await checkbox.check({ force: true });
+    await expect(checkbox).toBeChecked();
   }
 
   page.once("dialog", dialog => dialog.accept());
@@ -117,6 +119,7 @@ test("administrator can create, update and delete catalog content", async ({ pag
   await subjects.getByRole("button", { name: "Додати" }).click();
   let subjectRow = subjects.locator(".admin-list__row").filter({ hasText: subjectName });
   await expect(subjectRow).toBeVisible();
+  const subjectId = (await subjectRow.locator(".admin-id").textContent()).replace("#", "").trim();
 
   page.once("dialog", dialog => dialog.accept(renamedSubject));
   await subjectRow.getByRole("button", { name: "Перейменувати" }).click();
@@ -127,7 +130,7 @@ test("administrator can create, update and delete catalog content", async ({ pag
     has: page.getByRole("heading", { name: "Тести", exact: true })
   });
   await quizzes.getByLabel("Назва", { exact: true }).fill(quizName);
-  await quizzes.getByLabel("Предмет", { exact: true }).selectOption({ label: renamedSubject });
+  await quizzes.getByLabel("Предмет", { exact: true }).selectOption(subjectId);
   await quizzes.getByLabel("Хвилин", { exact: true }).fill("7");
   await quizzes.getByRole("button", { name: "Створити тест" }).click();
 
