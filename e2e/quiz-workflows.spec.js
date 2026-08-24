@@ -146,8 +146,10 @@ test("administrator can create, update and delete catalog content", async ({ pag
   });
   await questions.locator("select.admin-quiz-select").selectOption({ label: updatedQuizName });
   await questions.getByLabel("Текст запитання").fill(questionText);
-  for (let index = 1; index <= 4; index += 1) {
-    await questions.getByLabel(`Варіант ${index}`, { exact: true }).fill(`Answer ${index}`);
+  const answerInputs = questions.locator(".admin-answer-grid input:not([type='checkbox'])");
+  await expect(answerInputs).toHaveCount(4);
+  for (let index = 0; index < 4; index += 1) {
+    await answerInputs.nth(index).fill(`Answer ${index + 1}`);
   }
   await questions.getByRole("checkbox", { name: "Правильна відповідь" }).first().check();
   await questions.getByRole("button", { name: "Додати запитання" }).click();
