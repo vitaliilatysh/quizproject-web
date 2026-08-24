@@ -30,14 +30,17 @@ export function Layout({ route, session, onLogout, toasts, children }) {
           <a className={`icon-button ${activeRoute("settings", route)}`} href="#/settings" aria-label="Налаштування API">⚙</a>
           {session ? (
             <>
-              <div className="account-chip" title="Активна сесія">
+              <a className={`account-chip ${activeRoute("profile", route)}`} href="#/profile" title="Відкрити профіль">
                 <span className="avatar">{session.username.slice(0, 1).toUpperCase()}</span>
                 <span className="account-name">{session.username}</span>
-              </div>
+              </a>
               <button className="button button--ghost button--small" type="button" onClick={onLogout}>Вийти</button>
             </>
           ) : (
-            <a className="button button--dark button--small" href="#/login">Увійти</a>
+            <>
+              <a className="button button--ghost button--small signup-link" href="#/signup">Реєстрація</a>
+              <a className="button button--dark button--small" href="#/login">Увійти</a>
+            </>
           )}
         </div>
       </header>
@@ -225,9 +228,77 @@ export function LoginPage({ error, busy, onSubmit }) {
           <label><span>Пароль</span><input name="password" type="password" autoComplete="current-password" maxLength="128" required placeholder="Ваш пароль" /></label>
           <button className="button button--coral button--large button--full" disabled={busy}>{busy ? "Входимо…" : "Увійти"} <span aria-hidden="true">→</span></button>
         </form>
-        <p className="form-footnote">Обліковий запис створюється в основному Quiz Project. За потреби зверніться до адміністратора.</p>
+        <p className="form-footnote">Ще немає облікового запису? <a className="text-link" href="#/signup">Зареєструватися</a></p>
       </div>
     </section>
+  );
+}
+
+export function SignupPage({ error, busy, onSubmit }) {
+  return (
+    <section className="auth-layout section-pad">
+      <div className="auth-story">
+        <p className="eyebrow">Новий обліковий запис</p>
+        <h1>Почни свій<br /><em>прогрес.</em></h1>
+        <p>Створіть профіль студента, щоб проходити тести, зберігати результати та повертатися до історії навчання.</p>
+        <div className="auth-note"><span aria-hidden="true">✓</span><div><strong>Безпечне зберігання пароля</strong><small>Пароль хешується на backend і ніколи не повертається до браузера.</small></div></div>
+      </div>
+      <div className="auth-panel auth-panel--wide">
+        <div><p className="eyebrow">Реєстрація</p><h2>Створити профіль</h2></div>
+        {error && <div className="alert alert--error" role="alert">{error}</div>}
+        <form className="form-stack" onSubmit={onSubmit}>
+          <div className="form-grid">
+            <label><span>Ім’я</span><input name="firstName" autoComplete="given-name" minLength="1" maxLength="20" required placeholder="Ваше ім’я" /></label>
+            <label><span>Прізвище</span><input name="lastName" autoComplete="family-name" minLength="1" maxLength="20" required placeholder="Ваше прізвище" /></label>
+          </div>
+          <label><span>Логін</span><input name="username" autoComplete="username" minLength="5" maxLength="15" required placeholder="5–15 літер або цифр" /></label>
+          <label><span>Пароль</span><input name="password" type="password" autoComplete="new-password" minLength="8" maxLength="128" required placeholder="Щонайменше 8 символів без пробілів" /></label>
+          <label><span>Повторіть пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength="8" maxLength="128" required placeholder="Повторіть пароль" /></label>
+          <button className="button button--coral button--large button--full" disabled={busy}>{busy ? "Створюємо…" : "Створити обліковий запис"} <span aria-hidden="true">→</span></button>
+        </form>
+        <p className="form-footnote">Уже зареєстровані? <a className="text-link" href="#/login">Увійти</a></p>
+      </div>
+    </section>
+  );
+}
+
+export function ProfilePage({ profile, loading, error, passwordError, busy, onRetry, onPasswordChange }) {
+  if (loading && !profile) {
+    return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Завантажуємо профіль…</h1><div className="result-skeleton" /></section>;
+  }
+  if (error) {
+    return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Мій профіль</h1><div className="empty-state"><h3>Не вдалося завантажити профіль</h3><p>{error}</p><button className="button button--dark" type="button" onClick={onRetry}>Повторити</button></div></section>;
+  }
+  const role = profile?.role === "admin" ? "Адміністратор" : "Студент";
+  const status = profile?.status === "active" ? "Активний" : profile?.status || "—";
+  return (
+    <>
+      <section className="page-hero section-pad page-hero--profile">
+        <p className="eyebrow">Особистий кабінет</p>
+        <h1>Ваш профіль.<br /><em>Ваш прогрес.</em></h1>
+      </section>
+      <section className="profile-layout section-pad">
+        <article className="profile-card">
+          <div className="profile-identity"><span>{profile?.username?.slice(0, 1).toUpperCase()}</span><div><p className="eyebrow">Обліковий запис</p><h2>{profile?.firstName} {profile?.lastName}</h2><small>@{profile?.username}</small></div></div>
+          <dl className="profile-details">
+            <div><dt>Роль</dt><dd>{role}</dd></div>
+            <div><dt>Статус</dt><dd><span className="status-dot" />{status}</dd></div>
+            <div><dt>Зареєстровано</dt><dd>{formatDate(profile?.registeredAt)}</dd></div>
+            <div><dt>Останній вхід</dt><dd>{formatDate(profile?.lastLoginAt)}</dd></div>
+          </dl>
+        </article>
+        <article className="profile-card profile-card--password">
+          <div><p className="eyebrow">Безпека</p><h2>Змінити пароль</h2><p>Після зміни пароля поточна сесія завершиться. Увійдіть повторно з новим паролем.</p></div>
+          {passwordError && <div className="alert alert--error" role="alert">{passwordError}</div>}
+          <form className="form-stack" onSubmit={onPasswordChange}>
+            <label><span>Поточний пароль</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength="128" required /></label>
+            <label><span>Новий пароль</span><input name="newPassword" type="password" autoComplete="new-password" minLength="8" maxLength="128" required /></label>
+            <label><span>Повторіть новий пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength="8" maxLength="128" required /></label>
+            <button className="button button--dark button--large" disabled={busy}>{busy ? "Оновлюємо…" : "Оновити пароль"}</button>
+          </form>
+        </article>
+      </section>
+    </>
   );
 }
 

@@ -104,6 +104,25 @@ export class QuizApi {
     });
   }
 
+  register(account) {
+    return this.request("/api/v1/auth/register", {
+      method: "POST",
+      body: account
+    });
+  }
+
+  profile() {
+    return this.request("/api/v1/users/me", { authenticated: true });
+  }
+
+  changePassword(currentPassword, newPassword) {
+    return this.request("/api/v1/users/me/password", {
+      method: "PUT",
+      authenticated: true,
+      body: { currentPassword, newPassword }
+    });
+  }
+
   quizzes() {
     return this.request("/api/v1/quizzes");
   }

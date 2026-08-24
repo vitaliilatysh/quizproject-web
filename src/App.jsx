@@ -21,9 +21,11 @@ import {
   Layout,
   LoginPage,
   NotFoundPage,
+  ProfilePage,
   QuizzesPage,
   ResultsPage,
-  SettingsPage
+  SettingsPage,
+  SignupPage
 } from "./components.jsx";
 import { parseRoute, safeHash } from "./utils.js";
 
@@ -41,6 +43,8 @@ function pageTitle(name) {
   return ({
     quizzes: "Тести",
     login: "Вхід",
+    signup: "Реєстрація",
+    profile: "Профіль",
     settings: "Налаштування",
     results: "Результати",
     attempt: "Проходження тесту",
@@ -71,6 +75,9 @@ export default function App() {
   const [adminData, setAdminData] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState("");
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
   const [attempts, setAttempts] = useState({});
   const [attemptLoading, setAttemptLoading] = useState({});
   const [attemptErrors, setAttemptErrors] = useState({});
@@ -78,6 +85,8 @@ export default function App() {
   const [completions, setCompletions] = useState({});
   const [actionBusy, setActionBusy] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [signupError, setSignupError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const [connection, setConnection] = useState("idle");
   const [search, setSearch] = useState("");
@@ -86,6 +95,7 @@ export default function App() {
   const quizzesRequest = useRef(false);
   const resultsRequest = useRef(false);
   const adminRequest = useRef(false);
+  const profileRequest = useRef(false);
   const attemptRequests = useRef(new Set());
 
   const api = useMemo(() => new QuizApi({
@@ -103,6 +113,7 @@ export default function App() {
     if (!(error instanceof ApiError) || error.status !== 401) return false;
     clearSession();
     setSession(null);
+    setProfile(null);
     rememberReturnTo(returnTo);
     toast("Сесія завершилась. Увійдіть ще раз.", "error");
     navigate("#/login");
@@ -181,6 +192,21 @@ export default function App() {
     }
   }, [api, handleAuthError, session]);
 
+  const loadProfile = useCallback(async () => {
+    if (!session || profileRequest.current) return;
+    profileRequest.current = true;
+    setProfileLoading(true);
+    setProfileError("");
+    try {
+      setProfile(await api.profile());
+    } catch (error) {
+      if (!handleAuthError(error, "#/profile")) setProfileError(friendlyError(error));
+    } finally {
+      profileRequest.current = false;
+      setProfileLoading(false);
+    }
+  }, [api, handleAuthError, session]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     document.title = `${route.name === "home" ? "Quiz Project" : pageTitle(route.name)} — Quiz Project`;
@@ -226,12 +252,23 @@ export default function App() {
   }, [adminData, loadAdmin, route.name, session]);
 
   useEffect(() => {
+    if (route.name !== "profile") return;
+    if (!session) {
+      rememberReturnTo("#/profile");
+      navigate("#/login");
+      return;
+    }
+    if (profile === null && !profileLoading) void loadProfile();
+  }, [loadProfile, profile, profileLoading, route.name, session]);
+
+  useEffect(() => {
     const onStorage = event => {
       if (event.key !== "quizproject.apiUrl") return;
       setApiUrl(readApiUrl());
       setQuizzes(null);
       setResults(null);
       setAdminData(null);
+      setProfile(null);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -267,6 +304,8 @@ export default function App() {
       const token = await api.login(username, String(data.get("password") || ""));
       const nextSession = writeSession(token, username);
       setSession(nextSession);
+      setProfile(null);
+      setPasswordError("");
       toast("Вхід успішний. Вітаємо!");
 
       const pendingQuiz = consumePendingQuiz();
@@ -289,11 +328,99 @@ export default function App() {
     }
   }, [api, apiUrl, toast]);
 
+  const submitRegistration = useCallback(async event => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const password = String(data.get("password") || "");
+    const confirmation = String(data.get("confirmPassword") || "");
+    setSignupError("");
+    if (password !== confirmation) {
+      setSignupError("Паролі не збігаються.");
+      return;
+    }
+    if (/\s/.test(password)) {
+      setSignupError("Пароль не повинен містити пробіли.");
+      return;
+    }
+    const account = {
+      username: String(data.get("username") || "").trim(),
+      firstName: String(data.get("firstName") || "").trim(),
+      lastName: String(data.get("lastName") || "").trim(),
+      password
+    };
+    setActionBusy("signup");
+    try {
+      const token = await api.register(account);
+      const nextSession = writeSession(token, account.username);
+      setSession(nextSession);
+      setProfile(null);
+      setPasswordError("");
+      toast("Обліковий запис створено. Вітаємо!");
+
+      const pendingQuiz = consumePendingQuiz();
+      if (pendingQuiz) {
+        const authenticatedApi = new QuizApi({ baseUrl: apiUrl, getToken: () => nextSession.accessToken });
+        const attempt = await authenticatedApi.startAttempt(pendingQuiz);
+        setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
+        setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
+        consumeReturnTo();
+        navigate(`#/attempt/${attempt.attemptId}`);
+      } else {
+        navigate(consumeReturnTo());
+      }
+    } catch (error) {
+      setSignupError(error instanceof ApiError && error.status === 409
+        ? "Цей логін уже зайнятий. Оберіть інший."
+        : friendlyError(error));
+    } finally {
+      setActionBusy("");
+    }
+  }, [api, apiUrl, toast]);
+
+  const changePassword = useCallback(async event => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const currentPassword = String(data.get("currentPassword") || "");
+    const newPassword = String(data.get("newPassword") || "");
+    const confirmation = String(data.get("confirmPassword") || "");
+    setPasswordError("");
+    if (newPassword !== confirmation) {
+      setPasswordError("Нові паролі не збігаються.");
+      return;
+    }
+    if (/\s/.test(newPassword)) {
+      setPasswordError("Новий пароль не повинен містити пробіли.");
+      return;
+    }
+    setActionBusy("password");
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      clearSession();
+      setSession(null);
+      setProfile(null);
+      setResults(null);
+      setAdminData(null);
+      toast("Пароль змінено. Увійдіть із новим паролем.");
+      navigate("#/login");
+    } catch (error) {
+      if (handleAuthError(error, "#/profile")) return;
+      setPasswordError(error instanceof ApiError && error.status === 400
+        ? "Поточний пароль неправильний."
+        : error instanceof ApiError && error.status === 409
+          ? "Новий пароль має відрізнятися від поточного."
+          : friendlyError(error));
+    } finally {
+      setActionBusy("");
+    }
+  }, [api, handleAuthError, toast]);
+
   const logout = useCallback(() => {
     clearSession();
     setSession(null);
     setResults(null);
     setAdminData(null);
+    setProfile(null);
+    setPasswordError("");
     toast("Ви вийшли з облікового запису.");
     navigate("#/");
   }, [toast]);
@@ -382,6 +509,10 @@ export default function App() {
     page = <QuizzesPage quizzes={quizzes} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onRetry={loadQuizzes} onStart={startQuiz} />;
   } else if (route.name === "login") {
     page = <LoginPage error={loginError} busy={actionBusy === "login"} onSubmit={submitLogin} />;
+  } else if (route.name === "signup") {
+    page = <SignupPage error={signupError} busy={actionBusy === "signup"} onSubmit={submitRegistration} />;
+  } else if (route.name === "profile") {
+    page = <ProfilePage profile={profile} loading={profileLoading} error={profileError} passwordError={passwordError} busy={actionBusy === "password"} onRetry={loadProfile} onPasswordChange={changePassword} />;
   } else if (route.name === "settings") {
     page = <SettingsPage apiUrl={apiUrl} connection={connection} error={settingsError} onSave={saveApiUrl} onTest={testConnection} />;
   } else if (route.name === "results") {
