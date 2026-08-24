@@ -66,6 +66,26 @@ npm run build
 
 Команда `npm run check` послідовно запускає тести й production-збірку. Готові frontend-артефакти створюються в `dist/client`, а Sites/Cloudflare entrypoint — у `dist/server/index.js`.
 
+### Наскрізні E2E-тести
+
+P11 додає Playwright-перевірки реальних сценаріїв React ↔ Spring Boot ↔ MySQL:
+
+- реєстрація, профіль, зміна пароля та повторний вхід;
+- проходження тесту й перевірка збереженого результату;
+- створення, редагування та видалення предмета, тесту і запитання адміністратором.
+
+GitHub Actions автоматично піднімає чисту MySQL 8, застосовує Flyway-міграції backend,
+запускає Spring Boot API та Chromium. У разі помилки workflow зберігає Playwright trace,
+відео, знімок екрана й журнал API.
+
+Для локального запуску спочатку запустіть backend і MySQL, створіть окремого адміністратора,
+передайте його дані через `E2E_ADMIN_USERNAME` і `E2E_ADMIN_PASSWORD`, а потім виконайте:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
 ## Структура
 
 ```text

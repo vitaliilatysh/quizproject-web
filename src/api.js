@@ -24,7 +24,12 @@ export function normalizeBaseUrl(value) {
 }
 
 export class QuizApi {
-  constructor({ baseUrl, getToken = () => null, fetchImpl = globalThis.fetch, timeoutMs = 12_000 }) {
+  constructor({
+    baseUrl,
+    getToken = () => null,
+    fetchImpl = (...args) => globalThis.fetch(...args),
+    timeoutMs = 12_000
+  }) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
     this.getToken = getToken;
     this.fetchImpl = fetchImpl;

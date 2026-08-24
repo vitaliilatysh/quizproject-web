@@ -8,6 +8,27 @@ test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
   assert.throws(() => normalizeBaseUrl(""), /порожнім/);
 });
 
+test("default fetch keeps the browser global as its receiver", async () => {
+  const originalFetch = globalThis.fetch;
+  let observedUrl;
+  try {
+    globalThis.fetch = async function (url) {
+      assert.equal(this, globalThis);
+      observedUrl = url;
+      return new Response(JSON.stringify({ status: "UP" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    };
+
+    const api = new QuizApi({ baseUrl: "https://api.example.com" });
+    assert.deepEqual(await api.health(), { status: "UP" });
+    assert.equal(observedUrl, "https://api.example.com/actuator/health");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("quizzes requests the public catalogue without an auth header", async () => {
   let observed;
   const api = new QuizApi({
