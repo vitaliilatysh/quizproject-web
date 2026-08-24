@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const webBaseUrl = process.env.E2E_WEB_URL || "http://127.0.0.1:4173";
+const apiBaseUrl = process.env.E2E_API_URL || "http://127.0.0.1:8081";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,6 +17,13 @@ export default defineConfig({
     : [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: webBaseUrl,
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: webBaseUrl,
+        localStorage: [{ name: "quizproject.apiUrl", value: apiBaseUrl }]
+      }]
+    },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "retain-on-failure"
