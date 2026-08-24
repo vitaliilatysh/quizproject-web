@@ -16,6 +16,7 @@ import {
 } from "./session.js";
 import {
   AttemptPage,
+  AdminPage,
   HomePage,
   Layout,
   LoginPage,
@@ -42,7 +43,8 @@ function pageTitle(name) {
     login: "Вхід",
     settings: "Налаштування",
     results: "Результати",
-    attempt: "Проходження тесту"
+    attempt: "Проходження тесту",
+    admin: "Адміністрування"
   })[name] || "Сторінка";
 }
 
@@ -66,6 +68,9 @@ export default function App() {
   const [results, setResults] = useState(null);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultError, setResultError] = useState("");
+  const [adminData, setAdminData] = useState(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState("");
   const [attempts, setAttempts] = useState({});
   const [attemptLoading, setAttemptLoading] = useState({});
   const [attemptErrors, setAttemptErrors] = useState({});
@@ -80,6 +85,7 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const quizzesRequest = useRef(false);
   const resultsRequest = useRef(false);
+  const adminRequest = useRef(false);
   const attemptRequests = useRef(new Set());
 
   const api = useMemo(() => new QuizApi({
@@ -154,6 +160,27 @@ export default function App() {
     }
   }, [api, handleAuthError, session]);
 
+  const loadAdmin = useCallback(async () => {
+    if (!session || adminRequest.current) return;
+    adminRequest.current = true;
+    setAdminLoading(true);
+    setAdminError("");
+    try {
+      const [subjects, levels, adminQuizzes, users, allResults] = await Promise.all([
+        api.adminSubjects(), api.adminLevels(), api.adminQuizzes(), api.adminUsers(), api.adminResults()
+      ]);
+      setAdminData({ subjects, levels, quizzes: adminQuizzes, users, results: allResults });
+    } catch (error) {
+      if (handleAuthError(error, "#/admin")) return;
+      setAdminError(error instanceof ApiError && error.status === 403
+        ? "Для цієї сторінки потрібна роль адміністратора."
+        : friendlyError(error));
+    } finally {
+      adminRequest.current = false;
+      setAdminLoading(false);
+    }
+  }, [api, handleAuthError, session]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     document.title = `${route.name === "home" ? "Quiz Project" : pageTitle(route.name)} — Quiz Project`;
@@ -189,11 +216,22 @@ export default function App() {
   }, [attemptLoading, attempts, loadAttempt, route, session]);
 
   useEffect(() => {
+    if (route.name !== "admin") return;
+    if (!session) {
+      rememberReturnTo("#/admin");
+      navigate("#/login");
+      return;
+    }
+    if (adminData === null) void loadAdmin();
+  }, [adminData, loadAdmin, route.name, session]);
+
+  useEffect(() => {
     const onStorage = event => {
       if (event.key !== "quizproject.apiUrl") return;
       setApiUrl(readApiUrl());
       setQuizzes(null);
       setResults(null);
+      setAdminData(null);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -255,9 +293,25 @@ export default function App() {
     clearSession();
     setSession(null);
     setResults(null);
+    setAdminData(null);
     toast("Ви вийшли з облікового запису.");
     navigate("#/");
   }, [toast]);
+
+  const executeAdmin = useCallback(async (key, operation, successMessage) => {
+    setActionBusy(`admin-${key}`);
+    try {
+      const result = await operation();
+      await loadAdmin();
+      toast(successMessage);
+      return result;
+    } catch (error) {
+      if (!handleAuthError(error, "#/admin")) toast(friendlyError(error), "error");
+      return null;
+    } finally {
+      setActionBusy("");
+    }
+  }, [handleAuthError, loadAdmin, toast]);
 
   const toggleAnswer = useCallback((attemptId, answerId, checked) => {
     setSelections(current => {
@@ -277,6 +331,7 @@ export default function App() {
       const result = await api.completeAttempt(attemptId, [...selected]);
       setCompletions(current => ({ ...current, [attemptId]: result }));
       setResults(null);
+      setAdminData(null);
       clearAnswers(attemptId);
       toast("Тест завершено. Результат збережено.");
     } catch (error) {
@@ -312,6 +367,7 @@ export default function App() {
       setApiUrl(normalized);
       setQuizzes(null);
       setResults(null);
+      setAdminData(null);
       if (await testConnection(normalized)) toast("Адресу API збережено.");
     } catch (error) {
       setConnection("error");
@@ -334,6 +390,8 @@ export default function App() {
     const attemptId = Number(route.params[0]);
     const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
     page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={invalid ? new Set() : selections[attemptId] || readAnswers(attemptId)} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={completeAttempt} />;
+  } else if (route.name === "admin") {
+    page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} onRetry={loadAdmin} onExecute={executeAdmin} />;
   } else {
     page = <NotFoundPage />;
   }

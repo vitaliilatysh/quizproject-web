@@ -87,3 +87,45 @@ test("protected requests fail before fetch when the session is absent", async ()
   const api = new QuizApi({ baseUrl: "https://api.example.com", getToken: () => null, fetchImpl: () => assert.fail("fetch must not be called") });
   await assert.rejects(api.results(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
 });
+
+test("administration methods use protected REST resources and mutation verbs", async () => {
+  const observed = [];
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "admin-token",
+    fetchImpl: async (url, options) => {
+      observed.push({ url, options });
+      return new Response(options.method === "DELETE" ? null : JSON.stringify({ id: 9 }), {
+        status: options.method === "POST" ? 201 : options.method === "DELETE" ? 204 : 200,
+        headers: options.method === "DELETE" ? {} : { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await api.adminStatus();
+  await api.adminSubjects();
+  await api.createSubject("Databases");
+  await api.updateSubject(9, "SQL");
+  await api.deleteSubject(9);
+  await api.adminLevels();
+  await api.adminQuizzes();
+  await api.createQuiz({ name: "SQL", subjectId: 1, levelId: 2, timeToPassMinutes: 10 });
+  await api.updateQuiz(9, { name: "SQL 2", subjectId: 1, levelId: 2, timeToPassMinutes: 12 });
+  await api.deleteQuiz(9);
+  await api.adminQuestions(9);
+  await api.createQuestion(9, { text: "Question", answers: [] });
+  await api.updateQuestion(8, { text: "Updated", answers: [] });
+  await api.deleteQuestion(8);
+  await api.adminUsers();
+  await api.updateUserStatus(3, "blocked");
+  await api.adminResults({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T23:59:59Z" });
+
+  assert.ok(observed.every(call => call.options.headers.Authorization === "Bearer admin-token"));
+  assert.deepEqual(observed.map(call => call.options.method), [
+    "GET", "GET", "POST", "PUT", "DELETE", "GET", "GET", "POST", "PUT",
+    "DELETE", "GET", "POST", "PUT", "DELETE", "GET", "PATCH", "GET"
+  ]);
+  assert.equal(observed.at(-1).url,
+    "https://api.example.com/api/v1/admin/results?from=2026-01-01T00%3A00%3A00Z&to=2026-12-31T23%3A59%3A59Z");
+  assert.deepEqual(JSON.parse(observed[2].options.body), { name: "Databases" });
+});
