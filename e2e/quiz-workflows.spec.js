@@ -119,7 +119,6 @@ test("administrator can create, update and delete catalog content", async ({ pag
   await subjects.getByRole("button", { name: "Додати" }).click();
   let subjectRow = subjects.locator(".admin-list__row").filter({ hasText: subjectName });
   await expect(subjectRow).toBeVisible();
-  const subjectId = (await subjectRow.locator(".admin-id").textContent()).replace("#", "").trim();
 
   page.once("dialog", dialog => dialog.accept(renamedSubject));
   await subjectRow.getByRole("button", { name: "Перейменувати" }).click();
@@ -129,8 +128,8 @@ test("administrator can create, update and delete catalog content", async ({ pag
   const quizzes = page.locator("section.admin-card").filter({
     has: page.getByRole("heading", { name: "Тести", exact: true })
   });
+  await expect(quizzes.getByLabel("Предмет", { exact: true })).not.toHaveValue("");
   await quizzes.getByLabel("Назва", { exact: true }).fill(quizName);
-  await quizzes.getByLabel("Предмет", { exact: true }).selectOption(subjectId);
   await quizzes.getByLabel("Хвилин", { exact: true }).fill("7");
   await quizzes.getByRole("button", { name: "Створити тест" }).click();
 
