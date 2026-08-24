@@ -151,7 +151,9 @@ test("administrator can create, update and delete catalog content", async ({ pag
   for (let index = 0; index < 4; index += 1) {
     await answerInputs.nth(index).fill(`Answer ${index + 1}`);
   }
-  await questions.getByRole("checkbox", { name: "Правильна відповідь" }).first().check();
+  const correctCheckboxes = questions.locator(".admin-answer-grid input[type='checkbox']");
+  await expect(correctCheckboxes).toHaveCount(4);
+  await correctCheckboxes.first().check();
   await questions.getByRole("button", { name: "Додати запитання" }).click();
 
   let question = questions.locator("article").filter({ hasText: questionText });
