@@ -82,7 +82,7 @@ jobs:
           DB_URL: jdbc:mysql://127.0.0.1:3306/tests_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
           DB_USERNAME: root
           DB_PASSWORD: e2e-root
-        run: ./gradlew flywayMigrate :api:bootJar --no-daemon
+        run: ./gradlew processResources flywayMigrate :api:bootJar --no-daemon
 
       - name: Start API and wait for readiness
         working-directory: backend
