@@ -88,6 +88,40 @@ test("protected requests fail before fetch when the session is absent", async ()
   await assert.rejects(api.results(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
 });
 
+test("account lifecycle uses public registration and protected profile resources", async () => {
+  const observed = [];
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "account-token",
+    fetchImpl: async (url, options) => {
+      observed.push({ url, options });
+      if (options.method === "PUT") return new Response(null, { status: 204 });
+      return new Response(JSON.stringify(url.endsWith("/register")
+        ? { accessToken: "jwt", tokenType: "Bearer", expiresIn: 900 }
+        : { username: "student" }), {
+        status: url.endsWith("/register") ? 201 : 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await api.register({ username: "student", firstName: "Test", lastName: "User", password: "secret123" });
+  await api.profile();
+  await api.changePassword("secret123", "updated123");
+
+  assert.deepEqual(observed.map(call => [call.url, call.options.method]), [
+    ["https://api.example.com/api/v1/auth/register", "POST"],
+    ["https://api.example.com/api/v1/users/me", "GET"],
+    ["https://api.example.com/api/v1/users/me/password", "PUT"]
+  ]);
+  assert.equal(observed[0].options.headers.Authorization, undefined);
+  assert.equal(observed[1].options.headers.Authorization, "Bearer account-token");
+  assert.deepEqual(JSON.parse(observed[2].options.body), {
+    currentPassword: "secret123",
+    newPassword: "updated123"
+  });
+});
+
 test("administration methods use protected REST resources and mutation verbs", async () => {
   const observed = [];
   const api = new QuizApi({
