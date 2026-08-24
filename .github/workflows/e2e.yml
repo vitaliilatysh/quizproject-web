@@ -116,13 +116,14 @@ jobs:
         run: |
           E2E_ADMIN_USERNAME=e2eadmin
           E2E_ADMIN_PASSWORD="$(openssl rand -hex 16)Aa1!"
+          echo "::add-mask::$E2E_ADMIN_PASSWORD"
           echo "E2E_ADMIN_USERNAME=$E2E_ADMIN_USERNAME" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_PASSWORD=$E2E_ADMIN_PASSWORD" >> "$GITHUB_ENV"
 
           PAYLOAD="$(jq -n \
             --arg username "$E2E_ADMIN_USERNAME" \
             --arg password "$E2E_ADMIN_PASSWORD" \
-            '{username: $username, firstName: "E2E", lastName: "Admin", password: $password}')"
+            '{username: $username, firstName: "Endtoend", lastName: "Admin", password: $password}')"
           curl --silent --show-error --fail \
             -H 'Content-Type: application/json' \
             -d "$PAYLOAD" \

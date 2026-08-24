@@ -10,7 +10,7 @@ function uniqueUsername(testInfo, prefix) {
 
 async function register(page, username, password) {
   await page.goto("/#/signup");
-  await page.getByLabel("Ім’я", { exact: true }).fill("E2E");
+  await page.getByLabel("Ім’я", { exact: true }).fill("Endtoend");
   await page.getByLabel("Прізвище", { exact: true }).fill("Student");
   await page.getByLabel("Логін", { exact: true }).fill(username);
   await page.getByLabel("Пароль", { exact: true }).fill(password);
@@ -35,7 +35,7 @@ test("registration, profile and password change work end to end", async ({ page 
   await register(page, username, initialPassword);
   await page.getByTitle("Відкрити профіль").click();
 
-  await expect(page.getByRole("heading", { name: "E2E Student" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Endtoend Student" })).toBeVisible();
   await expect(page.getByText(`@${username}`, { exact: true })).toBeVisible();
 
   await page.getByLabel("Поточний пароль").fill(initialPassword);
