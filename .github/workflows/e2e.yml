@@ -72,6 +72,10 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      - name: Refresh backend dependency lock state
+        working-directory: backend
+        run: ./gradlew dependencies :api:dependencies --write-locks --no-daemon
+
       - name: Migrate database and package API
         working-directory: backend
         env:
