@@ -76,13 +76,20 @@ jobs:
         working-directory: backend
         run: ./gradlew dependencies :api:dependencies --write-locks --no-daemon
 
-      - name: Migrate database and package API
+      - name: Package API
         working-directory: backend
+        shell: bash
         env:
           DB_URL: jdbc:mysql://127.0.0.1:3306/tests_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
           DB_USERNAME: root
           DB_PASSWORD: e2e-root
-        run: ./gradlew processResources flywayMigrate :api:bootJar --no-daemon
+        run: |
+          # Keep the E2E workflow green while P13 rolls out; the Spring-only backend
+          # applies classpath migrations automatically during application startup.
+          if [[ -d resources/db/migration ]]; then
+            ./gradlew processResources flywayMigrate --no-daemon
+          fi
+          ./gradlew :api:bootJar --no-daemon
 
       - name: Start API and wait for readiness
         working-directory: backend
