@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: vitaliilatysh/quizproject
-          ref: master
+          ref: ${{ github.event_name == 'pull_request' && 'agent/p14-distributed-rate-limit' || 'master' }}
           path: backend
 
       - name: Set up Java 25
