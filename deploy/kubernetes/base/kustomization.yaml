@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: quizproject
+resources:
+  - namespace.yaml
+  - service-account.yaml
+  - deployment.yaml
+  - service.yaml
+  - pod-disruption-budget.yaml
+  - ingress.yaml
+configMapGenerator:
+  - name: quiz-web-runtime
+    files:
+      - runtime-config.js=runtime-config.js
+generatorOptions:
+  labels:
+    app.kubernetes.io/name: quiz-web
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: quizproject

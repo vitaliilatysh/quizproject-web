@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: quizproject-web
+    newName: ghcr.io/vitaliilatysh/quizproject-web
+    newTag: main
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: quizproject
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      - op: replace
+        path: /spec/rules/0/host
+        value: quiz.example.com
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - quiz.example.com
+            secretName: quizproject-tls
