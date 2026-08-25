@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: quiz-web
+  namespace: quizproject
+  labels:
+    app.kubernetes.io/name: quiz-web
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: quizproject
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quiz-web

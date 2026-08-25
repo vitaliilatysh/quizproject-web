@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: quizproject-web
+    newName: quizproject-web
+    newTag: local
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: quiz-web
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

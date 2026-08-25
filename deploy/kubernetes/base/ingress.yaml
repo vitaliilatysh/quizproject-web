@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: quizproject
+  namespace: quizproject
+  labels:
+    app.kubernetes.io/name: quizproject
+    app.kubernetes.io/component: edge
+    app.kubernetes.io/part-of: quizproject
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: quiz.local
+      http:
+        paths:
+          - path: /actuator/health
+            pathType: Exact
+            backend:
+              service:
+                name: quiz-api
+                port:
+                  name: http
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: quiz-api
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: quiz-web
+                port:
+                  name: http
