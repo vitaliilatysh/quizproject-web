@@ -116,17 +116,17 @@ GHCR package додайте `imagePullSecret` до service account `quiz-web`; �
 
 ### Наскрізні E2E-тести
 
-P11 додає Playwright-перевірки реальних сценаріїв React ↔ Spring Boot ↔ MySQL:
+P11 додає Playwright-перевірки реальних сценаріїв React ↔ Spring Boot ↔ MySQL ↔ Redis:
 
 - реєстрація, профіль, зміна пароля та повторний вхід;
 - проходження тесту й перевірка збереженого результату;
 - створення, редагування та видалення предмета, тесту і запитання адміністратором.
 
-GitHub Actions автоматично піднімає чисту MySQL 8, а Spring Boot застосовує Flyway-міграції
+GitHub Actions автоматично піднімає чисті MySQL 8 і Redis 8.2, а Spring Boot застосовує Flyway-міграції
 під час запуску API перед E2E-перевіркою в Chromium. У разі помилки workflow зберігає Playwright trace,
 відео, знімок екрана й журнал API.
 
-Для локального запуску спочатку запустіть backend і MySQL, створіть окремого адміністратора,
+Для локального запуску спочатку запустіть backend, MySQL і Redis, створіть окремого адміністратора,
 передайте його дані через `E2E_ADMIN_USERNAME` і `E2E_ADMIN_PASSWORD`, а потім виконайте:
 
 ```bash
