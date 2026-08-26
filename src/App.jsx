@@ -34,9 +34,9 @@ function navigate(hash) {
 }
 
 function friendlyError(error) {
-  return error instanceof Error
-    ? error.message
-    : "Сталася неочікувана помилка. Спробуйте ще раз.";
+  if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
+  const correlationId = error instanceof ApiError ? error.correlationId : null;
+  return correlationId ? `${error.message} (код підтримки: ${correlationId})` : error.message;
 }
 
 function pageTitle(name) {

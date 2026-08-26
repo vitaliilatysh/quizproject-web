@@ -104,6 +104,44 @@ test("API errors preserve the backend message and status", async () => {
   });
 });
 
+test("API errors capture the backend correlation ID for support diagnostics", async () => {
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async () => new Response(JSON.stringify({
+      status: 500,
+      error: "Internal Server Error",
+      message: "Unexpected failure",
+      path: "/api/v1/quizzes"
+    }), {
+      status: 500,
+      headers: { "content-type": "application/json", "X-Correlation-ID": "abc123-request-id" }
+    })
+  });
+
+  await assert.rejects(api.request("/test"), error => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.correlationId, "abc123-request-id");
+    return true;
+  });
+});
+
+test("API errors leave the correlation ID unset when the backend does not send one", async () => {
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async () => new Response(JSON.stringify({
+      status: 409,
+      error: "Conflict",
+      message: "Attempt is already completed"
+    }), { status: 409, headers: { "content-type": "application/json" } })
+  });
+
+  await assert.rejects(api.request("/test"), error => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.correlationId, null);
+    return true;
+  });
+});
+
 test("protected requests fail before fetch when the session is absent", async () => {
   const api = new QuizApi({ baseUrl: "https://api.example.com", getToken: () => null, fetchImpl: () => assert.fail("fetch must not be called") });
   await assert.rejects(api.results(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");

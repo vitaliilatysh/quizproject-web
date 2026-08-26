@@ -1,10 +1,11 @@
 export class ApiError extends Error {
-  constructor(message, { status = 0, code = "NETWORK_ERROR", path = "", cause } = {}) {
+  constructor(message, { status = 0, code = "NETWORK_ERROR", path = "", correlationId = null, cause } = {}) {
     super(message, { cause });
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.path = path;
+    this.correlationId = correlationId;
   }
 }
 
@@ -74,7 +75,8 @@ export class QuizApi {
         throw new ApiError(message, {
           status: response.status,
           code: typeof payload === "object" ? payload?.error : "API_ERROR",
-          path: typeof payload === "object" ? payload?.path : path
+          path: typeof payload === "object" ? payload?.path : path,
+          correlationId: response.headers.get("X-Correlation-ID")
         });
       }
 
