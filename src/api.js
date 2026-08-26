@@ -111,6 +111,13 @@ export class QuizApi {
     });
   }
 
+  refresh() {
+    return this.request("/api/v1/auth/refresh", {
+      method: "POST",
+      authenticated: true
+    });
+  }
+
   register(account) {
     return this.request("/api/v1/auth/register", {
       method: "POST",

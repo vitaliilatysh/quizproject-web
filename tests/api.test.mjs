@@ -67,6 +67,31 @@ test("protected requests attach the short-lived bearer token", async () => {
   assert.equal(observed.options.method, "POST");
 });
 
+test("refresh exchanges the current bearer token for a fresh one", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "expiring-token",
+    fetchImpl: async (url, options) => {
+      observed = { url, options };
+      return new Response(JSON.stringify({
+        accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  assert.deepEqual(await api.refresh(),
+    { accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900 });
+  assert.equal(observed.url, "https://api.example.com/api/v1/auth/refresh");
+  assert.equal(observed.options.method, "POST");
+  assert.equal(observed.options.headers.Authorization, "Bearer expiring-token");
+});
+
+test("refresh fails before fetch when the session is absent", async () => {
+  const api = new QuizApi({ baseUrl: "https://api.example.com", getToken: () => null, fetchImpl: () => assert.fail("fetch must not be called") });
+  await assert.rejects(api.refresh(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
+});
+
 test("completeAttempt serializes selected answer IDs", async () => {
   let body;
   const api = new QuizApi({

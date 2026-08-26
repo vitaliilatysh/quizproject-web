@@ -33,6 +33,9 @@ function navigate(hash) {
   globalThis.location.hash = safeHash(hash);
 }
 
+const TOKEN_REFRESH_MARGIN_MS = 60_000;
+const TOKEN_REFRESH_RETRY_MS = 30_000;
+
 function friendlyError(error) {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
   const correlationId = error instanceof ApiError ? error.correlationId : null;
@@ -108,6 +111,33 @@ export default function App() {
     setToasts(current => [...current, { id, message, tone }]);
     window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 4200);
   }, []);
+
+  useEffect(() => {
+    if (!session) return undefined;
+    let cancelled = false;
+    let timer = window.setTimeout(attemptRefresh,
+      Math.max(5000, session.expiresAt - Date.now() - TOKEN_REFRESH_MARGIN_MS));
+
+    async function attemptRefresh() {
+      try {
+        const tokenResponse = await api.refresh();
+        if (!cancelled) setSession(writeSession(tokenResponse, session.username));
+      } catch (error) {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          clearSession();
+          setSession(null);
+        } else {
+          timer = window.setTimeout(attemptRefresh, TOKEN_REFRESH_RETRY_MS);
+        }
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [api, session]);
 
   const handleAuthError = useCallback((error, returnTo) => {
     if (!(error instanceof ApiError) || error.status !== 401) return false;
