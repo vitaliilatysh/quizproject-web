@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  # Keeps the SHA-pinned third-party actions current. Dependabot rewrites both
+  # the SHA and the trailing version comment, so pinning stays maintainable.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+
+  # npm has real lockfile enforcement already: `npm ci` fails when
+  # package.json and package-lock.json disagree, and Dependabot updates both,
+  # so these pull requests arrive green.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+      build-tooling:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "@playwright/test"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
