@@ -1,0 +1,219 @@
+# Companion to e2e.yml, not a replacement for it.
+#
+# e2e.yml builds the backend from quizproject@master and is the gate on every
+# web pull request: it stays on sources so a backend change and the web change
+# that depends on it can land together without the web PR failing on an image
+# that has not been published yet.
+#
+# This workflow answers a different question: does the artifact that actually
+# ships still work with this frontend? It pulls the published image, verifies
+# the cosign signature the backend delivery workflow produced, and runs the
+# same Playwright suite against it — the production JRE, the non-root user and
+# the read-only root filesystem included, none of which `java -jar` on the
+# runner exercises.
+#
+# It runs on a schedule rather than on push because a failure here means the
+# published image and the frontend have drifted apart, which is not a reason to
+# block a web pull request. To have it fire the moment the backend publishes
+# instead, the backend's publish job would need to send a repository_dispatch,
+# which requires a PAT with `contents: write` on this repository stored as a
+# secret over there. Deliberately not set up here — it trades a stored
+# long-lived credential for a few hours of latency.
+name: E2E against published API image
+
+on:
+  schedule:
+    # 03:00 UTC daily, after any working-day merges have published.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: 'Backend image tag or digest to test (default: master)'
+        required: false
+        default: master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-published-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BACKEND_IMAGE: ghcr.io/vitaliilatysh/quizproject
+
+jobs:
+  playwright:
+    name: React against the published backend image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: tests_db
+          MYSQL_ROOT_PASSWORD: e2e-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pe2e-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2.8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Check out frontend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # The package is public, so no registry login is needed. Resolving the
+      # tag to its digest up front means the signature check and the container
+      # below both refer to one immutable artifact: a tag repointed midway
+      # through this job cannot slip an unverified image into the run.
+      - name: Pull the published image and resolve its digest
+        shell: bash
+        env:
+          IMAGE_REF: ${{ github.event.inputs.image_ref || 'master' }}
+        run: |
+          case "${IMAGE_REF}" in
+            sha256:*) IMAGE="${BACKEND_IMAGE}@${IMAGE_REF}" ;;
+            *)        IMAGE="${BACKEND_IMAGE}:${IMAGE_REF}" ;;
+          esac
+          docker pull "${IMAGE}"
+
+          # Filter through a here-string, not a pipe. `grep -m 1` exits on the
+          # first match and would leave the upstream command writing into a
+          # closed pipe; under `-o pipefail` that SIGPIPE sinks the step even
+          # though the match succeeded. Same race that made the backend's smoke
+          # test flaky and silently skipped four image publications.
+          DIGESTS="$(docker inspect \
+            --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}")"
+          DIGEST_REF="$(grep -m 1 "^${BACKEND_IMAGE}@" <<<"${DIGESTS}")"
+          test -n "${DIGEST_REF}"
+          echo "Testing ${DIGEST_REF}"
+          echo "DIGEST_REF=${DIGEST_REF}" >> "${GITHUB_ENV}"
+
+      # A failure here means GHCR is serving something the backend delivery
+      # workflow did not produce. That is worth failing the run over, and it is
+      # a check the source-built E2E cannot make at all.
+      - name: Verify the image signature
+        shell: bash
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp \
+              '^https://github.com/vitaliilatysh/quizproject/\.github/workflows/container\.yml@' \
+            "${DIGEST_REF}" > /dev/null
+
+      # --network host lets the container reach the MySQL and Redis service
+      # containers on 127.0.0.1 and exposes 8081 where the Vite dev server's
+      # proxy already looks, so no frontend configuration changes for this run.
+      # The hardening flags mirror the production Kubernetes pod spec and the
+      # backend's own smoke test.
+      - name: Start the published API and wait for readiness
+        shell: bash
+        env:
+          JWT_TTL: PT15S
+        run: |
+          export JWT_SECRET="$(openssl rand -base64 32 | tr -d '\n')"
+          docker run --detach --name quiz-api-published --network host \
+            --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --env 'DB_URL=jdbc:mysql://127.0.0.1:3306/tests_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC' \
+            --env DB_USERNAME=root \
+            --env DB_PASSWORD=e2e-root \
+            --env REDIS_HOST=127.0.0.1 \
+            --env "JWT_SECRET=${JWT_SECRET}" \
+            --env "JWT_TTL=${JWT_TTL}" \
+            --env CORS_ALLOWED_ORIGINS=http://127.0.0.1:4173 \
+            --env API_RATE_LIMIT_REQUESTS=1000 \
+            --env LOGIN_RATE_LIMIT_REQUESTS=100 \
+            "${DIGEST_REF}"
+
+          for attempt in {1..60}; do
+            if curl --silent --fail http://127.0.0.1:8081/actuator/health/readiness > /dev/null; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 60 ]; then
+              docker logs quiz-api-published
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Create administrator fixture
+        shell: bash
+        run: |
+          E2E_ADMIN_USERNAME=e2eadmin
+          E2E_ADMIN_PASSWORD="$(openssl rand -hex 16)Aa1!"
+          echo "::add-mask::$E2E_ADMIN_PASSWORD"
+          echo "E2E_ADMIN_USERNAME=$E2E_ADMIN_USERNAME" >> "$GITHUB_ENV"
+          echo "E2E_ADMIN_PASSWORD=$E2E_ADMIN_PASSWORD" >> "$GITHUB_ENV"
+
+          PAYLOAD="$(jq -n \
+            --arg username "$E2E_ADMIN_USERNAME" \
+            --arg password "$E2E_ADMIN_PASSWORD" \
+            '{username: $username, firstName: "Endtoend", lastName: "Admin", password: $password}')"
+          curl --silent --show-error --fail \
+            -H 'Content-Type: application/json' \
+            -d "$PAYLOAD" \
+            http://127.0.0.1:8081/api/v1/auth/register > /dev/null
+
+          docker exec "${{ job.services.mysql.id }}" mysql \
+            -uroot -pe2e-root tests_db \
+            -e "UPDATE users SET role_id = (SELECT id FROM roles WHERE name = 'admin') WHERE login = '$E2E_ADMIN_USERNAME';"
+
+      - name: Run full-stack browser tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: playwright-report-published-image
+          path: playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Collect API log
+        if: failure()
+        shell: bash
+        run: docker logs quiz-api-published > api-published.log 2>&1 || true
+
+      - name: Upload API log artifact
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: api-published-log
+          path: api-published.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop the published API
+        if: always()
+        run: docker rm --force quiz-api-published 2>/dev/null || true
