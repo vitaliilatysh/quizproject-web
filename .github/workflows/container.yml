@@ -41,8 +41,20 @@ jobs:
             --publish 127.0.0.1:8080:8080 \
             quizproject-web:test
 
+          # Fetch into a variable rather than piping curl into `grep --quiet`.
+          # grep exits the moment it matches, closing the pipe while curl is
+          # still writing; curl then exits 23 (CURLE_WRITE_ERROR) and, because
+          # Actions runs bash with -o pipefail, that sinks the whole step even
+          # though the assertion passed. Splitting the two also separates
+          # "request failed" from "pattern not found".
+          assert_body_contains() {
+            local url="$1" pattern="$2" body
+            body="$(curl --silent --fail "${url}")"
+            grep --quiet "${pattern}" <<<"${body}"
+          }
+
           for attempt in {1..30}; do
-            if curl --silent --fail http://127.0.0.1:8080/healthz | grep --quiet '^ok$'; then
+            if assert_body_contains http://127.0.0.1:8080/healthz '^ok$'; then
               break
             fi
             if [ "$attempt" -eq 30 ]; then
@@ -52,9 +64,8 @@ jobs:
             sleep 1
           done
 
-          curl --silent --fail http://127.0.0.1:8080/ | grep --quiet 'Quiz Project'
-          curl --silent --fail http://127.0.0.1:8080/runtime-config.js \
-            | grep --quiet 'QUIZ_PROJECT_API_URL'
+          assert_body_contains http://127.0.0.1:8080/ 'Quiz Project'
+          assert_body_contains http://127.0.0.1:8080/runtime-config.js 'QUIZ_PROJECT_API_URL'
 
       - name: Render Kubernetes overlays
         shell: bash
