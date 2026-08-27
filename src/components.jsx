@@ -408,6 +408,33 @@ export function AttemptPage({ attempt, loading, error, selected, completion, bus
 
 const blankAnswers = () => Array.from({ length: 4 }, () => ({ text: "", correct: false }));
 
+// Rendered only when the server actually paged the collection. `meta` is null
+// for an unpaginated response, and a single page needs no controls at all.
+function Pager({ meta, onChange, busy, label }) {
+  if (!meta || meta.totalPages <= 1) return null;
+  const first = meta.number * meta.size + 1;
+  const last = Math.min(first + meta.size - 1, meta.totalCount);
+  return (
+    <div className="pager">
+      <button
+        className="button button--ghost button--small"
+        type="button"
+        disabled={busy || meta.number <= 0}
+        onClick={() => onChange(meta.number - 1)}
+      >Назад</button>
+      <span className="pager__status">
+        {label} {first}–{last} з {meta.totalCount}
+      </span>
+      <button
+        className="button button--ghost button--small"
+        type="button"
+        disabled={busy || meta.number >= meta.totalPages - 1}
+        onClick={() => onChange(meta.number + 1)}
+      >Далі</button>
+    </div>
+  );
+}
+
 function AdminSection({ eyebrow, title, action, children }) {
   return (
     <section className="admin-card">
@@ -417,7 +444,8 @@ function AdminSection({ eyebrow, title, action, children }) {
   );
 }
 
-export function AdminPage({ data, loading, error, busy, api, onRetry, onExecute }) {
+export function AdminPage({ data, loading, error, busy, api, resultRange, onResultRangeChange,
+  onUsersPageChange, onResultsPageChange, onRetry, onExecute }) {
   const [subjectName, setSubjectName] = useState("");
   const [quizDraft, setQuizDraft] = useState({ id: null, name: "", subjectId: "", levelId: "", timeToPassMinutes: 10 });
   const [selectedQuizId, setSelectedQuizId] = useState("");
@@ -425,8 +453,6 @@ export function AdminPage({ data, loading, error, busy, api, onRetry, onExecute 
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionError, setQuestionError] = useState("");
   const [questionDraft, setQuestionDraft] = useState({ id: null, text: "", answers: blankAnswers() });
-  const [resultFrom, setResultFrom] = useState("");
-  const [resultTo, setResultTo] = useState("");
   const working = busy.startsWith("admin-");
 
   useEffect(() => {
@@ -555,19 +581,17 @@ export function AdminPage({ data, loading, error, busy, api, onRetry, onExecute 
       nextStatus === "active" ? "Користувача активовано." : "Користувача заблоковано.");
   };
 
-  const fromTime = resultFrom ? new Date(resultFrom).getTime() : Number.NEGATIVE_INFINITY;
-  const toTime = resultTo ? new Date(resultTo).getTime() : Number.POSITIVE_INFINITY;
-  const visibleResults = data.results.filter(result => {
-    const completed = new Date(result.completedAt).getTime();
-    return completed >= fromTime && completed <= toTime;
-  });
+  // The date range is applied by the API now. Filtering here would only ever
+  // see the page currently loaded and would quietly drop every match sitting on
+  // another page.
+  const visibleResults = data.results;
 
   return (
     <>
       <section className="page-hero section-pad admin-hero"><p className="eyebrow">P9 · React administration</p><h1>Керуйте платформою<br /><em>без legacy UI.</em></h1><p>Предмети, тести, запитання, користувачі та результати тепер працюють через захищений Spring Boot REST API.</p></section>
       <section className="section-pad admin-dashboard">
         <div className="admin-stats">
-          <div><span>Предмети</span><strong>{data.subjects.length}</strong></div><div><span>Тести</span><strong>{data.quizzes.length}</strong></div><div><span>Користувачі</span><strong>{data.users.length}</strong></div><div><span>Результати</span><strong>{data.results.length}</strong></div>
+          <div><span>Предмети</span><strong>{data.subjects.length}</strong></div><div><span>Тести</span><strong>{data.quizzes.length}</strong></div><div><span>Користувачі</span><strong>{data.usersPage?.totalCount ?? data.users.length}</strong></div><div><span>Результати</span><strong>{data.resultsPage?.totalCount ?? data.results.length}</strong></div>
         </div>
 
         <AdminSection eyebrow="Каталог" title="Предмети">
@@ -593,9 +617,9 @@ export function AdminPage({ data, loading, error, busy, api, onRetry, onExecute 
           </>}
         </AdminSection>
 
-        <AdminSection eyebrow="Доступ" title="Користувачі"><div className="admin-table"><div className="admin-table__head"><span>Користувач</span><span>Роль і статус</span><span>Дія</span></div>{data.users.map(user => <div className="admin-table__row" key={user.id}><div><strong>{user.username}</strong><small>#{user.id}</small></div><span>{user.role} · <b className={`status-dot status-dot--${user.status.toLowerCase()}`}>{user.status}</b></span><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => changeUserStatus(user)}>{user.status.toLowerCase() === "active" ? "Заблокувати" : "Активувати"}</button></div>)}</div></AdminSection>
+        <AdminSection eyebrow="Доступ" title="Користувачі"><div className="admin-table"><div className="admin-table__head"><span>Користувач</span><span>Роль і статус</span><span>Дія</span></div>{data.users.map(user => <div className="admin-table__row" key={user.id}><div><strong>{user.username}</strong><small>#{user.id}</small></div><span>{user.role} · <b className={`status-dot status-dot--${user.status.toLowerCase()}`}>{user.status}</b></span><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => changeUserStatus(user)}>{user.status.toLowerCase() === "active" ? "Заблокувати" : "Активувати"}</button></div>)}</div><Pager meta={data.usersPage} onChange={onUsersPageChange} busy={working || loading} label="Користувачі" /></AdminSection>
 
-        <AdminSection eyebrow="Аналітика" title="Усі результати" action={<div className="admin-date-filter"><label>Від<input type="datetime-local" value={resultFrom} onChange={event => setResultFrom(event.target.value)} /></label><label>До<input type="datetime-local" value={resultTo} onChange={event => setResultTo(event.target.value)} /></label></div>}><div className="admin-table"><div className="admin-table__head"><span>Користувач і тест</span><span>Дата</span><span>Результат</span></div>{visibleResults.map(result => <div className="admin-table__row" key={result.attemptId}><div><strong>{result.username}</strong><small>{result.quizName} · спроба #{result.attemptId}</small></div><span>{formatDate(result.completedAt)}</span><strong>{result.score}%</strong></div>)}</div>{!visibleResults.length && <p className="admin-empty">У вибраному діапазоні результатів немає.</p>}</AdminSection>
+        <AdminSection eyebrow="Аналітика" title="Усі результати" action={<div className="admin-date-filter"><label>Від<input type="datetime-local" value={resultRange.from} onChange={event => onResultRangeChange({ from: event.target.value })} /></label><label>До<input type="datetime-local" value={resultRange.to} onChange={event => onResultRangeChange({ to: event.target.value })} /></label></div>}><div className="admin-table"><div className="admin-table__head"><span>Користувач і тест</span><span>Дата</span><span>Результат</span></div>{visibleResults.map(result => <div className="admin-table__row" key={result.attemptId}><div><strong>{result.username}</strong><small>{result.quizName} · спроба #{result.attemptId}</small></div><span>{formatDate(result.completedAt)}</span><strong>{result.score}%</strong></div>)}</div><Pager meta={data.resultsPage} onChange={onResultsPageChange} busy={working || loading} label="Результати" />{!visibleResults.length && <p className="admin-empty">У вибраному діапазоні результатів немає.</p>}</AdminSection>
       </section>
     </>
   );
