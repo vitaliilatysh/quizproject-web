@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiError, QuizApi, normalizeBaseUrl } from "../src/api.js";
+import { ApiError, QuizApi, normalizeBaseUrl, readPageMeta, toInstant } from "../src/api.js";
 
 test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
   assert.equal(normalizeBaseUrl(" https://api.example.com///?ignored=yes#fragment "), "https://api.example.com");
@@ -243,7 +243,161 @@ test("administration methods use protected REST resources and mutation verbs", a
     "GET", "GET", "POST", "PUT", "DELETE", "GET", "GET", "POST", "PUT",
     "DELETE", "GET", "POST", "PUT", "DELETE", "GET", "PATCH", "GET"
   ]);
+  // Date bounds are now normalised to a canonical instant before being sent,
+  // so an already-absolute input comes back with explicit milliseconds. Same
+  // point in time, and still valid ISO-8601 for the Instant the API binds to.
   assert.equal(observed.at(-1).url,
-    "https://api.example.com/api/v1/admin/results?from=2026-01-01T00%3A00%3A00Z&to=2026-12-31T23%3A59%3A59Z");
+    "https://api.example.com/api/v1/admin/results?from=2026-01-01T00%3A00%3A00.000Z&to=2026-12-31T23%3A59%3A59.000Z");
   assert.deepEqual(JSON.parse(observed[2].options.body), { name: "Databases" });
+});
+
+test("readPageMeta parses the four pagination headers", () => {
+  const meta = readPageMeta(new Headers({
+    "X-Page-Number": "2",
+    "X-Page-Size": "20",
+    "X-Total-Count": "97",
+    "X-Total-Pages": "5"
+  }));
+  assert.deepEqual(meta, { number: 2, size: 20, totalCount: 97, totalPages: 5 });
+});
+
+test("readPageMeta returns null when the response was not paginated", () => {
+  assert.equal(readPageMeta(new Headers()), null);
+  // A partial set means something is wrong upstream; treat it as unpaginated
+  // rather than rendering controls from half-known state.
+  assert.equal(readPageMeta(new Headers({ "X-Total-Count": "97" })), null);
+});
+
+test("readPageMeta rejects values that are not whole counts", () => {
+  const base = {
+    "X-Page-Number": "0",
+    "X-Page-Size": "20",
+    "X-Total-Count": "97",
+    "X-Total-Pages": "5"
+  };
+  assert.equal(readPageMeta(new Headers({ ...base, "X-Page-Number": "-1" })), null);
+  assert.equal(readPageMeta(new Headers({ ...base, "X-Total-Pages": "many" })), null);
+  assert.equal(readPageMeta(new Headers({ ...base, "X-Page-Size": "2.5" })), null);
+  assert.equal(readPageMeta(new Headers({ ...base, "X-Total-Count": "" })), null);
+});
+
+test("adminUsers sends page and size and returns items with metadata", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "admin-token",
+    fetchImpl: async (url, options) => {
+      observed = { url, options };
+      return new Response(JSON.stringify([{ id: 7, username: "student" }]), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "X-Page-Number": "1",
+          "X-Page-Size": "20",
+          "X-Total-Count": "41",
+          "X-Total-Pages": "3"
+        }
+      });
+    }
+  });
+
+  const result = await api.adminUsers({ page: 1, size: 20 });
+  assert.equal(observed.url, "https://api.example.com/api/v1/admin/users?page=1&size=20");
+  assert.deepEqual(result.items, [{ id: 7, username: "student" }]);
+  assert.deepEqual(result.page, { number: 1, size: 20, totalCount: 41, totalPages: 3 });
+});
+
+test("adminResults combines the date range with paging in one query", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "admin-token",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  const result = await api.adminResults({
+    from: "2026-01-01T00:00", to: "2026-02-01T00:00", page: 2, size: 20
+  });
+  const query = new URL(observed).searchParams;
+  // Converted to an absolute instant: the API binds these to Instant, which
+  // rejects the offset-less value a datetime-local input produces.
+  assert.equal(query.get("from"), new Date("2026-01-01T00:00").toISOString());
+  assert.equal(query.get("to"), new Date("2026-02-01T00:00").toISOString());
+  assert.match(query.get("from"), /Z$/);
+  assert.equal(query.get("page"), "2");
+  assert.equal(query.get("size"), "20");
+  // No pagination headers came back, so there is no page to report.
+  assert.equal(result.page, null);
+  assert.deepEqual(result.items, []);
+});
+
+test("omitting page and size leaves the request unpaginated", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "admin-token",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await api.adminUsers();
+  assert.equal(observed, "https://api.example.com/api/v1/admin/users");
+});
+
+test("results stays unpaginated so its averages cover every attempt", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "student-token",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([{ attemptId: 1, score: 80 }]), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  assert.deepEqual(await api.results(), [{ attemptId: 1, score: 80 }]);
+  assert.equal(observed, "https://api.example.com/api/v1/results/me");
+});
+
+test("toInstant converts widget values and rejects unusable ones", () => {
+  assert.equal(toInstant("2026-01-01T00:00"), new Date("2026-01-01T00:00").toISOString());
+  assert.match(toInstant("2026-01-01T00:00"), /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+  assert.equal(toInstant(""), null);
+  assert.equal(toInstant(undefined), null);
+  assert.equal(toInstant("not-a-date"), null);
+});
+
+test("a blank date range is omitted from the query entirely", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "admin-token",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await api.adminResults({ from: "", to: "", page: 0, size: 20 });
+  const query = new URL(observed).searchParams;
+  assert.equal(query.has("from"), false);
+  assert.equal(query.has("to"), false);
+  assert.equal(query.get("page"), "0");
 });

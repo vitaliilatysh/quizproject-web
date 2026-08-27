@@ -35,6 +35,9 @@ function navigate(hash) {
 
 const TOKEN_REFRESH_MARGIN_MS = 60_000;
 const TOKEN_REFRESH_RETRY_MS = 30_000;
+// Matches the API's own default page size, so the first page a client renders
+// is the same size whether or not it asked for one.
+const PAGE_SIZE = 20;
 
 function friendlyError(error) {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
@@ -78,6 +81,12 @@ export default function App() {
   const [adminData, setAdminData] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState("");
+  // Paging and the results date range live here rather than inside AdminPage
+  // because both now drive the request. Filtering a single page in the browser
+  // would hide every match that sits on another page.
+  const [adminUsersPage, setAdminUsersPage] = useState(0);
+  const [adminResultsPage, setAdminResultsPage] = useState(0);
+  const [adminResultRange, setAdminResultRange] = useState({ from: "", to: "" });
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -201,16 +210,43 @@ export default function App() {
     }
   }, [api, handleAuthError, session]);
 
+  const changeAdminResultRange = useCallback(patch => {
+    // A narrower range can have fewer pages than the one currently selected,
+    // which would otherwise land on an empty page that looks like "no results".
+    setAdminResultsPage(0);
+    setAdminResultRange(current => ({ ...current, ...patch }));
+  }, []);
+
   const loadAdmin = useCallback(async () => {
     if (!session || adminRequest.current) return;
     adminRequest.current = true;
     setAdminLoading(true);
     setAdminError("");
     try {
+      // Subjects, levels and quizzes are bounded catalogues, so they stay whole.
+      // Users and results grow with every registration and every finished
+      // attempt, so those two are the ones worth paging.
       const [subjects, levels, adminQuizzes, users, allResults] = await Promise.all([
-        api.adminSubjects(), api.adminLevels(), api.adminQuizzes(), api.adminUsers(), api.adminResults()
+        api.adminSubjects(),
+        api.adminLevels(),
+        api.adminQuizzes(),
+        api.adminUsers({ page: adminUsersPage, size: PAGE_SIZE }),
+        api.adminResults({
+          from: adminResultRange.from || undefined,
+          to: adminResultRange.to || undefined,
+          page: adminResultsPage,
+          size: PAGE_SIZE
+        })
       ]);
-      setAdminData({ subjects, levels, quizzes: adminQuizzes, users, results: allResults });
+      setAdminData({
+        subjects,
+        levels,
+        quizzes: adminQuizzes,
+        users: users.items,
+        usersPage: users.page,
+        results: allResults.items,
+        resultsPage: allResults.page
+      });
     } catch (error) {
       if (handleAuthError(error, "#/admin")) return;
       setAdminError(error instanceof ApiError && error.status === 403
@@ -220,7 +256,8 @@ export default function App() {
       adminRequest.current = false;
       setAdminLoading(false);
     }
-  }, [api, handleAuthError, session]);
+  }, [adminResultRange.from, adminResultRange.to, adminResultsPage, adminUsersPage,
+      api, handleAuthError, session]);
 
   const loadProfile = useCallback(async () => {
     if (!session || profileRequest.current) return;
@@ -257,6 +294,29 @@ export default function App() {
     }
     if (results === null && !resultsLoading) void loadResults();
   }, [loadResults, results, resultsLoading, route.name, session]);
+
+  // Changing a page or the date range clears the cached slice so the existing
+  // "load when null" effects refetch it. Dropping the data also keeps the
+  // skeleton visible during the request instead of showing the previous page's
+  // rows under new controls.
+  useEffect(() => {
+    // Loading is raised in the same effect that drops the data. Without it there
+    // is one render where data is null and loading is still false, which falls
+    // through to the "Панель недоступна" branch — a failure banner flashing on
+    // every page click.
+    setAdminData(null);
+    setAdminLoading(true);
+  }, [adminUsersPage, adminResultsPage, adminResultRange.from, adminResultRange.to]);
+
+  // When the session ends, paging must not carry over to whoever logs in next.
+  // Keyed on the session going falsy rather than on every change, so a silent
+  // token refresh does not throw the viewer back to the first page.
+  useEffect(() => {
+    if (session) return;
+    setAdminUsersPage(0);
+    setAdminResultsPage(0);
+    setAdminResultRange({ from: "", to: "" });
+  }, [session]);
 
   useEffect(() => {
     if (route.name !== "attempt") return;
@@ -299,6 +359,8 @@ export default function App() {
       setResults(null);
       setAdminData(null);
       setProfile(null);
+      setAdminUsersPage(0);
+      setAdminResultsPage(0);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -525,6 +587,8 @@ export default function App() {
       setQuizzes(null);
       setResults(null);
       setAdminData(null);
+      setAdminUsersPage(0);
+      setAdminResultsPage(0);
       if (await testConnection(normalized)) toast("Адресу API збережено.");
     } catch (error) {
       setConnection("error");
@@ -552,7 +616,7 @@ export default function App() {
     const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
     page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={invalid ? new Set() : selections[attemptId] || readAnswers(attemptId)} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={completeAttempt} />;
   } else if (route.name === "admin") {
-    page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} onRetry={loadAdmin} onExecute={executeAdmin} />;
+    page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} resultRange={adminResultRange} onResultRangeChange={changeAdminResultRange} onUsersPageChange={setAdminUsersPage} onResultsPageChange={setAdminResultsPage} onRetry={loadAdmin} onExecute={executeAdmin} />;
   } else {
     page = <NotFoundPage />;
   }

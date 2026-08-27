@@ -9,6 +9,59 @@ export class ApiError extends Error {
   }
 }
 
+// The API paginates only when `page` or `size` is sent; without them it still
+// returns the whole array and sets none of these headers. Returning null in that
+// case lets callers treat "not paginated" and "paginated" uniformly instead of
+// inventing a fake single page. All four headers are exposed through CORS by the
+// backend, so a browser can actually read them.
+const PAGE_HEADERS = Object.freeze({
+  number: "X-Page-Number",
+  size: "X-Page-Size",
+  totalCount: "X-Total-Count",
+  totalPages: "X-Total-Pages"
+});
+
+export function readPageMeta(headers) {
+  const read = name => {
+    const raw = headers.get(name);
+    if (raw === null || raw.trim() === "") return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+  };
+
+  const number = read(PAGE_HEADERS.number);
+  const size = read(PAGE_HEADERS.size);
+  const totalCount = read(PAGE_HEADERS.totalCount);
+  const totalPages = read(PAGE_HEADERS.totalPages);
+  if (number === null || size === null || totalCount === null || totalPages === null) {
+    return null;
+  }
+  return { number, size, totalCount, totalPages };
+}
+
+// `<input type="datetime-local">` yields "2026-01-01T00:00" — no seconds and no
+// offset. The API binds these to Instant, which needs an absolute point in time,
+// so the raw value is rejected. Interpreting it as local wall-clock time and
+// converting to UTC is what the admin means when picking a date on their screen.
+// This path was never exercised before: the filter used to run in the browser,
+// and App.jsx called adminResults() with no arguments at all.
+export function toInstant(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function withPaging(params, { page, size } = {}) {
+  if (Number.isInteger(page) && page >= 0) params.set("page", String(page));
+  if (Number.isInteger(size) && size > 0) params.set("size", String(size));
+  return params;
+}
+
+function queryOf(params) {
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export function normalizeBaseUrl(value) {
   const raw = String(value ?? "").trim();
   if (!raw) throw new TypeError("API URL не може бути порожнім.");
@@ -37,7 +90,7 @@ export class QuizApi {
     this.timeoutMs = timeoutMs;
   }
 
-  async request(path, { method = "GET", body, authenticated = false } = {}) {
+  async request(path, { method = "GET", body, authenticated = false, withPageMeta = false } = {}) {
     const headers = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -80,7 +133,7 @@ export class QuizApi {
         });
       }
 
-      return payload;
+      return withPageMeta ? { items: payload, page: readPageMeta(response.headers) } : payload;
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if (error?.name === "AbortError") {
@@ -166,6 +219,12 @@ export class QuizApi {
     });
   }
 
+  // Deliberately not paginated. The results screen shows the viewer's average
+  // and best score across every attempt, and those cannot be computed from one
+  // page — X-Total-Count answers "how many", not "what is the mean". The list
+  // is also bounded by a single user's attempts, so it grows far slower than
+  // the admin collections. Paginating it would keep the numbers on screen while
+  // silently changing what they mean.
   results() {
     return this.request("/api/v1/results/me", { authenticated: true });
   }
@@ -246,8 +305,12 @@ export class QuizApi {
     });
   }
 
-  adminUsers() {
-    return this.request("/api/v1/admin/users", { authenticated: true });
+  adminUsers({ page, size } = {}) {
+    const query = queryOf(withPaging(new URLSearchParams(), { page, size }));
+    return this.request(`/api/v1/admin/users${query}`, {
+      authenticated: true,
+      withPageMeta: true
+    });
   }
 
   updateUserStatus(id, status) {
@@ -256,11 +319,16 @@ export class QuizApi {
     });
   }
 
-  adminResults({ from, to } = {}) {
+  adminResults({ from, to, page, size } = {}) {
     const params = new URLSearchParams();
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    const query = params.size ? `?${params}` : "";
-    return this.request(`/api/v1/admin/results${query}`, { authenticated: true });
+    const fromInstant = toInstant(from);
+    const toInstantValue = toInstant(to);
+    if (fromInstant) params.set("from", fromInstant);
+    if (toInstantValue) params.set("to", toInstantValue);
+    withPaging(params, { page, size });
+    return this.request(`/api/v1/admin/results${queryOf(params)}`, {
+      authenticated: true,
+      withPageMeta: true
+    });
   }
 }
