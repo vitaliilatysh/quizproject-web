@@ -17,6 +17,10 @@ export function formatCountdown(expiresAt, now = Date.now()) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+// How many quizzes the home page teases. It is both the number rendered and the
+// page size requested, so the two cannot drift apart.
+export const HOME_TEASER_SIZE = 3;
+
 export function difficultyLabel(value) {
   const labels = {
     easy: "Початковий",

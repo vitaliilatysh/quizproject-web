@@ -27,7 +27,7 @@ import {
   SettingsPage,
   SignupPage
 } from "./components.jsx";
-import { complexityLabels, parseRoute, safeHash } from "./utils.js";
+import { complexityLabels, HOME_TEASER_SIZE, parseRoute, safeHash } from "./utils.js";
 
 function navigate(hash) {
   globalThis.location.hash = safeHash(hash);
@@ -111,6 +111,7 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [quizzesPage, setQuizzesPage] = useState(0);
   const [quizzesMeta, setQuizzesMeta] = useState(null);
+  const [catalogueSummary, setCatalogueSummary] = useState(null);
   const [toasts, setToasts] = useState([]);
   const quizzesRequest = useRef(false);
   const resultsRequest = useRef(false);
@@ -176,18 +177,29 @@ export default function App() {
     setQuizError("");
     try {
       // The catalogue page asks the server to search, filter and page. The home
-      // page asks for everything, because its hero counts distinct subjects
-      // across the whole catalogue and that cannot be derived from one page.
-      const { items, page } = catalogueRoute
-        ? await api.quizzes({
+      // page needs only the handful of quizzes it teases, plus two totals that
+      // no page can supply — how many quizzes exist and how many subjects they
+      // span — so it reads those from the summary endpoint instead of counting
+      // a catalogue it no longer downloads.
+      const request = catalogueRoute
+        ? api.quizzes({
             search: appliedSearch,
             complexity: complexityLabels(filter),
             page: quizzesPage,
             size: PAGE_SIZE
         })
-        : await api.quizzes();
+        : api.quizzes({ page: 0, size: HOME_TEASER_SIZE });
+
+      // The hero's figures are worth degrading for, not failing for: web and
+      // API deploy separately, so an API without this endpoint should still
+      // render a working home page with dashes where the totals go.
+      const [{ items, page }, summary] = await Promise.all([
+        request,
+        catalogueRoute ? Promise.resolve(null) : api.catalogueSummary().catch(() => null)
+      ]);
       setQuizzes(items);
       setQuizzesMeta(page);
+      if (!catalogueRoute) setCatalogueSummary(summary);
     } catch (error) {
       setQuizError(friendlyError(error));
     } finally {
@@ -647,7 +659,7 @@ export default function App() {
 
   let page;
   if (route.name === "home") {
-    page = <HomePage session={session} quizzes={quizzes} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={loadQuizzes} onStart={startQuiz} />;
+    page = <HomePage session={session} quizzes={quizzes} summary={catalogueSummary} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={loadQuizzes} onStart={startQuiz} />;
   } else if (route.name === "quizzes") {
     page = <QuizzesPage quizzes={quizzes} pageMeta={quizzesMeta} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onPageChange={setQuizzesPage} onRetry={loadQuizzes} onStart={startQuiz} />;
   } else if (route.name === "login") {
