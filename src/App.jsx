@@ -41,6 +41,9 @@ const PAGE_SIZE = 20;
 // Search now costs a request, so wait for a pause in typing instead of firing
 // one per keystroke.
 const SEARCH_DEBOUNCE_MS = 300;
+// One shared empty Set, so a route without a valid attempt does not hand the
+// page a new identity on every render either.
+const EMPTY_SELECTION = new Set();
 
 function friendlyError(error) {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
@@ -595,13 +598,22 @@ export default function App() {
 
   const toggleAnswer = useCallback((attemptId, answerId, checked) => {
     setSelections(current => {
-      const next = new Set(current[attemptId] || readAnswers(attemptId));
+      const next = new Set(current[attemptId] ?? readAnswers(attemptId));
       if (checked) next.add(answerId);
       else next.delete(answerId);
-      writeAnswers(attemptId, next);
       return { ...current, [attemptId]: next };
     });
   }, []);
+
+  // Persistence mirrors the committed state rather than running inside the
+  // updater. A state updater must be pure: StrictMode invokes it twice, and
+  // under a concurrent re-render it can run against state that is never
+  // committed — writing answers the reader never actually selected.
+  useEffect(() => {
+    for (const [attemptId, answers] of Object.entries(selections)) {
+      writeAnswers(attemptId, answers);
+    }
+  }, [selections]);
 
   const completeAttempt = useCallback(async attemptId => {
     const selected = selections[attemptId] || readAnswers(attemptId);
@@ -613,6 +625,13 @@ export default function App() {
       setResults(null);
       setAdminData(null);
       clearAnswers(attemptId);
+      // Drop it from state as well: the mirror effect writes every entry it
+      // finds, so leaving this one behind would restore what was just cleared.
+      setSelections(current => {
+        const next = { ...current };
+        delete next[attemptId];
+        return next;
+      });
       toast("Тест завершено. Результат збережено.");
     } catch (error) {
       if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
@@ -620,6 +639,20 @@ export default function App() {
       setActionBusy("");
     }
   }, [api, handleAuthError, selections, toast]);
+
+  // The checkbox is controlled by this Set, so its identity has to survive a
+  // re-render that changed nothing about the attempt. Built inline, the
+  // readAnswers fallback produced a fresh Set on every App render — and the App
+  // re-renders whenever the silent token refresh calls setSession, which at the
+  // short JWT_TTL the E2E uses is every few seconds. A click landing in that
+  // window could be reverted before React committed it, which is what
+  // "Clicking the checkbox did not change its state" looks like from Playwright.
+  const attemptSelection = useMemo(() => {
+    if (route.name !== "attempt") return EMPTY_SELECTION;
+    const attemptId = Number(route.params[0]);
+    if (!Number.isInteger(attemptId) || attemptId <= 0) return EMPTY_SELECTION;
+    return selections[attemptId] ?? readAnswers(attemptId);
+  }, [route.name, route.params, selections]);
 
   const testConnection = useCallback(async value => {
     setConnection("checking");
@@ -675,7 +708,7 @@ export default function App() {
   } else if (route.name === "attempt") {
     const attemptId = Number(route.params[0]);
     const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
-    page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={invalid ? new Set() : selections[attemptId] || readAnswers(attemptId)} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={completeAttempt} />;
+    page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={attemptSelection} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={completeAttempt} />;
   } else if (route.name === "admin") {
     page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} resultRange={adminResultRange} onResultRangeChange={changeAdminResultRange} onUsersPageChange={setAdminUsersPage} onResultsPageChange={setAdminResultsPage} onRetry={loadAdmin} onExecute={executeAdmin} />;
   } else {
