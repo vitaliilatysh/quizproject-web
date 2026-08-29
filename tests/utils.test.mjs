@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { difficultyLabel, formatCountdown, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
+import { complexityLabels, difficultyLabel, formatCountdown, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
 
 test("difficultyLabel translates backend values", () => {
   assert.equal(difficultyLabel("EASY"), "Початковий");
@@ -28,4 +28,23 @@ test("quizCountLabel follows Ukrainian plural forms", () => {
   assert.equal(quizCountLabel(3), "тести");
   assert.equal(quizCountLabel(12), "тестів");
   assert.equal(quizCountLabel(21), "тест");
+});
+
+test("complexityLabels maps every difficulty button onto stored level labels", () => {
+  // The database seeds low, medium, high and advanced. "advanced" previously
+  // belonged to no bucket, so those quizzes disappeared from every filter but
+  // "all"; it now sits with the hardest group.
+  assert.deepEqual(complexityLabels("all"), []);
+  assert.deepEqual(complexityLabels("easy"), ["low", "easy"]);
+  assert.deepEqual(complexityLabels("medium"), ["medium", "normal"]);
+  assert.ok(complexityLabels("hard").includes("advanced"));
+  assert.ok(complexityLabels("hard").includes("high"));
+
+  const covered = new Set(["all", "easy", "medium", "hard"].flatMap(complexityLabels));
+  for (const stored of ["low", "medium", "high", "advanced"]) {
+    assert.ok(covered.has(stored), `no button offers the stored level "${stored}"`);
+  }
+
+  // An unknown value must not silently narrow the catalogue to nothing.
+  assert.deepEqual(complexityLabels("nonsense"), []);
 });

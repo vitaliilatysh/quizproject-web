@@ -190,8 +190,25 @@ export class QuizApi {
     });
   }
 
-  quizzes() {
-    return this.request("/api/v1/quizzes");
+  /**
+   * The catalogue's search and level filter are applied by the API, not here.
+   * This endpoint is paginated, so narrowing the loaded page in the browser
+   * would hide every match sitting on another page.
+   *
+   * `complexity` is a list of level labels as the database stores them. The
+   * three difficulty buttons in the UI each map to one or more of those labels,
+   * which keeps the grouping in the interface that shows it rather than in the
+   * API contract.
+   */
+  quizzes({ search, complexity, page, size } = {}) {
+    const params = new URLSearchParams();
+    const term = typeof search === "string" ? search.trim() : "";
+    if (term) params.set("search", term);
+    for (const label of complexity ?? []) {
+      if (label) params.append("complexity", label);
+    }
+    withPaging(params, { page, size });
+    return this.request(`/api/v1/quizzes${queryOf(params)}`, { withPageMeta: true });
   }
 
   quiz(id) {
