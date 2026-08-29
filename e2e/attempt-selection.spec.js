@@ -19,8 +19,12 @@ test("a chosen answer survives a silent token refresh", async ({ page }, testInf
   await testCard.getByRole("button", { name: "Розпочати тест" }).click();
   await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
 
-  const firstAnswer = page.locator("label.answer-option").first().getByRole("checkbox");
-  await firstAnswer.check();
+  // The real input is visually hidden behind a styled span, which intercepts
+  // pointer events. Clicking the label is what a reader actually does, and it
+  // toggles the input natively — no force needed to reach past the decoration.
+  const firstOption = page.locator("label.answer-option").first();
+  const firstAnswer = firstOption.getByRole("checkbox");
+  await firstOption.click();
   await expect(firstAnswer).toBeChecked();
 
   // Wait for a refresh to land, which is what re-renders the whole App.
@@ -48,9 +52,9 @@ test("a selection survives a reload of the attempt page", async ({ page }, testI
   await testCard.getByRole("button", { name: "Розпочати тест" }).click();
   await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
 
-  const firstAnswer = page.locator("label.answer-option").first().getByRole("checkbox");
-  await firstAnswer.check();
-  await expect(firstAnswer).toBeChecked();
+  const firstOption = page.locator("label.answer-option").first();
+  await firstOption.click();
+  await expect(firstOption.getByRole("checkbox")).toBeChecked();
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
