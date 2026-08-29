@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ApiError, QuizApi, normalizeBaseUrl, readPageMeta, toInstant } from "../src/api.js";
+import { HOME_TEASER_SIZE } from "../src/utils.js";
 
 test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
   assert.equal(normalizeBaseUrl(" https://api.example.com///?ignored=yes#fragment "), "https://api.example.com");
@@ -456,5 +457,41 @@ test("quizzes omits blank criteria rather than sending empty parameters", async 
   const query = new URL(observed).searchParams;
   assert.equal(query.has("search"), false);
   assert.equal(query.has("complexity"), false);
+  assert.equal(query.get("page"), "0");
+});
+
+test("catalogueSummary reads the totals a page cannot supply", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify({ totalQuizzes: 42, totalSubjects: 7 }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  assert.deepEqual(await api.catalogueSummary(), { totalQuizzes: 42, totalSubjects: 7 });
+  assert.equal(observed, "https://api.example.com/api/v1/quizzes/summary");
+});
+
+test("the home page asks for only the quizzes it teases", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await api.quizzes({ page: 0, size: HOME_TEASER_SIZE });
+  const query = new URL(observed).searchParams;
+  assert.equal(query.get("size"), String(HOME_TEASER_SIZE));
   assert.equal(query.get("page"), "0");
 });

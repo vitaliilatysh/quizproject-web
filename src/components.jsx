@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   difficultyLabel,
   difficultyTone,
+  HOME_TEASER_SIZE,
   formatCountdown,
   formatDate,
   quizCountLabel
@@ -131,9 +132,12 @@ export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, 
   );
 }
 
-export function HomePage({ session, quizzes, loading, error, busy, onRetry, onStart }) {
-  const total = quizzes?.length ?? "—";
-  const subjects = quizzes ? new Set(quizzes.map(quiz => quiz.subject)).size : "—";
+export function HomePage({ session, quizzes, summary, loading, error, busy, onRetry, onStart }) {
+  // Both figures describe the whole catalogue, and this page only fetches the
+  // few quizzes it teases. Counting the loaded array would report the size of
+  // the teaser while the labels still promised catalogue totals.
+  const total = summary?.totalQuizzes ?? "—";
+  const subjects = summary?.totalSubjects ?? "—";
   return (
     <>
       <section className="hero section-pad">
@@ -166,7 +170,7 @@ export function HomePage({ session, quizzes, loading, error, busy, onRetry, onSt
       </section>
       <section className="section-pad section-block">
         <div className="section-heading"><div><p className="eyebrow">Актуальний каталог</p><h2>Знайди свій наступний тест</h2></div><a className="text-link" href="#/quizzes">Усі тести <span aria-hidden="true">→</span></a></div>
-        <QuizCollection quizzes={quizzes} loading={loading} error={error} limit={3} busy={busy} onRetry={onRetry} onStart={onStart} />
+        <QuizCollection quizzes={quizzes} loading={loading} error={error} limit={HOME_TEASER_SIZE} busy={busy} onRetry={onRetry} onStart={onStart} />
       </section>
     </>
   );

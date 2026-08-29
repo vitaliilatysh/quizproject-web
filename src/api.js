@@ -211,6 +211,15 @@ export class QuizApi {
     return this.request(`/api/v1/quizzes${queryOf(params)}`, { withPageMeta: true });
   }
 
+  /**
+   * Catalogue-wide totals. The home page shows how many quizzes exist and how
+   * many subjects they span; the second figure cannot come from a page, since
+   * X-Total-Count counts matching quizzes, not the subjects behind them.
+   */
+  catalogueSummary() {
+    return this.request("/api/v1/quizzes/summary");
+  }
+
   quiz(id) {
     return this.request(`/api/v1/quizzes/${Number(id)}`);
   }
