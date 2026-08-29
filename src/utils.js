@@ -29,6 +29,25 @@ export function difficultyLabel(value) {
   return labels[String(value).toLowerCase()] || String(value || "Не вказано");
 }
 
+// Level labels the API accepts for each difficulty button. The database seeds
+// four levels — low, medium, high and advanced — while the interface offers
+// three buttons, so one button has to cover two labels.
+//
+// "advanced" used to appear in no bucket at all, which meant a quiz at that
+// level vanished from every filter except "Усі". It belongs with the hardest
+// group. The older spellings are kept because they cost nothing: a label the
+// database does not hold simply matches no row.
+export const COMPLEXITY_LABELS = Object.freeze({
+  all: [],
+  easy: ["low", "easy"],
+  medium: ["medium", "normal"],
+  hard: ["high", "advanced", "hard"]
+});
+
+export function complexityLabels(filter) {
+  return COMPLEXITY_LABELS[filter] ?? COMPLEXITY_LABELS.all;
+}
+
 export function difficultyTone(value) {
   const normalized = String(value).toLowerCase();
   if (["hard", "high"].includes(normalized)) return "coral";

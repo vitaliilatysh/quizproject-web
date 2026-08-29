@@ -42,7 +42,11 @@ test("quizzes requests the public catalogue without an auth header", async () =>
     }
   });
 
-  assert.deepEqual(await api.quizzes(), [{ id: 1, name: "Java" }]);
+  // The catalogue is paginated, so it reports items alongside page metadata.
+  // Called with no criteria it still asks for the whole collection.
+  const result = await api.quizzes();
+  assert.deepEqual(result.items, [{ id: 1, name: "Java" }]);
+  assert.equal(result.page, null);
   assert.equal(observed.url, "https://api.example.com/api/v1/quizzes");
   assert.equal(observed.options.method, "GET");
   assert.equal(observed.options.headers.Authorization, undefined);
@@ -399,5 +403,58 @@ test("a blank date range is omitted from the query entirely", async () => {
   const query = new URL(observed).searchParams;
   assert.equal(query.has("from"), false);
   assert.equal(query.has("to"), false);
+  assert.equal(query.get("page"), "0");
+});
+
+test("quizzes sends the search term and every requested level label", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "X-Page-Number": "0",
+          "X-Page-Size": "20",
+          "X-Total-Count": "3",
+          "X-Total-Pages": "1"
+        }
+      });
+    }
+  });
+
+  const result = await api.quizzes({
+    search: "  java  ",
+    complexity: ["high", "advanced", "hard"],
+    page: 0,
+    size: 20
+  });
+
+  const query = new URL(observed).searchParams;
+  assert.equal(query.get("search"), "java");
+  assert.deepEqual(query.getAll("complexity"), ["high", "advanced", "hard"]);
+  assert.equal(query.get("page"), "0");
+  assert.deepEqual(result.page, { number: 0, size: 20, totalCount: 3, totalPages: 1 });
+});
+
+test("quizzes omits blank criteria rather than sending empty parameters", async () => {
+  let observed;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async url => {
+      observed = url;
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await api.quizzes({ search: "   ", complexity: [], page: 0, size: 20 });
+  const query = new URL(observed).searchParams;
+  assert.equal(query.has("search"), false);
+  assert.equal(query.has("complexity"), false);
   assert.equal(query.get("page"), "0");
 });

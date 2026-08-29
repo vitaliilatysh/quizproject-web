@@ -66,21 +66,7 @@ export function Layout({ route, session, onLogout, toasts, children }) {
   );
 }
 
-function matchesComplexity(complexity, filter) {
-  const normalized = String(complexity).toLowerCase();
-  if (filter === "all") return true;
-  if (filter === "easy") return ["easy", "low"].includes(normalized);
-  if (filter === "medium") return ["medium", "normal"].includes(normalized);
-  return ["hard", "high"].includes(normalized);
-}
 
-export function filterQuizzes(quizzes, search, filter) {
-  const query = search.trim().toLowerCase();
-  return (quizzes || []).filter(quiz => {
-    const text = `${quiz.name} ${quiz.subject}`.toLowerCase();
-    return (!query || text.includes(query)) && matchesComplexity(quiz.complexity, filter);
-  });
-}
 
 function QuizCard({ quiz, compact, busy, onStart }) {
   const tone = difficultyTone(quiz.complexity);
@@ -105,7 +91,7 @@ function QuizCard({ quiz, compact, busy, onStart }) {
   );
 }
 
-export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, onStart, search = "", filter = "all" }) {
+export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, onStart }) {
   if (loading && !quizzes) {
     return (
       <div className="quiz-grid" aria-label="Завантаження тестів">
@@ -130,8 +116,8 @@ export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, 
     );
   }
 
-  const filtered = filterQuizzes(quizzes, search, filter);
-  const visible = limit ? filtered.slice(0, limit) : filtered;
+  const items = quizzes || [];
+  const visible = limit ? items.slice(0, limit) : items;
   if (!visible.length) {
     return <section className="empty-state"><h3>Нічого не знайдено</h3><p>Спробуйте змінити пошук або фільтр складності.</p></section>;
   }
@@ -186,8 +172,11 @@ export function HomePage({ session, quizzes, loading, error, busy, onRetry, onSt
   );
 }
 
-export function QuizzesPage({ quizzes, loading, error, busy, search, filter, onSearch, onFilter, onRetry, onStart }) {
-  const count = filterQuizzes(quizzes, search, filter).length;
+export function QuizzesPage({ quizzes, pageMeta, loading, error, busy, search, filter,
+  onSearch, onFilter, onPageChange, onRetry, onStart }) {
+  // The API reports how many quizzes match, which is not the same as how many
+  // are on the page in front of you.
+  const count = pageMeta?.totalCount ?? (quizzes || []).length;
   return (
     <>
       <section className="page-hero section-pad page-hero--catalog">
@@ -205,7 +194,8 @@ export function QuizzesPage({ quizzes, loading, error, busy, search, filter, onS
           </div>
         </div>
         <p className="catalog-count">{count} {quizCountLabel(count)}</p>
-        <QuizCollection quizzes={quizzes} loading={loading} error={error} busy={busy} search={search} filter={filter} onRetry={onRetry} onStart={onStart} />
+        <QuizCollection quizzes={quizzes} loading={loading} error={error} busy={busy} onRetry={onRetry} onStart={onStart} />
+        <Pager meta={pageMeta} onChange={onPageChange} busy={loading} label="Тести" />
       </section>
     </>
   );

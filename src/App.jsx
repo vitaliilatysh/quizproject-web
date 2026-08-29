@@ -27,7 +27,7 @@ import {
   SettingsPage,
   SignupPage
 } from "./components.jsx";
-import { parseRoute, safeHash } from "./utils.js";
+import { complexityLabels, parseRoute, safeHash } from "./utils.js";
 
 function navigate(hash) {
   globalThis.location.hash = safeHash(hash);
@@ -38,6 +38,9 @@ const TOKEN_REFRESH_RETRY_MS = 30_000;
 // Matches the API's own default page size, so the first page a client renders
 // is the same size whether or not it asked for one.
 const PAGE_SIZE = 20;
+// Search now costs a request, so wait for a pause in typing instead of firing
+// one per keystroke.
+const SEARCH_DEBOUNCE_MS = 300;
 
 function friendlyError(error) {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
@@ -101,8 +104,13 @@ export default function App() {
   const [passwordError, setPasswordError] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const [connection, setConnection] = useState("idle");
+  // `search` tracks the input; `appliedSearch` is what actually gets requested,
+  // trailing it by one debounce interval.
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [quizzesPage, setQuizzesPage] = useState(0);
+  const [quizzesMeta, setQuizzesMeta] = useState(null);
   const [toasts, setToasts] = useState([]);
   const quizzesRequest = useRef(false);
   const resultsRequest = useRef(false);
@@ -159,20 +167,34 @@ export default function App() {
     return true;
   }, [toast]);
 
+  const catalogueRoute = route.name === "quizzes";
+
   const loadQuizzes = useCallback(async () => {
     if (quizzesRequest.current) return;
     quizzesRequest.current = true;
     setQuizzesLoading(true);
     setQuizError("");
     try {
-      setQuizzes(await api.quizzes());
+      // The catalogue page asks the server to search, filter and page. The home
+      // page asks for everything, because its hero counts distinct subjects
+      // across the whole catalogue and that cannot be derived from one page.
+      const { items, page } = catalogueRoute
+        ? await api.quizzes({
+            search: appliedSearch,
+            complexity: complexityLabels(filter),
+            page: quizzesPage,
+            size: PAGE_SIZE
+        })
+        : await api.quizzes();
+      setQuizzes(items);
+      setQuizzesMeta(page);
     } catch (error) {
       setQuizError(friendlyError(error));
     } finally {
       quizzesRequest.current = false;
       setQuizzesLoading(false);
     }
-  }, [api]);
+  }, [api, appliedSearch, catalogueRoute, filter, quizzesPage]);
 
   const loadResults = useCallback(async () => {
     if (!session || resultsRequest.current) return;
@@ -280,10 +302,37 @@ export default function App() {
   }, [route]);
 
   useEffect(() => {
-    if (["home", "quizzes"].includes(route.name) && quizzes === null && !quizzesLoading) {
+    // Gated on the error rather than on the loading flag. Gating on loading
+    // deadlocks against the reset effect below, which raises it; and a failed
+    // load leaves quizzes null with loading back to false, so a loading-based
+    // guard re-fires the request forever against an API that is still down.
+    // quizzesRequest already prevents overlapping calls, and the error is
+    // cleared whenever the query changes or the reader retries.
+    if (["home", "quizzes"].includes(route.name) && quizzes === null && !quizError) {
       void loadQuizzes();
     }
-  }, [loadQuizzes, quizzes, quizzesLoading, route.name]);
+  }, [loadQuizzes, quizError, quizzes, route.name]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // A narrower search or filter can have fewer pages than the one selected,
+  // which would otherwise land on an empty page that reads as "nothing found".
+  useEffect(() => {
+    setQuizzesPage(0);
+  }, [appliedSearch, filter]);
+
+  // Any change to the query invalidates the cached slice. Loading is raised in
+  // the same effect: leaving it false for one render shows the empty state
+  // under the new controls, which looks like a search that found nothing.
+  useEffect(() => {
+    setQuizzes(null);
+    setQuizzesMeta(null);
+    setQuizError("");
+    setQuizzesLoading(true);
+  }, [appliedSearch, catalogueRoute, filter, quizzesPage]);
 
   useEffect(() => {
     if (route.name !== "results") return;
@@ -600,7 +649,7 @@ export default function App() {
   if (route.name === "home") {
     page = <HomePage session={session} quizzes={quizzes} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={loadQuizzes} onStart={startQuiz} />;
   } else if (route.name === "quizzes") {
-    page = <QuizzesPage quizzes={quizzes} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onRetry={loadQuizzes} onStart={startQuiz} />;
+    page = <QuizzesPage quizzes={quizzes} pageMeta={quizzesMeta} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onPageChange={setQuizzesPage} onRetry={loadQuizzes} onStart={startQuiz} />;
   } else if (route.name === "login") {
     page = <LoginPage error={loginError} busy={actionBusy === "login"} onSubmit={submitLogin} />;
   } else if (route.name === "signup") {
