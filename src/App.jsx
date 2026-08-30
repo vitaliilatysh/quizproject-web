@@ -3,6 +3,7 @@ import { ApiError, QuizApi, normalizeBaseUrl } from "./api.js";
 import {
   clearAnswers,
   clearSession,
+  clearStoredAnswers,
   consumePendingQuiz,
   consumeReturnTo,
   readAnswers,
@@ -77,6 +78,9 @@ function useRoute() {
 export default function App() {
   const route = useRoute();
   const [session, setSession] = useState(() => readSession());
+  // Who the cached data belongs to. A refreshed token keeps the same login, so
+  // this only changes when a different person is actually signed in.
+  const accountName = session?.username ?? null;
   const [apiUrl, setApiUrl] = useState(() => readApiUrl());
   const [quizzes, setQuizzes] = useState(null);
   const [quizzesLoading, setQuizzesLoading] = useState(false);
@@ -121,6 +125,9 @@ export default function App() {
   const adminRequest = useRef(false);
   const profileRequest = useRef(false);
   const attemptRequests = useRef(new Set());
+  // The account the cached data currently belongs to. Also what an in-flight
+  // request compares itself against before committing what it loaded.
+  const activeAccount = useRef(accountName);
 
   const api = useMemo(() => new QuizApi({
     baseUrl: apiUrl,
@@ -213,11 +220,17 @@ export default function App() {
 
   const loadResults = useCallback(async () => {
     if (!session || resultsRequest.current) return;
+    // Whose data this request is for. A request already in flight when a
+    // different account signs in would otherwise land after the caches were
+    // emptied and put the previous reader's rows back on screen.
+    const requestedBy = session.username;
     resultsRequest.current = true;
     setResultsLoading(true);
     setResultError("");
     try {
-      setResults(await api.results());
+      const rows = await api.results();
+      if (activeAccount.current !== requestedBy) return;
+      setResults(rows);
     } catch (error) {
       if (!handleAuthError(error, "#/results")) setResultError(friendlyError(error));
     } finally {
@@ -228,11 +241,13 @@ export default function App() {
 
   const loadAttempt = useCallback(async attemptId => {
     if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || attemptRequests.current.has(attemptId)) return;
+    const requestedBy = session.username;
     attemptRequests.current.add(attemptId);
     setAttemptLoading(current => ({ ...current, [attemptId]: true }));
     setAttemptErrors(current => ({ ...current, [attemptId]: "" }));
     try {
       const attempt = await api.attempt(attemptId);
+      if (activeAccount.current !== requestedBy) return;
       setAttempts(current => ({ ...current, [attemptId]: attempt }));
       setSelections(current => current[attemptId]
         ? current
@@ -256,6 +271,7 @@ export default function App() {
 
   const loadAdmin = useCallback(async () => {
     if (!session || adminRequest.current) return;
+    const requestedBy = session.username;
     adminRequest.current = true;
     setAdminLoading(true);
     setAdminError("");
@@ -275,6 +291,7 @@ export default function App() {
           size: PAGE_SIZE
         })
       ]);
+      if (activeAccount.current !== requestedBy) return;
       setAdminData({
         subjects,
         levels,
@@ -298,11 +315,14 @@ export default function App() {
 
   const loadProfile = useCallback(async () => {
     if (!session || profileRequest.current) return;
+    const requestedBy = session.username;
     profileRequest.current = true;
     setProfileLoading(true);
     setProfileError("");
     try {
-      setProfile(await api.profile());
+      const loaded = await api.profile();
+      if (activeAccount.current !== requestedBy) return;
+      setProfile(loaded);
     } catch (error) {
       if (!handleAuthError(error, "#/profile")) setProfileError(friendlyError(error));
     } finally {
@@ -372,15 +392,37 @@ export default function App() {
     setAdminLoading(true);
   }, [adminUsersPage, adminResultsPage, adminResultRange.from, adminResultRange.to]);
 
-  // When the session ends, paging must not carry over to whoever logs in next.
-  // Keyed on the session going falsy rather than on every change, so a silent
-  // token refresh does not throw the viewer back to the first page.
+  // Everything held for one account is dropped when a different one takes over
+  // the tab.
+  //
+  // Keyed on the login rather than on the session object, because a silent token
+  // refresh mints a new object for the same person every few minutes and must
+  // not count as a change. And keyed on the login rather than on the session
+  // going falsy, because #/login renders its form to an authenticated reader
+  // too: one account can replace another without ever passing through
+  // logged-out, and that path used to clear nothing but the profile.
+  //
+  // The attempt caches are the ones that matter. The route effect skips its
+  // request whenever attempts[id] is already there, so a leftover entry is
+  // rendered to the next reader rather than being refused by the API — which is
+  // what would happen, since an attempt only loads for the account that owns it.
   useEffect(() => {
-    if (session) return;
+    if (activeAccount.current === accountName) return;
+    activeAccount.current = accountName;
     setAdminUsersPage(0);
     setAdminResultsPage(0);
     setAdminResultRange({ from: "", to: "" });
-  }, [session]);
+    setAttempts({});
+    setAttemptErrors({});
+    setAttemptLoading({});
+    setSelections({});
+    setCompletions({});
+    setResults(null);
+    setAdminData(null);
+    setProfile(null);
+    // Saved answers outlive React state, and are read back by attempt id alone.
+    clearStoredAnswers();
+  }, [accountName]);
 
   useEffect(() => {
     if (route.name !== "attempt") return;
@@ -460,7 +502,6 @@ export default function App() {
       const token = await api.login(username, String(data.get("password") || ""));
       const nextSession = writeSession(token, username);
       setSession(nextSession);
-      setProfile(null);
       setPasswordError("");
       toast("Вхід успішний. Вітаємо!");
 
@@ -509,7 +550,6 @@ export default function App() {
       const token = await api.register(account);
       const nextSession = writeSession(token, account.username);
       setSession(nextSession);
-      setProfile(null);
       setPasswordError("");
       toast("Обліковий запис створено. Вітаємо!");
 
@@ -572,10 +612,10 @@ export default function App() {
 
   const logout = useCallback(() => {
     clearSession();
+    // Dropping the cached data is the account effect's job, and only its job:
+    // this bug existed because signing out cleared some of it here while
+    // signing in as somebody else cleared almost none over there.
     setSession(null);
-    setResults(null);
-    setAdminData(null);
-    setProfile(null);
     setPasswordError("");
     toast("Ви вийшли з облікового запису.");
     navigate("#/");

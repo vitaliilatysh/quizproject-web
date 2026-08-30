@@ -2,6 +2,7 @@ const SESSION_KEY = "quizproject.session";
 const API_URL_KEY = "quizproject.apiUrl";
 const RETURN_TO_KEY = "quizproject.returnTo";
 const PENDING_QUIZ_KEY = "quizproject.pendingQuiz";
+const ANSWERS_PREFIX = "quizproject.answers.";
 
 function decodeJwtPayload(token) {
   try {
@@ -80,7 +81,7 @@ export function consumePendingQuiz() {
 
 export function readAnswers(attemptId) {
   try {
-    const values = JSON.parse(sessionStorage.getItem(`quizproject.answers.${attemptId}`) || "[]");
+    const values = JSON.parse(sessionStorage.getItem(`${ANSWERS_PREFIX}${attemptId}`) || "[]");
     return new Set(values.filter(Number.isInteger));
   } catch {
     return new Set();
@@ -88,9 +89,32 @@ export function readAnswers(attemptId) {
 }
 
 export function writeAnswers(attemptId, values) {
-  sessionStorage.setItem(`quizproject.answers.${attemptId}`, JSON.stringify([...values]));
+  sessionStorage.setItem(`${ANSWERS_PREFIX}${attemptId}`, JSON.stringify([...values]));
 }
 
 export function clearAnswers(attemptId) {
-  sessionStorage.removeItem(`quizproject.answers.${attemptId}`);
+  sessionStorage.removeItem(`${ANSWERS_PREFIX}${attemptId}`);
+}
+
+/**
+ * Forgets the answers saved for every attempt, whichever they belong to.
+ *
+ * Used when one account replaces another in the tab. Clearing them one
+ * attempt at a time is not possible there: the outgoing reader's attempt ids
+ * are exactly what is being discarded, so nothing is left to enumerate them
+ * with. The keys are read back by attempt id alone, so leaving them behind
+ * would offer one reader's choices to the next.
+ */
+export function clearStoredAnswers() {
+  // Walked with length/key rather than Object.keys. Enumerating a Storage as a
+  // plain object works only because of its named-property behaviour, which any
+  // stand-in for it is unlikely to reproduce; length and key are the API it
+  // actually publishes. Collected first, because removing while indexing shifts
+  // everything after the entry that was just dropped.
+  const doomed = [];
+  for (let index = 0; index < sessionStorage.length; index += 1) {
+    const key = sessionStorage.key(index);
+    if (key?.startsWith(ANSWERS_PREFIX)) doomed.push(key);
+  }
+  for (const key of doomed) sessionStorage.removeItem(key);
 }
