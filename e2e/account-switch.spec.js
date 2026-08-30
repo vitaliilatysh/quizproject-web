@@ -27,7 +27,11 @@ test("an attempt is not shown to the next reader in the same tab", async ({ page
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 
   await page.getByRole("button", { name: "Вийти" }).click();
-  await expect(page.getByRole("link", { name: "Увійти" })).toBeVisible();
+  // Not the "Увійти" link: the signed-out home page carries two of them, the
+  // header's and the hero's "Увійти до кабінету", and a locator matching both
+  // fails on strict mode. The account chip is gone only when nobody is signed
+  // in, which is the thing actually being waited for.
+  await expect(page.locator(".account-name")).toHaveCount(0);
 
   await register(page, second, "SwitchPassB1!");
 
@@ -83,7 +87,11 @@ test("a paused quiz keeps its answers when the same reader signs back in", async
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 
   await page.getByRole("button", { name: "Вийти" }).click();
-  await expect(page.getByRole("link", { name: "Увійти" })).toBeVisible();
+  // Not the "Увійти" link: the signed-out home page carries two of them, the
+  // header's and the hero's "Увійти до кабінету", and a locator matching both
+  // fails on strict mode. The account chip is gone only when nobody is signed
+  // in, which is the thing actually being waited for.
+  await expect(page.locator(".account-name")).toHaveCount(0);
   await login(page, reader, password);
 
   await page.evaluate(hash => { globalThis.location.hash = hash; }, attemptUrl);
