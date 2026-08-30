@@ -393,21 +393,32 @@ export default function App() {
   }, [adminUsersPage, adminResultsPage, adminResultRange.from, adminResultRange.to]);
 
   // Everything held for one account is dropped when a different one takes over
-  // the tab.
+  // the tab — and only then.
   //
   // Keyed on the login rather than on the session object, because a silent token
   // refresh mints a new object for the same person every few minutes and must
   // not count as a change. And keyed on the login rather than on the session
   // going falsy, because #/login renders its form to an authenticated reader
   // too: one account can replace another without ever passing through
-  // logged-out, and that path used to clear nothing but the profile.
+  // signed-out, and that path used to clear nothing but the profile.
+  //
+  // Signing out is deliberately not a handover. An expiring session is the most
+  // likely way to be interrupted mid-quiz, and it remembers the attempt URL so
+  // the reader lands back on it — clearing then would greet them with their own
+  // unfinished quiz and none of their answers. Ownership is kept until somebody
+  // else actually signs in, which is safe because nothing renders account data
+  // while signed out: every guarded route sends a reader with no session to the
+  // login page.
   //
   // The attempt caches are the ones that matter. The route effect skips its
   // request whenever attempts[id] is already there, so a leftover entry is
   // rendered to the next reader rather than being refused by the API — which is
   // what would happen, since an attempt only loads for the account that owns it.
+  // The clear runs before that can be seen: signing in as somebody else is only
+  // reachable from #/login or #/signup, so the attempt page is not mounted, and
+  // the effect commits before the hash change that navigates away from the form.
   useEffect(() => {
-    if (activeAccount.current === accountName) return;
+    if (accountName === null || activeAccount.current === accountName) return;
     activeAccount.current = accountName;
     setAdminUsersPage(0);
     setAdminResultsPage(0);

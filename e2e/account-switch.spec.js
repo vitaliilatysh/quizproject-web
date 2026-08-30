@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { register, uniqueUsername } from "./helpers.js";
+import { login, register, uniqueUsername } from "./helpers.js";
 
 // Attempts, results and saved answers used to be cached under no particular
 // owner. Signing out cleared some of them and signing straight in as somebody
@@ -62,4 +62,31 @@ test("signing in over an open session does not inherit its data", async ({ page 
   await page.evaluate(hash => { globalThis.location.hash = hash; }, attemptUrl);
   await expect(page.getByRole("heading", { name: "Спроба недоступна" })).toBeVisible();
   await expect(page.locator(".question-card")).toHaveCount(0);
+});
+
+// The counterpart to the two above, and the reason signing out is not treated
+// as a handover. An expiring session is the likeliest way to be interrupted in
+// the middle of a quiz, and it remembers the attempt URL so the reader comes
+// straight back to it. Clearing on the way out would hand them their own
+// unfinished quiz with every answer gone.
+test("a paused quiz keeps its answers when the same reader signs back in", async ({ page }, testInfo) => {
+  const reader = uniqueUsername(testInfo, "same");
+  const password = "SamePass123!";
+
+  await register(page, reader, password);
+  const card = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  await card.getByRole("button", { name: "Розпочати тест" }).click();
+  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  const attemptUrl = new URL(page.url()).hash;
+
+  await page.locator("label.answer-option").first().click();
+  await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
+
+  await page.getByRole("button", { name: "Вийти" }).click();
+  await expect(page.getByRole("link", { name: "Увійти" })).toBeVisible();
+  await login(page, reader, password);
+
+  await page.evaluate(hash => { globalThis.location.hash = hash; }, attemptUrl);
+  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 });
