@@ -26,6 +26,16 @@ test("an attempt is not shown to the next reader in the same tab", async ({ page
   await page.locator("label.answer-option").first().click();
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 
+  // Leave the attempt before signing out. Signing out while standing on a
+  // guarded route clears the session a render before the hash changes, so the
+  // route guard still runs, remembers this URL and sends the reader to the
+  // login form — after which the next sign-in returns here rather than to the
+  // catalogue, and the shared helpers, which expect the catalogue, fail. That
+  // is the app behaving as designed; it is simply not what these tests are
+  // about.
+  await page.evaluate(() => { globalThis.location.hash = "#/quizzes"; });
+  await expect(page).toHaveURL(/#\/quizzes$/);
+
   await page.getByRole("button", { name: "Вийти" }).click();
   // Not the "Увійти" link: the signed-out home page carries two of them, the
   // header's and the hero's "Увійти до кабінету", and a locator matching both
@@ -85,6 +95,16 @@ test("a paused quiz keeps its answers when the same reader signs back in", async
 
   await page.locator("label.answer-option").first().click();
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
+
+  // Leave the attempt before signing out. Signing out while standing on a
+  // guarded route clears the session a render before the hash changes, so the
+  // route guard still runs, remembers this URL and sends the reader to the
+  // login form — after which the next sign-in returns here rather than to the
+  // catalogue, and the shared helpers, which expect the catalogue, fail. That
+  // is the app behaving as designed; it is simply not what these tests are
+  // about.
+  await page.evaluate(() => { globalThis.location.hash = "#/quizzes"; });
+  await expect(page).toHaveURL(/#\/quizzes$/);
 
   await page.getByRole("button", { name: "Вийти" }).click();
   // Not the "Увійти" link: the signed-out home page carries two of them, the
