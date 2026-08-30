@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { complexityLabels, difficultyLabel, formatCountdown, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
+import { complexityLabels, difficultyLabel, difficultyTone, formatCountdown, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
+
+// The levels the production migration seeds. Every one of them reaches the
+// interface, so everything the interface does with difficulty has to account
+// for all four.
+const STORED_LEVELS = ["low", "medium", "high", "advanced"];
 
 test("difficultyLabel translates backend values", () => {
   assert.equal(difficultyLabel("EASY"), "Початковий");
@@ -41,10 +46,33 @@ test("complexityLabels maps every difficulty button onto stored level labels", (
   assert.ok(complexityLabels("hard").includes("high"));
 
   const covered = new Set(["all", "easy", "medium", "hard"].flatMap(complexityLabels));
-  for (const stored of ["low", "medium", "high", "advanced"]) {
+  for (const stored of STORED_LEVELS) {
     assert.ok(covered.has(stored), `no button offers the stored level "${stored}"`);
   }
 
   // An unknown value must not silently narrow the catalogue to nothing.
   assert.deepEqual(complexityLabels("nonsense"), []);
+});
+
+test("every stored level is translated and coloured, not only filtered", () => {
+  // Filtering, wording and colour were three separate lists, and "advanced" was
+  // added to the first alone: the hardest level the database holds was found by
+  // the "Просунутий" button and then shown as the raw word "advanced" on the
+  // green badge that means "easiest". Asserting the whole seeded set rather
+  // than that one value, because the next level added will drift the same way.
+  for (const level of STORED_LEVELS) {
+    assert.notEqual(difficultyLabel(level), level, `level "${level}" is shown untranslated`);
+    assert.ok(["green", "blue", "coral"].includes(difficultyTone(level)),
+      `level "${level}" has no colour of its own`);
+  }
+
+  assert.equal(difficultyLabel("advanced"), "Просунутий");
+  // Tied to the level it shares a bucket with rather than to a literal, so the
+  // two cannot be given different colours without failing here.
+  assert.equal(difficultyTone("advanced"), difficultyTone("high"));
+
+  // A value the database does not hold still has to render as something.
+  assert.equal(difficultyLabel("custom"), "custom");
+  assert.equal(difficultyLabel(""), "Не вказано");
+  assert.equal(difficultyTone("custom"), "green");
 });
