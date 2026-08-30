@@ -21,42 +21,41 @@ export function formatCountdown(expiresAt, now = Date.now()) {
 // page size requested, so the two cannot drift apart.
 export const HOME_TEASER_SIZE = 3;
 
-export function difficultyLabel(value) {
-  const labels = {
-    easy: "Початковий",
-    low: "Початковий",
-    medium: "Середній",
-    normal: "Середній",
-    hard: "Просунутий",
-    high: "Просунутий"
-  };
-  return labels[String(value).toLowerCase()] || String(value || "Не вказано");
-}
-
-// Level labels the API accepts for each difficulty button. The database seeds
-// four levels — low, medium, high and advanced — while the interface offers
-// three buttons, so one button has to cover two labels.
+// The three difficulty buttons the interface offers: which stored level labels
+// each one covers, and how a quiz at that level is presented.
 //
-// "advanced" used to appear in no bucket at all, which meant a quiz at that
-// level vanished from every filter except "Усі". It belongs with the hardest
-// group. The older spellings are kept because they cost nothing: a label the
-// database does not hold simply matches no row.
-export const COMPLEXITY_LABELS = Object.freeze({
-  all: [],
-  easy: ["low", "easy"],
-  medium: ["medium", "normal"],
-  hard: ["high", "advanced", "hard"]
+// The database seeds four levels — low, medium, high and advanced — so one
+// button has to cover two. The older spellings are kept because they cost
+// nothing: a label the database does not hold simply matches no row.
+//
+// One map rather than three lists, because three lists is what this was, and
+// they drifted. "advanced" was added to the filter alone, so a quiz at the
+// hardest level the database holds was found by the "Просунутий" button and
+// then shown with the raw English word on the green badge meaning "easiest" —
+// the card contradicting the filter that produced it.
+const DIFFICULTY_BUCKETS = Object.freeze({
+  easy: Object.freeze({ levels: ["low", "easy"], text: "Початковий", tone: "green" }),
+  medium: Object.freeze({ levels: ["medium", "normal"], text: "Середній", tone: "blue" }),
+  hard: Object.freeze({ levels: ["high", "advanced", "hard"], text: "Просунутий", tone: "coral" })
 });
 
-export function complexityLabels(filter) {
-  return COMPLEXITY_LABELS[filter] ?? COMPLEXITY_LABELS.all;
+function bucketFor(value) {
+  const normalized = String(value ?? "").toLowerCase();
+  return Object.values(DIFFICULTY_BUCKETS).find(bucket => bucket.levels.includes(normalized));
+}
+
+export function difficultyLabel(value) {
+  return bucketFor(value)?.text || String(value || "Не вказано");
 }
 
 export function difficultyTone(value) {
-  const normalized = String(value).toLowerCase();
-  if (["hard", "high"].includes(normalized)) return "coral";
-  if (["medium", "normal"].includes(normalized)) return "blue";
-  return "green";
+  return bucketFor(value)?.tone || "green";
+}
+
+// The level labels to ask the API for. An unknown button narrows nothing rather
+// than narrowing the catalogue to nothing, which is also what "Усі" wants.
+export function complexityLabels(filter) {
+  return DIFFICULTY_BUCKETS[filter]?.levels ?? [];
 }
 
 export function parseRoute(hash = globalThis.location?.hash || "") {
