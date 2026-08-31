@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { serverNow } from "./clock.js";
 import {
   difficultyLabel,
   difficultyTone,
@@ -344,10 +345,15 @@ export function ResultsPage({ results, loading, error, onRetry }) {
   );
 }
 
+// Ticked from server time, not the device's, and for the same reason the
+// automatic submission is scheduled from it: the deadline being counted down to
+// belongs to the server. A device clock minutes adrift used to make this timer
+// disagree with the API about how long was left, and the reader believed the
+// timer.
 function Countdown({ expiresAt }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(serverNow());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setNow(serverNow()), 1000);
     return () => window.clearInterval(timer);
   }, []);
   const urgent = new Date(expiresAt).getTime() - now < 5 * 60_000;

@@ -1,3 +1,5 @@
+import { recordServerTime } from "./clock.js";
+
 export class ApiError extends Error {
   constructor(message, { status = 0, code = "NETWORK_ERROR", path = "", correlationId = null, cause } = {}) {
     super(message, { cause });
@@ -82,12 +84,18 @@ export class QuizApi {
     baseUrl,
     getToken = () => null,
     fetchImpl = (...args) => globalThis.fetch(...args),
-    timeoutMs = 12_000
+    timeoutMs = 12_000,
+    // Whether this client's responses are allowed to set the server clock.
+    // False for one that is not the API the app is running against: the
+    // settings screen probes an address the reader typed, and a stranger's
+    // clock must not decide when an attempt in progress submits itself.
+    readsServerClock = true
   }) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
     this.getToken = getToken;
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
+    this.readsServerClock = readsServerClock;
   }
 
   async request(path, { method = "GET", body, authenticated = false, withPageMeta = false } = {}) {
@@ -109,6 +117,8 @@ export class QuizApi {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
+    const sentAt = Date.now();
+
     try {
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
@@ -116,6 +126,12 @@ export class QuizApi {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal
       });
+      // Every response is a reading of the server's clock, including a failing
+      // one, and taken here rather than after the body so that reading a slow
+      // stream is not counted as time in flight. A response that carries no
+      // readable Date leaves the previous reading standing.
+      if (this.readsServerClock) recordServerTime(response.headers.get("Date"), sentAt);
+
       const contentType = response.headers.get("content-type") ?? "";
       const payload = contentType.includes("application/json")
         ? await response.json()

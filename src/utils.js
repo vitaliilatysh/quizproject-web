@@ -1,3 +1,5 @@
+import { serverNow } from "./clock.js";
+
 export function formatDate(value) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("uk-UA", {
@@ -9,7 +11,7 @@ export function formatDate(value) {
   }).format(new Date(value));
 }
 
-export function formatCountdown(expiresAt, now = Date.now()) {
+export function formatCountdown(expiresAt, now = serverNow()) {
   const remaining = Math.max(0, new Date(expiresAt).getTime() - now);
   const totalSeconds = Math.ceil(remaining / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -97,7 +99,7 @@ export const AUTO_SUBMIT_LEAD_MS = 3_000;
  * error about it. Zero when the deadline is closer than the lead — there is
  * still a chance, and not trying is a certainty.
  */
-export function autoSubmitDelay(expiresAt, now = Date.now()) {
+export function autoSubmitDelay(expiresAt, now = serverNow()) {
   const deadline = new Date(expiresAt).getTime();
   if (!Number.isFinite(deadline) || deadline <= now) return null;
   return Math.max(0, deadline - AUTO_SUBMIT_LEAD_MS - now);
