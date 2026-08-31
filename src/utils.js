@@ -77,3 +77,28 @@ export function quizCountLabel(count) {
   if (last >= 2 && last <= 4) return "тести";
   return "тестів";
 }
+
+// Submitting at the moment the countdown reaches zero is submitting too late.
+// The API stamps a completion when it handles the request and refuses anything
+// stamped after the deadline, so a request that leaves at zero arrives late by
+// however long the network took — always. The submission has to start before
+// the deadline for the answers to count at all.
+//
+// Three seconds buys room for a slow connection. It is time taken off the end
+// of the attempt, which is the price of not losing the whole thing.
+export const AUTO_SUBMIT_LEAD_MS = 3_000;
+
+/**
+ * How long to wait before submitting an attempt on the reader's behalf, or null
+ * when there is nothing worth waiting for.
+ *
+ * Null once the deadline has passed: the API would refuse that submission, so
+ * firing one would only replace a quiz the reader can no longer finish with an
+ * error about it. Zero when the deadline is closer than the lead — there is
+ * still a chance, and not trying is a certainty.
+ */
+export function autoSubmitDelay(expiresAt, now = Date.now()) {
+  const deadline = new Date(expiresAt).getTime();
+  if (!Number.isFinite(deadline) || deadline <= now) return null;
+  return Math.max(0, deadline - AUTO_SUBMIT_LEAD_MS - now);
+}

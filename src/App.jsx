@@ -28,7 +28,7 @@ import {
   SettingsPage,
   SignupPage
 } from "./components.jsx";
-import { complexityLabels, HOME_TEASER_SIZE, parseRoute, safeHash } from "./utils.js";
+import { autoSubmitDelay, complexityLabels, HOME_TEASER_SIZE, parseRoute, safeHash } from "./utils.js";
 
 function navigate(hash) {
   globalThis.location.hash = safeHash(hash);
@@ -125,6 +125,9 @@ export default function App() {
   const adminRequest = useRef(false);
   const profileRequest = useRef(false);
   const attemptRequests = useRef(new Set());
+  // Completions in flight, so the deadline and the button cannot submit the
+  // same attempt twice and leave one of them to report a conflict.
+  const completionRequests = useRef(new Set());
   // The account the cached data currently belongs to. Also what an in-flight
   // request compares itself against before committing what it loaded.
   const activeAccount = useRef(accountName);
@@ -666,9 +669,17 @@ export default function App() {
     }
   }, [selections]);
 
-  const completeAttempt = useCallback(async attemptId => {
+  // `confirm` is false when the deadline submits instead of the reader: there is
+  // nothing to agree to, and a dialog nobody is there to dismiss would hold the
+  // answers until the attempt expired — the very thing this avoids.
+  const completeAttempt = useCallback(async (attemptId, { confirm = true } = {}) => {
+    if (completionRequests.current.has(attemptId)) return;
     const selected = selections[attemptId] || readAnswers(attemptId);
-    if (!window.confirm(`Надіслати ${selected.size} вибраних відповідей? Завершення не можна скасувати.`)) return;
+    if (confirm
+        && !window.confirm(`Надіслати ${selected.size} вибраних відповідей? Завершення не можна скасувати.`)) {
+      return;
+    }
+    completionRequests.current.add(attemptId);
     setActionBusy(`complete-${attemptId}`);
     try {
       const result = await api.completeAttempt(attemptId, [...selected]);
@@ -687,9 +698,38 @@ export default function App() {
     } catch (error) {
       if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
     } finally {
+      completionRequests.current.delete(attemptId);
       setActionBusy("");
     }
   }, [api, handleAuthError, selections, toast]);
+
+  // The timer under the countdown promises the attempt finishes by itself, and
+  // it did not: at zero the form stayed open, the reader pressed the button, and
+  // the API refused a submission it stamps after the deadline — losing every
+  // answer to a conflict message.
+  //
+  // One timer computed from the absolute deadline, not a per-second countdown,
+  // so nothing accumulates drift; and it is recomputed on every answer, because
+  // choosing one rebuilds completeAttempt. A backgrounded tab can still have its
+  // timer throttled past the deadline, and then the API refuses the completion
+  // exactly as it did before — late is the old behaviour, not a new failure.
+  //
+  // Only the attempt on screen is watched. Walking away from one leaves it to
+  // expire server-side, which is what already happened.
+  useEffect(() => {
+    if (route.name !== "attempt") return undefined;
+    const attemptId = Number(route.params[0]);
+    const attempt = attempts[attemptId];
+    if (!attempt || attempt.completed || completions[attemptId]) return undefined;
+
+    const delay = autoSubmitDelay(attempt.expiresAt);
+    if (delay === null) return undefined;
+
+    const timer = window.setTimeout(() => {
+      void completeAttempt(attemptId, { confirm: false });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [attempts, completeAttempt, completions, route]);
 
   // The checkbox is controlled by this Set, so its identity has to survive a
   // re-render that changed nothing about the attempt. Built inline, the
