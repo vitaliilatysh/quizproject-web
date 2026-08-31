@@ -540,3 +540,33 @@ test("a response without a readable Date leaves the device clock alone", async (
   assert.equal(serverClockOffset(), 0);
   assert.ok(Math.abs(serverNow() - Date.now()) < 50);
 });
+
+// The settings screen probes an address the reader typed, which is not the API
+// the app is running against and may not even be this application. Its clock
+// must not decide when an attempt already in progress submits itself.
+test("a client that is not the app's API does not set the clock", async () => {
+  resetServerClock();
+  const anchored = Math.floor(Date.now() / 1000) * 1000 - 120_000;
+  const respond = () => new Response(JSON.stringify({ status: "UP" }), {
+    status: 200,
+    headers: { "content-type": "application/json", Date: new Date(anchored).toUTCString() }
+  });
+
+  const app = new QuizApi({ baseUrl: "https://api.example.com", fetchImpl: respond });
+  await app.health();
+  const measured = serverClockOffset();
+  assert.ok(measured < -119_000, "the app's own client should have set the clock");
+
+  // Same response, from an address being tested rather than used.
+  const probe = new QuizApi({
+    baseUrl: "https://elsewhere.example.com",
+    fetchImpl: () => new Response(JSON.stringify({ status: "UP" }), {
+      status: 200,
+      headers: { "content-type": "application/json", Date: new Date(Date.now() + 600_000).toUTCString() }
+    }),
+    readsServerClock: false
+  });
+  await probe.health();
+  assert.equal(serverClockOffset(), measured, "the probe moved the app's clock");
+  resetServerClock();
+});

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, QuizApi, normalizeBaseUrl } from "./api.js";
+import { resetServerClock } from "./clock.js";
 import {
   clearAnswers,
   clearSession,
@@ -169,6 +170,15 @@ export default function App() {
       window.clearTimeout(timer);
     };
   }, [api, session]);
+
+  // An offset measured against a server the app has stopped talking to is
+  // worse than none at all: it is a confident wrong answer. Pointing the app
+  // at another API drops it, and the first response from the new one takes a
+  // fresh reading. Between the two the device's own clock is used, which is
+  // what happened everywhere before this was measured at all.
+  useEffect(() => {
+    resetServerClock();
+  }, [apiUrl]);
 
   const handleAuthError = useCallback((error, returnTo) => {
     if (!(error instanceof ApiError) || error.status !== 401) return false;
@@ -749,7 +759,7 @@ export default function App() {
     setConnection("checking");
     setSettingsError("");
     try {
-      const probe = new QuizApi({ baseUrl: value });
+      const probe = new QuizApi({ baseUrl: value, readsServerClock: false });
       const health = await probe.health();
       if (String(health?.status).toUpperCase() === "UP") {
         setConnection("ok");
