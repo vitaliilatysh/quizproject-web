@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ApiError, QuizApi, normalizeBaseUrl, readPageMeta, toInstant } from "../src/api.js";
+import { resetServerClock, serverClockOffset, serverNow } from "../src/clock.js";
 import { HOME_TEASER_SIZE } from "../src/utils.js";
 
 test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
@@ -494,4 +495,48 @@ test("the home page asks for only the quizzes it teases", async () => {
   const query = new URL(observed).searchParams;
   assert.equal(query.get("size"), String(HOME_TEASER_SIZE));
   assert.equal(query.get("page"), "0");
+});
+
+// Every response is a reading of the server's clock, and it is the only one a
+// browser gets: there is no endpoint for "what time is it", and the device's
+// own clock is not evidence. See src/clock.js for what the reading is for.
+test("every response sets the clock, including one that failed", async () => {
+  const cases = [
+    { status: 200, body: { status: "UP" }, call: api => api.health() },
+    { status: 500, body: { message: "boom" }, call: api => api.health().catch(() => null) }
+  ];
+
+  for (const { status, body, call } of cases) {
+    resetServerClock();
+    const serverTime = Math.floor(Date.now() / 1000) * 1000 - 240_000;
+    const api = new QuizApi({
+      baseUrl: "https://api.example.com",
+      fetchImpl: async () => new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json", Date: new Date(serverTime).toUTCString() }
+      })
+    });
+
+    await call(api);
+    assert.ok(serverClockOffset() < -239_000 && serverClockOffset() > -241_000,
+      `status ${status} left the offset at ${serverClockOffset()}`);
+  }
+  resetServerClock();
+});
+
+// An API that does not expose Date through CORS — every deployment of this
+// backend before the header was added to it — must behave exactly as it did.
+test("a response without a readable Date leaves the device clock alone", async () => {
+  resetServerClock();
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: async () => new Response(JSON.stringify({ status: "UP" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  await api.health();
+  assert.equal(serverClockOffset(), 0);
+  assert.ok(Math.abs(serverNow() - Date.now()) < 50);
 });
