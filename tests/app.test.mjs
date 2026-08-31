@@ -43,13 +43,20 @@ async function signIn(view, username, password = "Password1!") {
   await settle();
 }
 
-const attemptBody = (attemptId, { minutes = 30 } = {}) => ({
-  attemptId, quizId: 7, completed: false,
-  expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
-  questions: [{
-    id: 11, text: "Що таке JVM?",
-    answers: [{ id: 101, text: "Віртуальна машина" }, { id: 102, text: "Компілятор" }]
-  }]
+// Built when the request arrives, not when the stub is declared. The API stamps
+// an attempt's deadline as it hands the attempt over, and a body frozen at
+// declaration time would instead start the clock before the app has even
+// rendered — spending the window on setup and leaving the deadline test to race
+// its own preamble on a slow machine.
+const attemptBody = (attemptId, { minutes = 30 } = {}) => () => ({
+  body: {
+    attemptId, quizId: 7, completed: false,
+    expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+    questions: [{
+      id: 11, text: "Що таке JVM?",
+      answers: [{ id: 101, text: "Віртуальна машина" }, { id: 102, text: "Компілятор" }]
+    }]
+  }
 });
 
 const CATALOGUE = {
@@ -126,7 +133,7 @@ test("signing out is not a handover either", async () => {
 test("a handover drops the attempt the API would refuse to reload", async () => {
   const api = stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4) },
+    "GET /api/v1/attempts/4": attemptBody(4),
     "POST /api/v1/auth/login": loginResponse("borys")
   });
 
@@ -165,13 +172,15 @@ test("a handover drops the attempt the API would refuse to reload", async () => 
 // wrongly-cleared attempt is immediately refetched, and the refetch would mask
 // exactly the clearing this is looking for.
 test("a refreshed token is not a different reader", async () => {
+  const refreshed = loginResponse("olena");
   const api = stubApi({
     ...CATALOGUE,
-    "POST /api/v1/auth/refresh": loginResponse("olena")
+    "POST /api/v1/auth/refresh": refreshed
   });
 
   // Expiring inside the refresh margin, so the timer takes its 5s floor.
   seedSession("olena", { expiresInMs: 61_000 });
+  const before = JSON.parse(sessionStorage.getItem("quizproject.session")).accessToken;
   sessionStorage.setItem(ANSWERS(4), JSON.stringify([101, 102]));
 
   const view = render(App);
@@ -184,8 +193,15 @@ test("a refreshed token is not a different reader", async () => {
 
   assert.equal(api.countOf("POST /api/v1/auth/refresh"), 1,
     "the refresh never ran, so this test proves nothing about it");
-  assert.equal(JSON.parse(sessionStorage.getItem("quizproject.session")).username, "olena",
-    "the refresh did not leave a usable session behind");
+
+  // The request alone is not the transition under test. Were the app to stop
+  // installing what came back, everything below would still hold — same login,
+  // same draft, same name on screen — and this test would pass without the
+  // session ever having been replaced. So: the stored token is the new one.
+  const after = JSON.parse(sessionStorage.getItem("quizproject.session"));
+  assert.notEqual(after.accessToken, before, "the refreshed token was never installed");
+  assert.equal(after.accessToken, refreshed.body.accessToken);
+  assert.equal(after.username, "olena", "the refresh did not leave a usable session behind");
   assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101, 102]),
     "a silent token refresh threw away the reader's draft");
   assert.match(view.text(), /olena/, "the refresh signed the reader out");
@@ -201,7 +217,7 @@ test("a refreshed token is not a different reader", async () => {
 test("a ticked answer survives renders it did not cause", async () => {
   stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4) }
+    "GET /api/v1/attempts/4": attemptBody(4)
   });
 
   seedSession("olena");
@@ -223,7 +239,7 @@ test("a ticked answer survives renders it did not cause", async () => {
 test("a reader who navigates away and back finds the page as they left it", async () => {
   stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4) }
+    "GET /api/v1/attempts/4": attemptBody(4)
   });
 
   seedSession("olena");
@@ -249,7 +265,7 @@ test("a reader who navigates away and back finds the page as they left it", asyn
 test("a ticked answer is written down, and unticking takes it back", async () => {
   stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4) }
+    "GET /api/v1/attempts/4": attemptBody(4)
   });
 
   seedSession("olena");
@@ -274,7 +290,7 @@ test("a ticked answer is written down, and unticking takes it back", async () =>
 test("a reader who reopens a paused attempt finds their answers still ticked", async () => {
   stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4) }
+    "GET /api/v1/attempts/4": attemptBody(4)
   });
 
   seedSession("olena");
@@ -293,7 +309,7 @@ test("a reader who reopens a paused attempt finds their answers still ticked", a
 test("submitting asks first, and does not submit when the answer is no", async () => {
   const api = stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4) },
+    "GET /api/v1/attempts/4": attemptBody(4),
     "POST /api/v1/attempts/4/complete": { body: { attemptId: 4, score: 100 } }
   });
 
@@ -330,7 +346,7 @@ test("submitting asks first, and does not submit when the answer is no", async (
 test("the deadline submits by itself, and does not stop to ask", async () => {
   const api = stubApi({
     ...CATALOGUE,
-    "GET /api/v1/attempts/4": { body: attemptBody(4, { minutes: 0.06 }) },
+    "GET /api/v1/attempts/4": attemptBody(4, { minutes: 0.08 }),
     "POST /api/v1/attempts/4/complete": { body: { attemptId: 4, score: 100 } }
   });
 
@@ -348,8 +364,11 @@ test("the deadline submits by itself, and does not stop to ask", async () => {
   click(view.findAll("input[type=checkbox]")[0]);
   assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 0, "it submitted before the deadline");
 
-  // 3.6 seconds of quiz, less the three-second head start.
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 900)); });
+  // 4.8 seconds of quiz from the moment the API handed it over, less the
+  // three-second head start: the timer is due 1.8s after the fetch, and only a
+  // settle and a click stand between the two. Waiting past it rather than up to
+  // it, so a slow machine is late rather than wrong.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 2400)); });
   await settle();
 
   assert.equal(asked, 0, "the deadline stopped to ask a question nobody was there to answer");
