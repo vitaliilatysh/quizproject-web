@@ -1,0 +1,76 @@
+# Staging shares the production cluster and differs from it only where it must.
+#
+# A separate namespace rather than a separate cluster, which is what exists: the
+# namespace transformer renames the Namespace object itself as well as every
+# reference to it, so nothing here can touch quizproject. Both repositories
+# deploy into this one namespace — the Ingress below routes /api to the API's
+# Service, which the backend puts here.
+#
+# What differs: one replica, its own host, and a disruption budget that permits
+# eviction. Everything else is deliberately identical to production, or staging
+# stops predicting it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: quizproject-staging
+
+resources:
+  - ../../base
+
+images:
+  - name: quizproject-web
+    newName: ghcr.io/vitaliilatysh/quizproject-web
+    # Replaced by the deploy workflow with the digest it verified. The moving
+    # tag is the fallback for a hand-run kubectl, not what CI ships.
+    newTag: main
+
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: quiz-web
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+
+  # minAvailable: 1 against a single replica means no voluntary eviction can
+  # ever proceed: a node drain or a cluster upgrade would block on this pod
+  # forever. Harmless at two replicas, which is why production keeps it — but
+  # this namespace shares a cluster with production, and staging must not be
+  # able to hold up maintenance that production needs.
+  - target:
+      group: policy
+      version: v1
+      kind: PodDisruptionBudget
+      name: quiz-web
+    patch: |-
+      - op: remove
+        path: /spec/minAvailable
+      - op: add
+        path: /spec/maxUnavailable
+        value: 1
+
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: quizproject
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.quiz.example.com
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - staging.quiz.example.com
+            secretName: quizproject-staging-tls

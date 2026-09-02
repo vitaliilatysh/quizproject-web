@@ -67,13 +67,37 @@ jobs:
           assert_body_contains http://127.0.0.1:8080/ 'Quiz Project'
           assert_body_contains http://127.0.0.1:8080/runtime-config.js 'QUIZ_PROJECT_API_URL'
 
+      # A workflow_run trigger matches the upstream workflow's declared name,
+      # and a mismatch does not error — the deploy simply never fires, silently.
+      # That is exactly what shipped: this file was named "Backend container
+      # delivery" while deploy.yml waited for "Container delivery", so the
+      # automatic staging deploy was dead on arrival and nothing said so.
+      - name: Check the deploy workflow waits for this one's real name
+        shell: bash
+        run: |
+          AWAITED="$(sed -n 's/^    workflows: \["\(.*\)"\]$/\1/p' .github/workflows/deploy.yml)"
+          test -n "${AWAITED}"
+          grep --quiet "^name: ${AWAITED}$" .github/workflows/container.yml \
+            || { echo "::error::deploy.yml waits for '${AWAITED}', which no workflow declares"; exit 1; }
+
       - name: Render Kubernetes overlays
         shell: bash
         run: |
           kubectl kustomize deploy/kubernetes/overlays/local > local.yaml
+          kubectl kustomize deploy/kubernetes/overlays/staging > staging.yaml
           kubectl kustomize deploy/kubernetes/overlays/production > production.yaml
 
           grep --quiet 'image: quizproject-web:local' local.yaml
+          # Staging shares the cluster with production, so what keeps them apart
+          # is worth asserting rather than assuming: its own namespace, its own
+          # host, and a disruption budget that cannot block a node drain at one
+          # replica.
+          grep --quiet 'name: quizproject-staging' staging.yaml
+          grep --quiet 'namespace: quizproject-staging' staging.yaml
+          grep --quiet 'host: staging.quiz.example.com' staging.yaml
+          grep --quiet 'maxUnavailable: 1' staging.yaml
+          ! grep --quiet 'namespace: quizproject$' staging.yaml
+          ! grep --quiet 'host: quiz.example.com' staging.yaml
           grep --quiet 'image: ghcr.io/vitaliilatysh/quizproject-web:main' production.yaml
           grep --quiet 'host: quiz.example.com' production.yaml
           grep --quiet 'name: quiz-api' production.yaml
@@ -91,9 +115,15 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Keyless cosign exchanges this OIDC token for a short-lived Fulcio
+      # certificate, so no signing key is stored anywhere.
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
@@ -111,6 +141,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish multi-platform image
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -124,14 +155,40 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      # This repository already verifies the backend's signature before running
+      # E2E against its published image, while publishing its own image unsigned
+      # — so a deploy could check the provenance of one half of the system and
+      # not the other. Signed here, and verified immediately: a broken signing
+      # setup fails the release instead of shipping an unsigned image.
+      - name: Sign the published image
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE_NAME}@${IMAGE_DIGEST}"
+
+      - name: Verify the signature
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp \
+              "^https://github.com/${{ github.repository }}/\.github/workflows/container\.yml@" \
+            "${IMAGE_NAME}@${IMAGE_DIGEST}" > /dev/null
+
       - name: Render immutable production manifest
         shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cp -R deploy/kubernetes "$RUNNER_TEMP/kubernetes"
           PRODUCTION_OVERLAY="$RUNNER_TEMP/kubernetes/overlays/production/kustomization.yaml"
-          sed -i "s|newTag: main|newTag: sha-${GITHUB_SHA}|" "$PRODUCTION_OVERLAY"
+          sed -i "s|    newTag: main|    digest: ${IMAGE_DIGEST}|" "$PRODUCTION_OVERLAY"
           kubectl kustomize "$RUNNER_TEMP/kubernetes/overlays/production" \
             > "$GITHUB_WORKSPACE/quizproject-web-kubernetes.yaml"
+          grep --quiet "image: ${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            "$GITHUB_WORKSPACE/quizproject-web-kubernetes.yaml"
 
       - name: Upload production manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

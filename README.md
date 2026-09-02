@@ -219,6 +219,42 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+## Розгортання
+
+Workflow **Deploy** застосовує те, що опублікував container delivery. Він запускається сам після
+успішної публікації образу з `main` і розгортає у `staging`; production розгортається лише
+вручну (`workflow_dispatch`) і через protected environment, тобто з підтвердженням людини.
+
+Розгортається **digest, а не тег**. Тег `sha-<commit>` резолвиться в digest один раз, підпис
+cosign перевіряється саме над цим digest, і всі подальші кроки посилаються тільки на нього —
+переспрямований тег не може підмінити образ між перевіркою підпису й `kubectl apply`.
+
+До цієї роботи образ фронтенду **не підписувався**, хоча цей самий репозиторій уже перевіряв
+підпис бекенду перед E2E проти опублікованого образу. Тобто розгортання могло б перевірити
+провенанс однієї половини системи й не перевірити іншої. Тепер підписуються обидві.
+
+Порядок кроків: резолв digest → перевірка підпису → `kubectl apply --dry-run=server` проти
+живого кластера → `apply` → `rollout status` → перевірка, що Service має готовий endpoint.
+Якщо rollout не піднявся, workflow друкує події та логи подів і робить `rollout undo`.
+
+### Що потрібно налаштувати один раз
+
+GitHub secrets: `OCI_CLI_USER`, `OCI_CLI_TENANCY`, `OCI_CLI_FINGERPRINT`, `OCI_CLI_KEY_CONTENT`,
+`OCI_CLI_REGION`, `OKE_CLUSTER_OCID`. Значення не зберігаються в репозиторії й не потрапляють
+у логи.
+
+GitHub environments: `staging` (без обмежень) і `production` (required reviewers — саме це
+робить розгортання в production свідомою дією).
+
+Staging живе в тому ж кластері, що й production, у namespace `quizproject-staging`, куди
+деплояться **обидва** репозиторії: Ingress фронтенду маршрутизує `/api` на Service бекенду в
+цьому ж namespace. На порожньому namespace бекенд треба розгорнути першим — інакше `/api`
+віддаватиме 503, і workflow про це попереджає, але не падає.
+
+Від production staging відрізняється лише там, де мусить: одна репліка, власний хост і
+PodDisruptionBudget із `maxUnavailable: 1` замість `minAvailable: 1` — останнє при одній
+репліці назавжди заблокувало б drain вузла, а вузли тут спільні з production.
+
 ## Структура
 
 ```text
