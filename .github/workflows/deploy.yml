@@ -1,0 +1,212 @@
+# Applies what container.yml published. Until this existed the pipeline stopped
+# at a published image and a rendered manifest in an artifact — nothing put
+# either on a cluster.
+#
+# What is deployed is the immutable sha- tag of the commit that produced it, not
+# the moving :main. Two deploys of the same commit are therefore the same
+# bytes, and a rollback is a redeploy of a known tag rather than a hope about
+# what a tag pointed at last week.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Container delivery"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Where to deploy
+        type: choice
+        options: [staging, production]
+        default: staging
+      image_tag:
+        description: "Image tag to deploy (default: sha- of the commit checked out)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancelled: interrupting a rollout leaves a Deployment half-updated,
+  # which is worse than waiting for the one in front to finish.
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'staging' }}
+    # workflow_run fires on failure too, and a failed publish has nothing to
+    # deploy. Everything below assumes an image exists for this commit.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The gate. Staging deploys itself; production is a protected environment,
+    # so a human approves before anything reaches it.
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+      OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+      OVERLAY: ${{ github.event.inputs.environment || 'staging' }}
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
+      # A workflow_run runs against the default branch, so the commit whose
+      # image was published has to be named explicitly rather than assumed.
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Check out the commit being deployed
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure kubectl for the OKE cluster
+        uses: oracle-actions/configure-kubectl-oke@77a733d79446dabe7bf0e58eb56197d33ce4dc58 # v1.5.0
+        with:
+          cluster: ${{ secrets.OKE_CLUSTER_OCID }}
+
+      - name: Work out where this is going
+        shell: bash
+        run: |
+          NAMESPACE="$(kubectl kustomize "deploy/kubernetes/overlays/${OVERLAY}" \
+            | grep -m1 '^  namespace:' | awk '{print $2}')"
+          echo "NAMESPACE=${NAMESPACE}" >> "$GITHUB_ENV"
+          echo "Deploying to namespace ${NAMESPACE}"
+
+          # A warning, not a failure. The frontend has no secret of its own and
+          # deploys perfectly well on its own; what it cannot do without the
+          # backend is serve /api, which the Ingress below routes to the API's
+          # Service in this same namespace. Deploy the backend first on a fresh
+          # namespace, or that path answers 503 until it arrives.
+          if ! kubectl get service quiz-api --namespace "${NAMESPACE}" >/dev/null 2>&1; then
+            echo "::warning::No quiz-api Service in ${NAMESPACE}; /api will 503 until the backend is deployed there."
+          fi
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # container.yml signs the digest and renders production by digest rather
+      # than by tag. A deploy that resolved a tag itself would throw that away:
+      # a tag can be repointed between the signature check and the apply. So the
+      # tag is resolved once, here, and every step after this refers to the
+      # digest it produced.
+      - name: Resolve the published image to a digest
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          IMAGE="${IMAGE_NAME}:${IMAGE_TAG:-sha-${DEPLOY_SHA}}"
+          docker pull "${IMAGE}"
+
+          # Filtered through a here-string, not a pipe: `grep -m 1` exits on the
+          # first match and would leave docker writing into a closed pipe, and
+          # under `-o pipefail` that SIGPIPE sinks the step even though the
+          # match succeeded. The same race silently skipped four image
+          # publications in this repository once already.
+          DIGESTS="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}")"
+          DIGEST_REF="$(grep -m 1 "^${IMAGE_NAME}@" <<<"${DIGESTS}")"
+          test -n "${DIGEST_REF}"
+          echo "DIGEST_REF=${DIGEST_REF}" >> "${GITHUB_ENV}"
+          echo "IMAGE_DIGEST=${DIGEST_REF##*@}" >> "${GITHUB_ENV}"
+          echo "Deploying ${DIGEST_REF}"
+
+      # The signature is the point at which "GHCR is serving what our own
+      # delivery workflow built" stops being an assumption. Signing without ever
+      # verifying at the moment of deployment would leave it decorative.
+      - name: Verify the image signature before deploying it
+        shell: bash
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp \
+              '^https://github.com/vitaliilatysh/quizproject-web/\.github/workflows/container\.yml@' \
+            "${DIGEST_REF}" > /dev/null
+          echo "Signature verified for ${DIGEST_REF}"
+
+      - name: Render the manifest for this digest
+        shell: bash
+        run: |
+          # Edited in a copy: the checkout stays exactly as the commit left it,
+          # so what is rendered can be reproduced from the repository alone.
+          cp -R deploy/kubernetes "$RUNNER_TEMP/kubernetes"
+          OVERLAY_FILE="$RUNNER_TEMP/kubernetes/overlays/${OVERLAY}/kustomization.yaml"
+          sed -i "s|    newTag: .*|    digest: ${IMAGE_DIGEST}|" "${OVERLAY_FILE}"
+
+          kubectl kustomize "$RUNNER_TEMP/kubernetes/overlays/${OVERLAY}" > "$RUNNER_TEMP/manifest.yaml"
+          grep --quiet "image: ${DIGEST_REF}" "$RUNNER_TEMP/manifest.yaml"
+
+
+      - name: Validate against the live cluster
+        # Server-side: catches a manifest the API server would reject — a bad
+        # field, a removed API version — before anything is changed.
+        run: kubectl apply --server-side --dry-run=server --filename "$RUNNER_TEMP/manifest.yaml"
+
+      - name: Apply
+        run: kubectl apply --server-side --force-conflicts --filename "$RUNNER_TEMP/manifest.yaml"
+
+      - name: Wait for the rollout
+        id: rollout
+        run: |
+          kubectl rollout status deployment/quiz-web --namespace "${NAMESPACE}" --timeout=5m
+      - name: Check the Service has a ready backend
+        # rollout status already proves the readiness probe passed. What it does
+        # not prove is that the Service selects the pod it passed on: a label
+        # that stopped matching leaves a healthy Deployment behind a Service
+        # that routes nowhere. Read from the API server rather than curled from
+        # a pod, so this cannot fail because a registry was unreachable.
+        shell: bash
+        run: |
+          READY="$(kubectl get endpointslices --namespace "${NAMESPACE}" \
+            --selector "kubernetes.io/service-name=quiz-web" --output json \
+            | jq --raw-output '[.items[].endpoints[]? | select(.conditions.ready) | .addresses[]] | join(", ")')"
+
+          if [ -z "${READY}" ]; then
+            echo "::error::Service quiz-web has no ready backend; nothing serves it"
+            exit 1
+          fi
+          echo "quiz-web is served by: ${READY}"
+
+
+      - name: Roll back a rollout that did not come up
+        if: failure() && steps.rollout.outcome == 'failure'
+        run: |
+          echo "::group::Why it failed"
+          kubectl describe deployment/quiz-web --namespace "${NAMESPACE}" || true
+          kubectl get pods --namespace "${NAMESPACE}" -o wide || true
+          kubectl logs --namespace "${NAMESPACE}" --selector app.kubernetes.io/name=quiz-web \
+            --tail=100 --all-containers --prefix || true
+          echo "::endgroup::"
+
+          # Nothing to undo on a first deploy; that is not itself a failure, and
+          # the step above has already said what went wrong.
+          # Counting revisions, not looking for the number 2: a fourth deploy
+          # is revision 4, and matching on "2" would have quietly skipped the
+          # rollback on every deploy after the second.
+          REVISIONS="$(kubectl rollout history deployment/quiz-web --namespace "${NAMESPACE}" \
+            | grep --count --extended-regexp '^[0-9]+' || true)"
+          if [ "${REVISIONS}" -ge 2 ]; then
+            kubectl rollout undo deployment/quiz-web --namespace "${NAMESPACE}"
+            kubectl rollout status deployment/quiz-web --namespace "${NAMESPACE}" --timeout=5m
+            echo "::warning::Rolled back to the previous revision."
+          else
+            echo "::warning::No previous revision to roll back to; the namespace is left as it is."
+          fi
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### ${OVERLAY}"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Namespace | \`${NAMESPACE:-unknown}\` |"
+            echo "| Image | \`${DIGEST_REF:-unresolved}\` |"
+            echo "| Commit | \`${DEPLOY_SHA}\` |"
+            echo "| Result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
