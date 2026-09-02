@@ -37,11 +37,27 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || 'staging' }}
-    # workflow_run fires on failure too, and a failed publish has nothing to
-    # deploy. Everything below assumes an image exists for this commit.
+    # Three conditions, and the last two are a trust boundary rather than
+    # housekeeping.
+    #
+    # Container delivery also runs on pull_request, and workflow_run's
+    # `branches:` filter matches head_branch — which for a pull request is the
+    # name of the source branch, in the contributor's own fork. A fork with a
+    # branch called master would therefore have satisfied that filter, and the
+    # publish job being skipped on a pull request still leaves the run
+    # concluding "success". This workflow would then have checked out that
+    # fork's commit and applied its deploy/kubernetes/** to the real cluster
+    # with the real credentials. The image is protected by the signature check,
+    # but everything else in a rendered manifest — a Job, a privileged pod, a
+    # role binding — is whatever the checked-out files say.
+    #
+    # So: only a push (never a pull request), and only from this repository.
+    # Either alone closes it; both cost nothing.
     if: >-
       github.event_name == 'workflow_dispatch'
-      || github.event.workflow_run.conclusion == 'success'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The gate. Staging deploys itself; production is a protected environment,
