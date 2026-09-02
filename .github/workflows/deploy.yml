@@ -80,12 +80,34 @@ jobs:
       # A workflow_run runs against the default branch, so the commit whose
       # image was published has to be named explicitly rather than assumed.
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # Named here as well as in the step below, so the preflight can see it.
+      OKE_CLUSTER_OCID: ${{ secrets.OKE_CLUSTER_OCID }}
 
     steps:
       - name: Check out the commit being deployed
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # Checked before the OKE action, which spends 35 seconds installing the
+      # OCI CLI and then fails with "RegionId can not be empty or undefined" —
+      # true, but it does not say that the cause is an unset repository secret,
+      # or which of the six is missing. That is the first wall anyone setting
+      # this up walks into, and it should name itself.
+      - name: Check the cluster credentials are configured
+        shell: bash
+        run: |
+          MISSING=()
+          for NAME in OCI_CLI_USER OCI_CLI_TENANCY OCI_CLI_FINGERPRINT \
+                      OCI_CLI_KEY_CONTENT OCI_CLI_REGION OKE_CLUSTER_OCID; do
+            [ -n "${!NAME}" ] || MISSING+=("${NAME}")
+          done
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${MISSING[*]}. Add them under Settings → Secrets and variables → Actions, then re-run this workflow. Nothing has been deployed."
+            exit 1
+          fi
+          echo "All six cluster credentials are present."
 
       - name: Configure kubectl for the OKE cluster
         uses: oracle-actions/configure-kubectl-oke@77a733d79446dabe7bf0e58eb56197d33ce4dc58 # v1.5.0
