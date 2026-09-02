@@ -67,6 +67,19 @@ jobs:
           assert_body_contains http://127.0.0.1:8080/ 'Quiz Project'
           assert_body_contains http://127.0.0.1:8080/runtime-config.js 'QUIZ_PROJECT_API_URL'
 
+      # A workflow_run trigger matches the upstream workflow's declared name,
+      # and a mismatch does not error — the deploy simply never fires, silently.
+      # That is exactly what shipped: this file was named "Backend container
+      # delivery" while deploy.yml waited for "Container delivery", so the
+      # automatic staging deploy was dead on arrival and nothing said so.
+      - name: Check the deploy workflow waits for this one's real name
+        shell: bash
+        run: |
+          AWAITED="$(sed -n 's/^    workflows: \["\(.*\)"\]$/\1/p' .github/workflows/deploy.yml)"
+          test -n "${AWAITED}"
+          grep --quiet "^name: ${AWAITED}$" .github/workflows/container.yml \
+            || { echo "::error::deploy.yml waits for '${AWAITED}', which no workflow declares"; exit 1; }
+
       - name: Render Kubernetes overlays
         shell: bash
         run: |
