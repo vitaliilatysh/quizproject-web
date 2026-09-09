@@ -166,6 +166,11 @@ export function type(input: Element | null | undefined, value: string): void {
 // Every submit handler in this app is async — it calls the API — so a dispatch
 // that only ran the synchronous part would assert against a half-finished
 // render. `settle` here is what makes a submit mean "and then it happened".
+//
+// Await it. A dropped promise finishes after the test that started it has
+// ended, and the act() inside it then renders into a window the next test has
+// already replaced — which fails that next test, and every test after it,
+// while the one at fault passes.
 export async function submit(form: Element | null | undefined): Promise<void> {
   if (!form) throw new Error("submit() was given nothing to submit");
   act(() => {

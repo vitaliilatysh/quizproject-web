@@ -515,3 +515,66 @@ test("every destructive control is disabled while an operation is in flight", as
   const idle = await mount({ busy: "start-7" });
   assert.equal(idle.findAll<HTMLButtonElement>("button").filter(button => button.disabled).length, 0);
 });
+
+test("a panel opened before any subject or level exists does not invent one", async () => {
+  const view = await mount({
+    data: { ...props().data!, subjects: [], levels: [], quizzes: [] }
+  });
+
+  // Empty rather than the string "undefined": these ids are sent as the quiz's
+  // subject and level, and a request built from that text is a 400 the admin
+  // cannot explain.
+  assert.equal(view.at<HTMLSelectElement>("select", 0).value, "");
+  assert.equal(view.at<HTMLSelectElement>("select", 1).value, "");
+  assert.equal(view.find<HTMLSelectElement>(".admin-quiz-select").value, "");
+});
+
+test("the quiz form reports every field it changed, not only its name", async () => {
+  const run = executor();
+  const { api, calls } = stubbedApi();
+  const view = await mount({
+    api, onExecute: run.execute,
+    data: { ...props().data!, subjects: [subject(), subject({ id: 2, name: "Математика" })] }
+  });
+  const form = card(view, "Тести");
+
+  type(fieldIn(form, "input"), "Spring");
+  select(form.querySelectorAll("select")[0], "2");
+  select(form.querySelectorAll("select")[1], "6");
+  type(fieldIn(form, "input[type=number]"), "45");
+
+  await submit(form.querySelector("form.admin-grid-form"));
+  assert.deepEqual(run.keys, ["quiz-save"]);
+  assert.ok(calls.some(call => call.method === "POST" && call.path === "/api/v1/admin/quizzes"));
+
+  // The draft is what the request was built from, so the form reflecting the
+  // choices is the assertion that they reached it.
+  assert.equal(fieldIn(form, "input").value, "", "a saved quiz was left in the form");
+});
+
+test("a quiz save that failed keeps the draft so it can be tried again", async () => {
+  const view = await mount({ onExecute: executor({ failing: true }).execute });
+  const form = card(view, "Тести");
+  type(fieldIn(form, "input"), "Spring");
+  await submit(form.querySelector("form.admin-grid-form"));
+  assert.equal(fieldIn(form, "input").value, "Spring", "a failed save threw away the whole draft");
+});
+
+test("deleting a quiz happens only after it is confirmed", async () => {
+  const run = executor();
+  const view = await mount({ onExecute: run.execute });
+  window.confirm = () => false;
+  click(buttonsIn(card(view, "Тести"), ".admin-table__row button")[1]);
+  await settle();
+  assert.deepEqual(run.keys, [], "a refused confirmation deleted the quiz");
+});
+
+test("a question load that fails with something that is not an error still says so", async () => {
+  const { api } = stubbedApi();
+  // A rejection that is not an Error — what a stray `throw "..."` or a rejected
+  // string from a future client would produce. The panel has to render it
+  // rather than show "[object Object]" or nothing at all.
+  api.adminQuestions = () => Promise.reject("сервер закрив з’єднання");
+  const view = await mount({ api });
+  assert.equal(view.find(".alert--error").textContent, "сервер закрив з’єднання");
+});
