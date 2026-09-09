@@ -41,8 +41,21 @@ jobs:
       - name: Check types
         run: npm run typecheck
 
-      - name: Run unit tests
-        run: npm test
+      # Runs the tests and fails on a threshold, which is what `api` does with
+      # jacocoTestCoverageVerification. Lines and functions are held at 100%,
+      # the same as the LINE rule over there; branches are held at the level
+      # they have reached, so the number can only go up.
+      #
+      # It runs without --enable-source-maps, and that is not an oversight.
+      # Under the flag a file's comment header counts against its line total —
+      # every module here reads several points low at full coverage of its
+      # code, and clock.ts reads 70% with every one of its functions covered.
+      # Without it the denominator is the executable lines, which is what
+      # JaCoCo's LINE counter measures and what a 100% threshold can mean.
+      # `npm run coverage` is the same run with the flag: worse totals, but
+      # correct attribution, which is what finding a gap needs.
+      - name: Run unit tests and check coverage
+        run: npm run coverage:check
 
       - name: Build
         run: npm run build

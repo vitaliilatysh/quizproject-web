@@ -11,11 +11,12 @@
     "dev": "vite --host 127.0.0.1 --port 4173",
     "build": "vite build && node scripts/prepare-hosting.mts",
     "typecheck": "tsc --noEmit",
-    "test": "node --enable-source-maps --import ./tests/support/register.mts --test tests/*.test.ts",
-    "coverage": "node --enable-source-maps --import ./tests/support/register.mts --test --experimental-test-coverage --test-coverage-exclude='tests/**' tests/*.test.ts",
+    "test": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 tests/*.test.ts",
+    "coverage": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' tests/*.test.ts",
+    "coverage:check": "node --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=96 tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run coverage:check && npm run build"
   },
   "dependencies": {
     "react": "19.2.8",

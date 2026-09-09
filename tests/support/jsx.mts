@@ -88,22 +88,24 @@ export async function load(
     // were wrong, in ways that looked plausible:
     //
     //   coverage      it named request<T>'s body uncovered — a method every
-    //                 one of the eighty-five tests goes through — while
-    //                 clock.ts read 25% of lines against 100% of its
-    //                 functions. The contradiction is the only reason anyone
-    //                 looked.
+    //                 one of the tests goes through — while clock.ts read 25%
+    //                 of lines against 100% of its functions. The
+    //                 contradiction is the only reason anyone looked.
     //   stack traces  a throw was reported one line above itself.
     //
     // The map alone fixes neither completely: Node applies it to stack traces
-    // only under --enable-source-maps, which both npm scripts now pass. With
-    // the pair in place the coverage report names real gaps — the request
-    // timeout branch and QuizApi.quiz(), neither of which has a test.
+    // only under --enable-source-maps, which `npm test` and `npm run coverage`
+    // both pass. With the pair in place the coverage report named real gaps —
+    // the request timeout branch and QuizApi.quiz(), neither of which had a
+    // test at the time.
     //
-    // One caveat that is not worth hiding: `line %` is now conservative. Lines
-    // with no mapping — a file's comment header, chiefly — count against the
-    // total, so a heavily commented module reads low even at full coverage of
-    // its code. `branch %` and `funcs %` do not have that problem and are the
-    // better summary.
+    // The caveat, and the reason the gate does not pass the flag: `line %`
+    // becomes conservative. Lines with no mapping — a file's comment header,
+    // chiefly — count against the total, so a heavily commented module reads
+    // low even at full coverage of its code, and a 100% threshold could never
+    // be met. `npm run coverage:check` runs without the flag, where the
+    // denominator is the executable lines and the threshold means what it
+    // says; `npm run coverage` runs with it, for finding what is missing.
     //
     // Inline rather than a file, because there is no build directory here: the
     // transformed source only ever exists in memory.
