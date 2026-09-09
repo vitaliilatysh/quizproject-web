@@ -407,8 +407,11 @@ export default function App() {
       navigate("#/login");
       return;
     }
-    if (results === null && !resultsLoading) void loadResults();
-  }, [loadResults, results, resultsLoading, route.name, session]);
+    // The error is part of the guard for the reason given over the catalogue's
+    // loader: a failed load leaves the rows null with loading back to false, so
+    // a loading-based guard alone re-fires the request without end.
+    if (results === null && !resultsLoading && !resultError) void loadResults();
+  }, [loadResults, resultError, results, resultsLoading, route.name, session]);
 
   // Changing a page or the date range clears the cached slice so the existing
   // "load when null" effects refetch it. Dropping the data also keeps the
@@ -474,10 +477,22 @@ export default function App() {
       navigate("#/login");
       return;
     }
-    if (Number.isInteger(attemptId) && attemptId > 0 && !attempts[attemptId] && !attemptLoading[attemptId]) {
+    // Gated on the error as well as on the loading flag, and for the reason
+    // spelled out over the catalogue's loader: a failed load leaves the attempt
+    // missing with loading back to false, so a loading-based guard re-fires the
+    // request forever. Here it really did. Against an API answering 500 this
+    // effect asked for the same attempt about seventeen hundred times a second,
+    // for as long as the page stayed open — measured, not estimated. The
+    // catalogue was written with the guard; this was not.
+    //
+    // loadAttempt clears the error before each request, so anything that starts
+    // one — a revisit that changes the route, an attempt started from a quiz —
+    // still retries. What no longer happens is retrying nobody asked for.
+    if (Number.isInteger(attemptId) && attemptId > 0
+        && !attempts[attemptId] && !attemptLoading[attemptId] && !attemptErrors[attemptId]) {
       void loadAttempt(attemptId);
     }
-  }, [attemptLoading, attempts, loadAttempt, route, session]);
+  }, [attemptErrors, attemptLoading, attempts, loadAttempt, route, session]);
 
   useEffect(() => {
     if (route.name !== "admin") return;
@@ -496,8 +511,8 @@ export default function App() {
       navigate("#/login");
       return;
     }
-    if (profile === null && !profileLoading) void loadProfile();
-  }, [loadProfile, profile, profileLoading, route.name, session]);
+    if (profile === null && !profileLoading && !profileError) void loadProfile();
+  }, [loadProfile, profile, profileError, profileLoading, route.name, session]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
