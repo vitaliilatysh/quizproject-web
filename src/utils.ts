@@ -80,7 +80,7 @@ export function complexityLabels(filter: string): string[] {
 }
 
 export function parseRoute(hash: string = globalThis.location?.hash || ""): Route {
-  const route = hash.replace(/^#\/?/, "").split("?")[0] ?? "";
+  const route = hash.replace(/^#\/?/, "").replace(/\?.*$/, "");
   const [name = "", ...params] = route.split("/").filter(Boolean);
   return { name: name || "home", params };
 }

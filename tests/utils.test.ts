@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AUTO_SUBMIT_LEAD_MS, autoSubmitDelay, complexityLabels, difficultyLabel, difficultyTone, formatCountdown, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
+import { AUTO_SUBMIT_LEAD_MS, autoSubmitDelay, complexityLabels, difficultyLabel, difficultyTone, formatCountdown, formatDate, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
 
 // The levels the production migration seeds. Every one of them reaches the
 // interface, so everything the interface does with difficulty has to account
@@ -98,4 +98,22 @@ test("autoSubmitDelay starts the submission before the deadline, not on it", () 
 
   assert.equal(autoSubmitDelay("not a date", now), null);
   assert.equal(autoSubmitDelay(undefined, now), null);
+});
+
+test("formatDate renders a stored timestamp and a dash for a missing one", () => {
+  // A profile that has never signed in has no lastLoginAt, and the results
+  // table shows an attempt the moment it starts — before completedAt exists.
+  for (const missing of [null, undefined, ""]) {
+    assert.equal(formatDate(missing), "—");
+  }
+  const rendered = formatDate("2026-03-01T09:07:00Z");
+  assert.match(rendered, /2026/, `"${rendered}" does not name the year`);
+  assert.notEqual(rendered, "—");
+});
+
+test("safeHash falls back for a hash that is absent as well as one that is foreign", () => {
+  assert.equal(safeHash(null), "#/");
+  assert.equal(safeHash(undefined), "#/");
+  assert.equal(safeHash("", "#/quizzes"), "#/quizzes", "the caller's fallback was ignored");
+  assert.equal(safeHash("#/admin"), "#/admin");
 });

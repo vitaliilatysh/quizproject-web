@@ -125,3 +125,16 @@ test("an explicit now still wins over the reading", () => {
   assert.equal(formatCountdown("2026-03-01T12:01:05Z", now), "01:05");
   assert.equal(autoSubmitDelay("2026-03-01T12:10:00Z", now), 600_000 - AUTO_SUBMIT_LEAD_MS);
 });
+
+test("a reading with no usable send time is measured as instantaneous", () => {
+  const server = Date.parse("2026-03-01T12:05:00Z");
+  const received = Date.parse("2026-03-01T12:00:00Z");
+
+  // sentAt comes from Date.now() at the call site, so a NaN can only arrive
+  // from a caller that has none to give. Treating the round trip as zero keeps
+  // the reading — it is still the server's clock, just uncorrected for flight —
+  // rather than subtracting a NaN and poisoning the offset for every later read.
+  assert.equal(recordServerTime(rfc1123(server), Number.NaN, received), true);
+  assert.equal(serverClockOffset(), 300_000);
+  assert.ok(Number.isFinite(serverNow()));
+});

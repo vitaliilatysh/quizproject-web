@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiError, QuizApi, normalizeBaseUrl, readPageMeta, toInstant } from "../src/api.js";
+import { ApiError, QuizApi, normalizeBaseUrl, readPageMeta, toInstant, type FetchLike } from "../src/api.js";
 
 /** One request as the fetch stub saw it. */
 interface RecordedCall {
@@ -582,4 +582,119 @@ test("a client that is not the app's API does not set the clock", async () => {
   await probe.health();
   assert.equal(serverClockOffset(), measured, "the probe moved the app's clock");
   resetServerClock();
+});
+
+// Everything below is a path the suite never took. Three of them are the ones
+// that matter most when the API is having a bad day, and none of them had a
+// test: a request that never comes back, a connection that never opens, and an
+// error the backend reported in something other than JSON.
+
+test("a request that never answers is abandoned rather than left hanging", async () => {
+  let aborted = false;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    timeoutMs: 5,
+    // What fetch does when its signal fires: it rejects with an AbortError.
+    // Nothing here resolves, so the timeout is the only thing that can end it.
+    fetchImpl: (_url, options) => new Promise<Response>((_resolve, reject) => {
+      options.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
+      });
+    })
+  });
+
+  const failure = await api.health().then(() => null, (error: unknown) => error);
+  assert.ok(failure instanceof ApiError);
+  assert.equal(failure.code, "TIMEOUT");
+  assert.equal(failure.status, 0, "a timeout is not an HTTP status");
+  assert.equal(failure.path, "/actuator/health");
+  assert.match(failure.message, /вчасно/);
+  assert.ok(aborted, "the request was left running after the client gave up on it");
+});
+
+test("a connection that cannot be opened is reported as a network error", async () => {
+  // The exact failure a browser raises for a wrong host, a refused port or a
+  // CORS preflight the server did not answer — the three the message names.
+  const refused = new TypeError("Failed to fetch");
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: () => { throw refused; }
+  });
+
+  const failure = await api.health().then(() => null, (error: unknown) => error);
+  assert.ok(failure instanceof ApiError);
+  assert.equal(failure.code, "NETWORK_ERROR");
+  assert.equal(failure.status, 0);
+  assert.equal(failure.cause, refused, "the original failure was thrown away");
+  assert.match(failure.message, /CORS/);
+});
+
+test("an error the backend did not send as JSON still reaches the reader", async () => {
+  const respond = (body: string, contentType: string): FetchLike => () =>
+    new Response(body, { status: 503, headers: { "content-type": contentType } });
+
+  // A proxy's HTML page, or a bare string: there is no message to lift out of
+  // it, so the status is the message.
+  const plain = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: respond("<h1>502 Bad Gateway</h1>", "text/html")
+  });
+  const first = await plain.health().then(() => null, (error: unknown) => error);
+  assert.ok(first instanceof ApiError);
+  assert.equal(first.status, 503);
+  assert.equal(first.code, "API_ERROR", "there was no `error` field to take a code from");
+  assert.equal(first.path, "/actuator/health", "the requested path stands in for one the body did not name");
+  assert.match(first.message, /503/);
+
+  // JSON, well-formed, and empty where it matters. An empty message is not a
+  // message, and showing it would leave the reader with a blank error.
+  const blank = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: respond(JSON.stringify({ message: "", error: "", path: "" }), "application/json")
+  });
+  const second = await blank.health().then(() => null, (error: unknown) => error);
+  assert.ok(second instanceof ApiError);
+  assert.match(second.message, /503/);
+});
+
+test("normalizeBaseUrl treats a missing address the same as a blank one", () => {
+  assert.throws(() => normalizeBaseUrl(null), /порожнім/);
+  assert.throws(() => normalizeBaseUrl(undefined), /порожнім/);
+  assert.throws(() => normalizeBaseUrl("   "), /порожнім/);
+});
+
+test("quiz reads one quiz by id, as a number and without a token", async () => {
+  let observed: RecordedCall | undefined;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "ignored",
+    fetchImpl: (url, options) => {
+      observed = { url, options };
+      return new Response(JSON.stringify({ id: 42, name: "Java" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  assert.deepEqual(await api.quiz("42"), { id: 42, name: "Java" });
+  assert.equal(observed?.url, "https://api.example.com/api/v1/quizzes/42");
+  assert.equal(headersOf(observed)["Authorization"], undefined,
+    "a quiz anyone may read must not require a session to read it");
+});
+
+test("a client built without a token source has no session to send", async () => {
+  // The default getToken. Every other test here supplies one, so the fallback
+  // — the state a client is in before anybody has signed in — was never run.
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    fetchImpl: () => { throw new Error("the request must not have been sent"); }
+  });
+
+  const failure = await api.profile().then(() => null, (error: unknown) => error);
+  assert.ok(failure instanceof ApiError);
+  assert.equal(failure.code, "AUTH_REQUIRED");
+  assert.equal(failure.status, 401);
+  assert.equal(failure.path, "/api/v1/users/me");
 });
