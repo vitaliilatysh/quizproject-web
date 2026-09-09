@@ -1,22 +1,36 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import { register, uniqueUsername } from "./helpers.js";
 
-const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
-const API = process.env.E2E_API_URL || process.env.E2E_WEB_URL || "http://127.0.0.1:4173";
+const ADMIN_USERNAME = process.env["E2E_ADMIN_USERNAME"] ?? "";
+const ADMIN_PASSWORD = process.env["E2E_ADMIN_PASSWORD"] ?? "";
+const API = process.env["E2E_API_URL"] || process.env["E2E_WEB_URL"] || "http://127.0.0.1:4173";
+
+/** The two ids a test has to clean up after itself. */
+interface SeededQuiz {
+  subject: { id: number };
+  quiz: { id: number };
+}
+
+type AuthHeaders = Record<string, string>;
 
 // Both tests need a quiz whose time limit they choose, which only an
 // administrator can create. Returned rather than fixtured so each test deletes
 // what it made, in a finally, on a database the whole suite shares.
-async function createQuiz(request, headers, name, minutes, questionText) {
+async function createQuiz(
+  request: APIRequestContext,
+  headers: AuthHeaders,
+  name: string,
+  minutes: number,
+  questionText: string
+): Promise<SeededQuiz> {
   const subject = await request.post(`${API}/api/v1/admin/subjects`, { headers, data: { name } })
-    .then(response => response.json());
+    .then(response => response.json() as Promise<{ id: number }>);
   const levels = await request.get(`${API}/api/v1/admin/levels`, { headers })
-    .then(response => response.json());
+    .then(response => response.json() as Promise<Array<{ id: number }>>);
   const quiz = await request.post(`${API}/api/v1/admin/quizzes`, {
     headers,
-    data: { name, subjectId: subject.id, levelId: levels[0].id, timeToPassMinutes: minutes }
-  }).then(response => response.json());
+    data: { name, subjectId: subject.id, levelId: levels[0]?.id, timeToPassMinutes: minutes }
+  }).then(response => response.json() as Promise<{ id: number }>);
   await request.post(`${API}/api/v1/admin/quizzes/${quiz.id}/questions`, {
     headers,
     data: {
@@ -32,10 +46,11 @@ async function createQuiz(request, headers, name, minutes, questionText) {
   return { subject, quiz };
 }
 
-async function administrate(request) {
+async function administrate(request: APIRequestContext): Promise<AuthHeaders> {
   const token = await request.post(`${API}/api/v1/auth/login`, {
     data: { username: ADMIN_USERNAME, password: ADMIN_PASSWORD }
-  }).then(response => response.json()).then(body => body.accessToken);
+  }).then(response => response.json() as Promise<{ accessToken: string }>)
+    .then(body => body.accessToken);
   return { Authorization: `Bearer ${token}` };
 }
 

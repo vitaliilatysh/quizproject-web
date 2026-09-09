@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { login } from "./helpers.js";
 
-const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const ADMIN_USERNAME = process.env["E2E_ADMIN_USERNAME"] ?? "";
+const ADMIN_PASSWORD = process.env["E2E_ADMIN_PASSWORD"] ?? "";
 
 const PAGE_HEADERS = ["x-page-number", "x-page-size", "x-total-count", "x-total-pages"];
 
@@ -24,7 +24,10 @@ test("admin collections are requested with paging and answer with page metadata"
   await page.getByRole("link", { name: "Адміністрування" }).click();
   await expect(page.getByRole("heading", { name: "Керуйте платформою" })).toBeVisible();
 
-  for (const [name, pending] of [["users", usersResponse], ["results", resultsResponse]]) {
+  // `as const` so the pairs stay tuples: without it the array widens to
+  // (string | Promise<Response>)[][] and `pending` loses its response type.
+  const pending_responses = [["users", usersResponse], ["results", resultsResponse]] as const;
+  for (const [name, pending] of pending_responses) {
     const response = await pending;
     expect(response.status(), `${name} request failed`).toBe(200);
 
@@ -74,7 +77,7 @@ test("the results date filter reaches the API in a format it accepts", async ({ 
   const from = new URL(response.url()).searchParams.get("from");
   // An offset-bearing instant, not the raw widget value.
   expect(from).toMatch(/Z$/);
-  expect(Number.isNaN(Date.parse(from))).toBe(false);
+  expect(Number.isNaN(Date.parse(String(from)))).toBe(false);
 
   // Narrowing the range must return to the first page, otherwise a filter that
   // yields fewer pages lands on an empty one that reads as "no results".

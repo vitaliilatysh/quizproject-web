@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ApiError, QuizApi, normalizeBaseUrl, readPageMeta, toInstant } from "../src/api.js";
+
+/** One request as the fetch stub saw it. */
+interface RecordedCall {
+  url: string;
+  options: RequestInit;
+}
+
+// `RequestInit.headers` is a union wide enough to be useless here; this client
+// always sends a plain object, and these tests read it back as one.
+const headersOf = (call: RecordedCall | undefined): Record<string, string | undefined> =>
+  (call?.options.headers ?? {}) as Record<string, string | undefined>;
+
+const bodyOf = (call: RecordedCall | undefined): string => String(call?.options.body ?? "");
 import { resetServerClock, serverClockOffset, serverNow } from "../src/clock.js";
 import { HOME_TEASER_SIZE } from "../src/utils.js";
 
@@ -12,11 +25,11 @@ test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
 
 test("default fetch keeps the browser global as its receiver", async () => {
   const originalFetch = globalThis.fetch;
-  let observedUrl;
+  let observedUrl: string | undefined;
   try {
     globalThis.fetch = async function (url) {
       assert.equal(this, globalThis);
-      observedUrl = url;
+      observedUrl = String(url);
       return new Response(JSON.stringify({ status: "UP" }), {
         status: 200,
         headers: { "content-type": "application/json" }
@@ -32,7 +45,7 @@ test("default fetch keeps the browser global as its receiver", async () => {
 });
 
 test("quizzes requests the public catalogue without an auth header", async () => {
-  let observed;
+  let observed: RecordedCall | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com/",
     fetchImpl: async (url, options) => {
@@ -49,13 +62,13 @@ test("quizzes requests the public catalogue without an auth header", async () =>
   const result = await api.quizzes();
   assert.deepEqual(result.items, [{ id: 1, name: "Java" }]);
   assert.equal(result.page, null);
-  assert.equal(observed.url, "https://api.example.com/api/v1/quizzes");
-  assert.equal(observed.options.method, "GET");
-  assert.equal(observed.options.headers.Authorization, undefined);
+  assert.equal(observed?.url, "https://api.example.com/api/v1/quizzes");
+  assert.equal(observed?.options.method, "GET");
+  assert.equal(headersOf(observed)["Authorization"], undefined);
 });
 
 test("protected requests attach the short-lived bearer token", async () => {
-  let observed;
+  let observed: RecordedCall | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "signed-token",
@@ -69,12 +82,12 @@ test("protected requests attach the short-lived bearer token", async () => {
   });
 
   assert.deepEqual(await api.startAttempt(7), { attemptId: 42 });
-  assert.equal(observed.options.headers.Authorization, "Bearer signed-token");
-  assert.equal(observed.options.method, "POST");
+  assert.equal(headersOf(observed)["Authorization"], "Bearer signed-token");
+  assert.equal(observed?.options.method, "POST");
 });
 
 test("refresh exchanges the current bearer token for a fresh one", async () => {
-  let observed;
+  let observed: RecordedCall | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "expiring-token",
@@ -88,9 +101,9 @@ test("refresh exchanges the current bearer token for a fresh one", async () => {
 
   assert.deepEqual(await api.refresh(),
     { accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900 });
-  assert.equal(observed.url, "https://api.example.com/api/v1/auth/refresh");
-  assert.equal(observed.options.method, "POST");
-  assert.equal(observed.options.headers.Authorization, "Bearer expiring-token");
+  assert.equal(observed?.url, "https://api.example.com/api/v1/auth/refresh");
+  assert.equal(observed?.options.method, "POST");
+  assert.equal(headersOf(observed)["Authorization"], "Bearer expiring-token");
 });
 
 test("refresh fails before fetch when the session is absent", async () => {
@@ -113,7 +126,7 @@ test("completeAttempt serializes selected answer IDs", async () => {
   });
 
   await api.completeAttempt(12, [2, 5]);
-  assert.deepEqual(JSON.parse(body), { answerIds: [2, 5] });
+  assert.deepEqual(JSON.parse(String(body)), { answerIds: [2, 5] });
 });
 
 test("API errors preserve the backend message and status", async () => {
@@ -179,7 +192,7 @@ test("protected requests fail before fetch when the session is absent", async ()
 });
 
 test("account lifecycle uses public registration and protected profile resources", async () => {
-  const observed = [];
+  const observed: RecordedCall[] = [];
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "account-token",
@@ -204,16 +217,16 @@ test("account lifecycle uses public registration and protected profile resources
     ["https://api.example.com/api/v1/users/me", "GET"],
     ["https://api.example.com/api/v1/users/me/password", "PUT"]
   ]);
-  assert.equal(observed[0].options.headers.Authorization, undefined);
-  assert.equal(observed[1].options.headers.Authorization, "Bearer account-token");
-  assert.deepEqual(JSON.parse(observed[2].options.body), {
+  assert.equal(headersOf(observed[0])["Authorization"], undefined);
+  assert.equal(headersOf(observed[1])["Authorization"], "Bearer account-token");
+  assert.deepEqual(JSON.parse(bodyOf(observed[2])), {
     currentPassword: "secret123",
     newPassword: "updated123"
   });
 });
 
 test("administration methods use protected REST resources and mutation verbs", async () => {
-  const observed = [];
+  const observed: RecordedCall[] = [];
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "admin-token",
@@ -244,7 +257,7 @@ test("administration methods use protected REST resources and mutation verbs", a
   await api.updateUserStatus(3, "blocked");
   await api.adminResults({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T23:59:59Z" });
 
-  assert.ok(observed.every(call => call.options.headers.Authorization === "Bearer admin-token"));
+  assert.ok(observed.every(call => headersOf(call)["Authorization"] === "Bearer admin-token"));
   assert.deepEqual(observed.map(call => call.options.method), [
     "GET", "GET", "POST", "PUT", "DELETE", "GET", "GET", "POST", "PUT",
     "DELETE", "GET", "POST", "PUT", "DELETE", "GET", "PATCH", "GET"
@@ -252,9 +265,9 @@ test("administration methods use protected REST resources and mutation verbs", a
   // Date bounds are now normalised to a canonical instant before being sent,
   // so an already-absolute input comes back with explicit milliseconds. Same
   // point in time, and still valid ISO-8601 for the Instant the API binds to.
-  assert.equal(observed.at(-1).url,
+  assert.equal(observed.at(-1)?.url,
     "https://api.example.com/api/v1/admin/results?from=2026-01-01T00%3A00%3A00.000Z&to=2026-12-31T23%3A59%3A59.000Z");
-  assert.deepEqual(JSON.parse(observed[2].options.body), { name: "Databases" });
+  assert.deepEqual(JSON.parse(bodyOf(observed[2])), { name: "Databases" });
 });
 
 test("readPageMeta parses the four pagination headers", () => {
@@ -288,7 +301,7 @@ test("readPageMeta rejects values that are not whole counts", () => {
 });
 
 test("adminUsers sends page and size and returns items with metadata", async () => {
-  let observed;
+  let observed: RecordedCall | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "admin-token",
@@ -308,13 +321,13 @@ test("adminUsers sends page and size and returns items with metadata", async () 
   });
 
   const result = await api.adminUsers({ page: 1, size: 20 });
-  assert.equal(observed.url, "https://api.example.com/api/v1/admin/users?page=1&size=20");
+  assert.equal(observed?.url, "https://api.example.com/api/v1/admin/users?page=1&size=20");
   assert.deepEqual(result.items, [{ id: 7, username: "student" }]);
   assert.deepEqual(result.page, { number: 1, size: 20, totalCount: 41, totalPages: 3 });
 });
 
 test("adminResults combines the date range with paging in one query", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "admin-token",
@@ -330,12 +343,12 @@ test("adminResults combines the date range with paging in one query", async () =
   const result = await api.adminResults({
     from: "2026-01-01T00:00", to: "2026-02-01T00:00", page: 2, size: 20
   });
-  const query = new URL(observed).searchParams;
+  const query = new URL(String(observed)).searchParams;
   // Converted to an absolute instant: the API binds these to Instant, which
   // rejects the offset-less value a datetime-local input produces.
   assert.equal(query.get("from"), new Date("2026-01-01T00:00").toISOString());
   assert.equal(query.get("to"), new Date("2026-02-01T00:00").toISOString());
-  assert.match(query.get("from"), /Z$/);
+  assert.match(String(query.get("from")), /Z$/);
   assert.equal(query.get("page"), "2");
   assert.equal(query.get("size"), "20");
   // No pagination headers came back, so there is no page to report.
@@ -344,7 +357,7 @@ test("adminResults combines the date range with paging in one query", async () =
 });
 
 test("omitting page and size leaves the request unpaginated", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "admin-token",
@@ -362,7 +375,7 @@ test("omitting page and size leaves the request unpaginated", async () => {
 });
 
 test("results stays unpaginated so its averages cover every attempt", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "student-token",
@@ -381,14 +394,14 @@ test("results stays unpaginated so its averages cover every attempt", async () =
 
 test("toInstant converts widget values and rejects unusable ones", () => {
   assert.equal(toInstant("2026-01-01T00:00"), new Date("2026-01-01T00:00").toISOString());
-  assert.match(toInstant("2026-01-01T00:00"), /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+  assert.match(String(toInstant("2026-01-01T00:00")), /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
   assert.equal(toInstant(""), null);
   assert.equal(toInstant(undefined), null);
   assert.equal(toInstant("not-a-date"), null);
 });
 
 test("a blank date range is omitted from the query entirely", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "admin-token",
@@ -402,14 +415,14 @@ test("a blank date range is omitted from the query entirely", async () => {
   });
 
   await api.adminResults({ from: "", to: "", page: 0, size: 20 });
-  const query = new URL(observed).searchParams;
+  const query = new URL(String(observed)).searchParams;
   assert.equal(query.has("from"), false);
   assert.equal(query.has("to"), false);
   assert.equal(query.get("page"), "0");
 });
 
 test("quizzes sends the search term and every requested level label", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     fetchImpl: async url => {
@@ -434,7 +447,7 @@ test("quizzes sends the search term and every requested level label", async () =
     size: 20
   });
 
-  const query = new URL(observed).searchParams;
+  const query = new URL(String(observed)).searchParams;
   assert.equal(query.get("search"), "java");
   assert.deepEqual(query.getAll("complexity"), ["high", "advanced", "hard"]);
   assert.equal(query.get("page"), "0");
@@ -442,7 +455,7 @@ test("quizzes sends the search term and every requested level label", async () =
 });
 
 test("quizzes omits blank criteria rather than sending empty parameters", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     fetchImpl: async url => {
@@ -455,14 +468,14 @@ test("quizzes omits blank criteria rather than sending empty parameters", async 
   });
 
   await api.quizzes({ search: "   ", complexity: [], page: 0, size: 20 });
-  const query = new URL(observed).searchParams;
+  const query = new URL(String(observed)).searchParams;
   assert.equal(query.has("search"), false);
   assert.equal(query.has("complexity"), false);
   assert.equal(query.get("page"), "0");
 });
 
 test("catalogueSummary reads the totals a page cannot supply", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     fetchImpl: async url => {
@@ -479,7 +492,7 @@ test("catalogueSummary reads the totals a page cannot supply", async () => {
 });
 
 test("the home page asks for only the quizzes it teases", async () => {
-  let observed;
+  let observed: string | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     fetchImpl: async url => {
@@ -492,7 +505,7 @@ test("the home page asks for only the quizzes it teases", async () => {
   });
 
   await api.quizzes({ page: 0, size: HOME_TEASER_SIZE });
-  const query = new URL(observed).searchParams;
+  const query = new URL(String(observed)).searchParams;
   assert.equal(query.get("size"), String(HOME_TEASER_SIZE));
   assert.equal(query.get("page"), "0");
 });
@@ -502,8 +515,8 @@ test("the home page asks for only the quizzes it teases", async () => {
 // own clock is not evidence. See src/clock.js for what the reading is for.
 test("every response sets the clock, including one that failed", async () => {
   const cases = [
-    { status: 200, body: { status: "UP" }, call: api => api.health() },
-    { status: 500, body: { message: "boom" }, call: api => api.health().catch(() => null) }
+    { status: 200, body: { status: "UP" }, call: (api: QuizApi) => api.health() },
+    { status: 500, body: { message: "boom" }, call: (api: QuizApi) => api.health().catch(() => null) }
   ];
 
   for (const { status, body, call } of cases) {

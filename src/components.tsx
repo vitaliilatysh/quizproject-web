@@ -1,20 +1,89 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { serverNow } from "./clock.js";
+import type { QuizApi } from "./api.js";
+import type { Session } from "./session.js";
+import type {
+  AdminQuestion,
+  AdminQuiz,
+  AdminResult,
+  AdminUser,
+  Attempt,
+  AttemptCompletion,
+  CatalogueSummary,
+  Level,
+  PageMeta,
+  Profile,
+  Quiz,
+  QuestionRequest,
+  QuizRequest,
+  Result,
+  Subject
+} from "./types.js";
 import {
   difficultyLabel,
   difficultyTone,
   HOME_TEASER_SIZE,
   formatCountdown,
   formatDate,
-  quizCountLabel
+  quizCountLabel,
+  type Route
 } from "./utils.js";
 
-function activeRoute(name, route) {
+/** One transient message in the corner. Owned by App, rendered by Layout. */
+export interface Toast {
+  id: string;
+  message: string;
+  tone: string;
+}
+
+/**
+ * Everything the admin panel needs, loaded together.
+ *
+ * Assembled by App from six requests rather than returned by any one endpoint,
+ * which is why it lives here and not in `types.ts`: nothing on the server has
+ * this shape.
+ */
+export interface AdminData {
+  subjects: Subject[];
+  levels: Level[];
+  quizzes: AdminQuiz[];
+  users: AdminUser[];
+  usersPage: PageMeta | null;
+  results: AdminResult[];
+  resultsPage: PageMeta | null;
+}
+
+/** The date range the admin results table is narrowed by, as the inputs hold it. */
+export interface ResultRange {
+  from: string;
+  to: string;
+}
+
+/**
+ * Runs one admin mutation, reloads the panel, and reports what came back —
+ * or null if it failed. Generic because every caller wants its own result
+ * back, and the create/update endpoints do not agree on a shape.
+ */
+export type ExecuteAdmin = <T>(
+  key: string,
+  operation: () => Promise<T>,
+  successMessage: string
+) => Promise<T | null>;
+
+function activeRoute(name: string, route: Route): string {
   if (name === "quizzes" && ["quizzes", "attempt"].includes(route.name)) return "is-active";
   return route.name === name ? "is-active" : "";
 }
 
-export function Layout({ route, session, onLogout, toasts, children }) {
+export interface LayoutProps {
+  route: Route;
+  session: Session | null;
+  onLogout: () => void;
+  toasts: Toast[];
+  children: ReactNode;
+}
+
+export function Layout({ route, session, onLogout, toasts, children }: LayoutProps) {
   return (
     <>
       <header className="site-header">
@@ -47,7 +116,7 @@ export function Layout({ route, session, onLogout, toasts, children }) {
         </div>
       </header>
 
-      <main id="main" tabIndex="-1">{children}</main>
+      <main id="main" tabIndex={-1}>{children}</main>
 
       <footer className="site-footer">
         <div>
@@ -70,7 +139,14 @@ export function Layout({ route, session, onLogout, toasts, children }) {
 
 
 
-function QuizCard({ quiz, compact, busy, onStart }) {
+interface QuizCardProps {
+  quiz: Quiz;
+  compact: boolean;
+  busy: boolean;
+  onStart: (quizId: number) => void;
+}
+
+function QuizCard({ quiz, compact, busy, onStart }: QuizCardProps) {
   const tone = difficultyTone(quiz.complexity);
   return (
     <article className={`quiz-card ${compact ? "quiz-card--compact" : ""}`}>
@@ -93,12 +169,22 @@ function QuizCard({ quiz, compact, busy, onStart }) {
   );
 }
 
-export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, onStart }) {
+export interface QuizCollectionProps {
+  quizzes: Quiz[] | null;
+  loading: boolean;
+  error: string;
+  limit?: number | undefined;
+  busy: string;
+  onRetry: () => void;
+  onStart: (quizId: number) => void;
+}
+
+export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, onStart }: QuizCollectionProps) {
   if (loading && !quizzes) {
     return (
       <div className="quiz-grid" aria-label="Завантаження тестів">
         {Array.from({ length: limit || 6 }, (_, index) => (
-          <div key={index} className="quiz-card skeleton-card" aria-hidden="true" style={{ "--delay": `${index * 70}ms` }} />
+          <div key={index} className="quiz-card skeleton-card" aria-hidden="true" style={{ "--delay": `${index * 70}ms` } as CSSProperties} />
         ))}
       </div>
     );
@@ -133,7 +219,18 @@ export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, 
   );
 }
 
-export function HomePage({ session, quizzes, summary, loading, error, busy, onRetry, onStart }) {
+export interface HomePageProps {
+  session: Session | null;
+  quizzes: Quiz[] | null;
+  summary: CatalogueSummary | null;
+  loading: boolean;
+  error: string;
+  busy: string;
+  onRetry: () => void;
+  onStart: (quizId: number) => void;
+}
+
+export function HomePage({ session, quizzes, summary, loading, error, busy, onRetry, onStart }: HomePageProps) {
   // Both figures describe the whole catalogue, and this page only fetches the
   // few quizzes it teases. Counting the loaded array would report the size of
   // the teaser while the labels still promised catalogue totals.
@@ -177,8 +274,23 @@ export function HomePage({ session, quizzes, summary, loading, error, busy, onRe
   );
 }
 
+export interface QuizzesPageProps {
+  quizzes: Quiz[] | null;
+  pageMeta: PageMeta | null;
+  loading: boolean;
+  error: string;
+  busy: string;
+  search: string;
+  filter: string;
+  onSearch: (value: string) => void;
+  onFilter: (value: string) => void;
+  onPageChange: (page: number) => void;
+  onRetry: () => void;
+  onStart: (quizId: number) => void;
+}
+
 export function QuizzesPage({ quizzes, pageMeta, loading, error, busy, search, filter,
-  onSearch, onFilter, onPageChange, onRetry, onStart }) {
+  onSearch, onFilter, onPageChange, onRetry, onStart }: QuizzesPageProps) {
   // The API reports how many quizzes match, which is not the same as how many
   // are on the page in front of you.
   const count = pageMeta?.totalCount ?? (quizzes || []).length;
@@ -194,7 +306,7 @@ export function QuizzesPage({ quizzes, pageMeta, loading, error, busy, search, f
           <label className="search-field"><span aria-hidden="true">⌕</span><input type="search" placeholder="Пошук за назвою або предметом" value={search} onChange={event => onSearch(event.target.value)} /><span className="sr-only">Пошук тестів</span></label>
           <div className="filter-group" aria-label="Фільтр складності">
             {[["all", "Усі"], ["easy", "Початкові"], ["medium", "Середні"], ["hard", "Просунуті"]].map(([value, label]) => (
-              <button key={value} className={`filter-button ${filter === value ? "is-active" : ""}`} type="button" onClick={() => onFilter(value)}>{label}</button>
+              <button key={value} className={`filter-button ${filter === value ? "is-active" : ""}`} type="button" onClick={() => onFilter(value as string)}>{label}</button>
             ))}
           </div>
         </div>
@@ -206,7 +318,13 @@ export function QuizzesPage({ quizzes, pageMeta, loading, error, busy, search, f
   );
 }
 
-export function LoginPage({ error, busy, onSubmit }) {
+export interface AuthPageProps {
+  error: string;
+  busy: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+export function LoginPage({ error, busy, onSubmit }: AuthPageProps) {
   return (
     <section className="auth-layout section-pad">
       <div className="auth-story">
@@ -219,8 +337,8 @@ export function LoginPage({ error, busy, onSubmit }) {
         <div><p className="eyebrow">Вхід</p><h2>Продовжити навчання</h2></div>
         {error && <div className="alert alert--error" role="alert">{error}</div>}
         <form className="form-stack" onSubmit={onSubmit}>
-          <label><span>Логін</span><input name="username" autoComplete="username" maxLength="15" required placeholder="Ваш логін" /></label>
-          <label><span>Пароль</span><input name="password" type="password" autoComplete="current-password" maxLength="128" required placeholder="Ваш пароль" /></label>
+          <label><span>Логін</span><input name="username" autoComplete="username" maxLength={15} required placeholder="Ваш логін" /></label>
+          <label><span>Пароль</span><input name="password" type="password" autoComplete="current-password" maxLength={128} required placeholder="Ваш пароль" /></label>
           <button className="button button--coral button--large button--full" disabled={busy}>{busy ? "Входимо…" : "Увійти"} <span aria-hidden="true">→</span></button>
         </form>
         <p className="form-footnote">Ще немає облікового запису? <a className="text-link" href="#/signup">Зареєструватися</a></p>
@@ -229,7 +347,7 @@ export function LoginPage({ error, busy, onSubmit }) {
   );
 }
 
-export function SignupPage({ error, busy, onSubmit }) {
+export function SignupPage({ error, busy, onSubmit }: AuthPageProps) {
   return (
     <section className="auth-layout section-pad">
       <div className="auth-story">
@@ -243,12 +361,12 @@ export function SignupPage({ error, busy, onSubmit }) {
         {error && <div className="alert alert--error" role="alert">{error}</div>}
         <form className="form-stack" onSubmit={onSubmit}>
           <div className="form-grid">
-            <label><span>Ім’я</span><input name="firstName" autoComplete="given-name" minLength="1" maxLength="20" required placeholder="Ваше ім’я" /></label>
-            <label><span>Прізвище</span><input name="lastName" autoComplete="family-name" minLength="1" maxLength="20" required placeholder="Ваше прізвище" /></label>
+            <label><span>Ім’я</span><input name="firstName" autoComplete="given-name" minLength={1} maxLength={20} required placeholder="Ваше ім’я" /></label>
+            <label><span>Прізвище</span><input name="lastName" autoComplete="family-name" minLength={1} maxLength={20} required placeholder="Ваше прізвище" /></label>
           </div>
-          <label><span>Логін</span><input name="username" autoComplete="username" minLength="5" maxLength="15" required placeholder="5–15 літер або цифр" /></label>
-          <label><span>Пароль</span><input name="password" type="password" autoComplete="new-password" minLength="8" maxLength="128" required placeholder="Щонайменше 8 символів без пробілів" /></label>
-          <label><span>Повторіть пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength="8" maxLength="128" required placeholder="Повторіть пароль" /></label>
+          <label><span>Логін</span><input name="username" autoComplete="username" minLength={5} maxLength={15} required placeholder="5–15 літер або цифр" /></label>
+          <label><span>Пароль</span><input name="password" type="password" autoComplete="new-password" minLength={8} maxLength={128} required placeholder="Щонайменше 8 символів без пробілів" /></label>
+          <label><span>Повторіть пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required placeholder="Повторіть пароль" /></label>
           <button className="button button--coral button--large button--full" disabled={busy}>{busy ? "Створюємо…" : "Створити обліковий запис"} <span aria-hidden="true">→</span></button>
         </form>
         <p className="form-footnote">Уже зареєстровані? <a className="text-link" href="#/login">Увійти</a></p>
@@ -257,7 +375,17 @@ export function SignupPage({ error, busy, onSubmit }) {
   );
 }
 
-export function ProfilePage({ profile, loading, error, passwordError, busy, onRetry, onPasswordChange }) {
+export interface ProfilePageProps {
+  profile: Profile | null;
+  loading: boolean;
+  error: string;
+  passwordError: string;
+  busy: boolean;
+  onRetry: () => void;
+  onPasswordChange: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+export function ProfilePage({ profile, loading, error, passwordError, busy, onRetry, onPasswordChange }: ProfilePageProps) {
   if (loading && !profile) {
     return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Завантажуємо профіль…</h1><div className="result-skeleton" /></section>;
   }
@@ -286,9 +414,9 @@ export function ProfilePage({ profile, loading, error, passwordError, busy, onRe
           <div><p className="eyebrow">Безпека</p><h2>Змінити пароль</h2><p>Після зміни пароля поточна сесія завершиться. Увійдіть повторно з новим паролем.</p></div>
           {passwordError && <div className="alert alert--error" role="alert">{passwordError}</div>}
           <form className="form-stack" onSubmit={onPasswordChange}>
-            <label><span>Поточний пароль</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength="128" required /></label>
-            <label><span>Новий пароль</span><input name="newPassword" type="password" autoComplete="new-password" minLength="8" maxLength="128" required /></label>
-            <label><span>Повторіть новий пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength="8" maxLength="128" required /></label>
+            <label><span>Поточний пароль</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required /></label>
+            <label><span>Новий пароль</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
+            <label><span>Повторіть новий пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
             <button className="button button--dark button--large" disabled={busy}>{busy ? "Оновлюємо…" : "Оновити пароль"}</button>
           </form>
         </article>
@@ -297,7 +425,15 @@ export function ProfilePage({ profile, loading, error, passwordError, busy, onRe
   );
 }
 
-export function SettingsPage({ apiUrl, connection, error, onSave, onTest }) {
+export interface SettingsPageProps {
+  apiUrl: string;
+  connection: string;
+  error: string;
+  onSave: (value: string) => void;
+  onTest: (value: string) => void;
+}
+
+export function SettingsPage({ apiUrl, connection, error, onSave, onTest }: SettingsPageProps) {
   const [value, setValue] = useState(apiUrl);
   useEffect(() => setValue(apiUrl), [apiUrl]);
   const status = connection === "checking" ? "Перевіряємо…" : connection === "ok" ? "API доступний" : connection === "error" ? "Немає з’єднання" : "Не перевірено";
@@ -317,7 +453,14 @@ export function SettingsPage({ apiUrl, connection, error, onSave, onTest }) {
   );
 }
 
-export function ResultsPage({ results, loading, error, onRetry }) {
+export interface ResultsPageProps {
+  results: Result[] | null;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}
+
+export function ResultsPage({ results, loading, error, onRetry }: ResultsPageProps) {
   if (loading && !results) return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Завантажуємо результати…</h1><div className="result-skeleton" /></section>;
   if (error) return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Мої результати</h1><div className="empty-state"><h3>Не вдалося завантажити історію</h3><p>{error}</p><button className="button button--dark" type="button" onClick={onRetry}>Повторити</button></div></section>;
   const items = results || [];
@@ -350,7 +493,7 @@ export function ResultsPage({ results, loading, error, onRetry }) {
 // belongs to the server. A device clock minutes adrift used to make this timer
 // disagree with the API about how long was left, and the reader believed the
 // timer.
-function Countdown({ expiresAt }) {
+function Countdown({ expiresAt }: { expiresAt: string }) {
   const [now, setNow] = useState(serverNow());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(serverNow()), 1000);
@@ -360,7 +503,18 @@ function Countdown({ expiresAt }) {
   return <strong className={urgent ? "is-urgent" : ""}>{formatCountdown(expiresAt, now)}</strong>;
 }
 
-export function AttemptPage({ attempt, loading, error, selected, completion, busy, onToggle, onComplete }) {
+export interface AttemptPageProps {
+  attempt: Attempt | undefined;
+  loading: boolean;
+  error: string | undefined;
+  selected: ReadonlySet<number>;
+  completion: AttemptCompletion | undefined;
+  busy: boolean;
+  onToggle: (attemptId: number, answerId: number, checked: boolean) => void;
+  onComplete: (attemptId: number) => void;
+}
+
+export function AttemptPage({ attempt, loading, error, selected, completion, busy, onToggle, onComplete }: AttemptPageProps) {
   if (loading && !attempt) return <section className="section-pad content-page"><p className="eyebrow">Тест</p><h1>Готуємо запитання…</h1><div className="result-skeleton" /></section>;
   if (error) return <section className="section-pad content-page"><p className="eyebrow">Тест</p><h1>Спроба недоступна</h1><div className="empty-state"><p>{error}</p><a className="button button--dark" href="#/quizzes">До каталогу</a></div></section>;
   if (!attempt) return <section className="section-pad content-page"><h1>Завантаження…</h1></section>;
@@ -406,11 +560,39 @@ export function AttemptPage({ attempt, loading, error, selected, completion, bus
   );
 }
 
-const blankAnswers = () => Array.from({ length: 4 }, () => ({ text: "", correct: false }));
+/** One row of the four-answer editor, before it is sent as an AnswerRequest. */
+interface AnswerDraft {
+  text: string;
+  correct: boolean;
+}
+
+interface QuizDraft {
+  id: number | null;
+  name: string;
+  /** Held as strings because a <select> value is a string. */
+  subjectId: string;
+  levelId: string;
+  timeToPassMinutes: number | string;
+}
+
+interface QuestionDraft {
+  id: number | null;
+  text: string;
+  answers: AnswerDraft[];
+}
+
+const blankAnswers = (): AnswerDraft[] => Array.from({ length: 4 }, () => ({ text: "", correct: false }));
+
+export interface PagerProps {
+  meta: PageMeta | null;
+  onChange: (page: number) => void;
+  busy: boolean;
+  label: string;
+}
 
 // Rendered only when the server actually paged the collection. `meta` is null
 // for an unpaginated response, and a single page needs no controls at all.
-function Pager({ meta, onChange, busy, label }) {
+function Pager({ meta, onChange, busy, label }: PagerProps) {
   if (!meta || meta.totalPages <= 1) return null;
   const first = meta.number * meta.size + 1;
   const last = Math.min(first + meta.size - 1, meta.totalCount);
@@ -435,7 +617,14 @@ function Pager({ meta, onChange, busy, label }) {
   );
 }
 
-function AdminSection({ eyebrow, title, action, children }) {
+interface AdminSectionProps {
+  eyebrow: string;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}
+
+function AdminSection({ eyebrow, title, action, children }: AdminSectionProps) {
   return (
     <section className="admin-card">
       <div className="admin-card__head"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div>{action}</div>
@@ -444,15 +633,29 @@ function AdminSection({ eyebrow, title, action, children }) {
   );
 }
 
+export interface AdminPageProps {
+  data: AdminData | null;
+  loading: boolean;
+  error: string;
+  busy: string;
+  api: QuizApi;
+  resultRange: ResultRange;
+  onResultRangeChange: (patch: Partial<ResultRange>) => void;
+  onUsersPageChange: (page: number) => void;
+  onResultsPageChange: (page: number) => void;
+  onRetry: () => void;
+  onExecute: ExecuteAdmin;
+}
+
 export function AdminPage({ data, loading, error, busy, api, resultRange, onResultRangeChange,
-  onUsersPageChange, onResultsPageChange, onRetry, onExecute }) {
+  onUsersPageChange, onResultsPageChange, onRetry, onExecute }: AdminPageProps) {
   const [subjectName, setSubjectName] = useState("");
-  const [quizDraft, setQuizDraft] = useState({ id: null, name: "", subjectId: "", levelId: "", timeToPassMinutes: 10 });
+  const [quizDraft, setQuizDraft] = useState<QuizDraft>({ id: null, name: "", subjectId: "", levelId: "", timeToPassMinutes: 10 });
   const [selectedQuizId, setSelectedQuizId] = useState("");
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState<AdminQuestion[]>([]);
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionError, setQuestionError] = useState("");
-  const [questionDraft, setQuestionDraft] = useState({ id: null, text: "", answers: blankAnswers() });
+  const [questionDraft, setQuestionDraft] = useState<QuestionDraft>({ id: null, text: "", answers: blankAnswers() });
   const working = busy.startsWith("admin-");
 
   useEffect(() => {
@@ -465,7 +668,7 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     setSelectedQuizId(current => current || String(data.quizzes[0]?.id || ""));
   }, [data]);
 
-  const loadQuestions = async quizId => {
+  const loadQuestions = async (quizId: string): Promise<void> => {
     if (!quizId) {
       setQuestions([]);
       return;
@@ -475,7 +678,7 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     try {
       setQuestions(await api.adminQuestions(quizId));
     } catch (loadError) {
-      setQuestionError(loadError.message);
+      setQuestionError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       setQuestionLoading(false);
     }
@@ -492,39 +695,40 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     return <section className="section-pad content-page"><p className="eyebrow">Адміністрування</p><h1>Панель недоступна</h1><div className="empty-state"><p>{error || "Не вдалося отримати дані."}</p><button className="button button--dark" type="button" onClick={onRetry}>Повторити</button></div></section>;
   }
 
-  const createSubject = async event => {
+  const createSubject = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const result = await onExecute("subject-create", () => api.createSubject(subjectName), "Предмет додано.");
     if (result) setSubjectName("");
   };
 
-  const renameSubject = async subject => {
+  const renameSubject = async (subject: Subject): Promise<void> => {
     const name = window.prompt("Нова назва предмета", subject.name);
     if (!name?.trim() || name.trim() === subject.name) return;
     await onExecute("subject-update", () => api.updateSubject(subject.id, name.trim()), "Назву предмета оновлено.");
   };
 
-  const deleteSubject = async subject => {
+  const deleteSubject = async (subject: Subject): Promise<void> => {
     if (!window.confirm(`Видалити предмет «${subject.name}»?`)) return;
     await onExecute("subject-delete", () => api.deleteSubject(subject.id), "Предмет видалено.");
   };
 
-  const submitQuiz = async event => {
+  const submitQuiz = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    const payload = {
+    const payload: QuizRequest = {
       name: quizDraft.name.trim(),
       subjectId: Number(quizDraft.subjectId),
       levelId: Number(quizDraft.levelId),
       timeToPassMinutes: Number(quizDraft.timeToPassMinutes)
     };
-    const operation = quizDraft.id
-      ? () => api.updateQuiz(quizDraft.id, payload)
+    const draftId = quizDraft.id;
+    const operation = draftId !== null
+      ? () => api.updateQuiz(draftId, payload)
       : () => api.createQuiz(payload);
-    const result = await onExecute("quiz-save", operation, quizDraft.id ? "Тест оновлено." : "Тест створено.");
+    const result = await onExecute("quiz-save", operation, draftId !== null ? "Тест оновлено." : "Тест створено.");
     if (result) setQuizDraft({ id: null, name: "", subjectId: String(data.subjects[0]?.id || ""), levelId: String(data.levels[0]?.id || ""), timeToPassMinutes: 10 });
   };
 
-  const editQuiz = quiz => setQuizDraft({
+  const editQuiz = (quiz: AdminQuiz): void => setQuizDraft({
     id: quiz.id,
     name: quiz.name,
     subjectId: String(quiz.subjectId),
@@ -532,7 +736,7 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     timeToPassMinutes: quiz.timeToPassMinutes
   });
 
-  const deleteQuiz = async quiz => {
+  const deleteQuiz = async (quiz: AdminQuiz): Promise<void> => {
     if (!window.confirm(`Видалити тест «${quiz.name}» разом із запитаннями та спробами?`)) return;
     const result = await onExecute("quiz-delete", () => api.deleteQuiz(quiz.id), "Тест видалено.");
     if (result !== null && String(quiz.id) === selectedQuizId) {
@@ -541,40 +745,42 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     }
   };
 
-  const changeAnswer = (index, field, value) => setQuestionDraft(current => ({
-    ...current,
-    answers: current.answers.map((answer, answerIndex) => answerIndex === index ? { ...answer, [field]: value } : answer)
-  }));
+  const changeAnswer = <K extends keyof AnswerDraft>(index: number, field: K, value: AnswerDraft[K]): void =>
+    setQuestionDraft(current => ({
+      ...current,
+      answers: current.answers.map((answer, answerIndex) => answerIndex === index ? { ...answer, [field]: value } : answer)
+    }));
 
-  const submitQuestion = async event => {
+  const submitQuestion = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    const payload = {
+    const payload: QuestionRequest = {
       text: questionDraft.text.trim(),
       answers: questionDraft.answers.map(answer => ({ text: answer.text.trim(), correct: answer.correct }))
     };
-    const operation = questionDraft.id
-      ? () => api.updateQuestion(questionDraft.id, payload)
+    const draftId = questionDraft.id;
+    const operation = draftId !== null
+      ? () => api.updateQuestion(draftId, payload)
       : () => api.createQuestion(selectedQuizId, payload);
-    const result = await onExecute("question-save", operation, questionDraft.id ? "Запитання оновлено." : "Запитання додано.");
+    const result = await onExecute("question-save", operation, draftId !== null ? "Запитання оновлено." : "Запитання додано.");
     if (result) {
       setQuestionDraft({ id: null, text: "", answers: blankAnswers() });
       await loadQuestions(selectedQuizId);
     }
   };
 
-  const editQuestion = question => setQuestionDraft({
+  const editQuestion = (question: AdminQuestion): void => setQuestionDraft({
     id: question.id,
     text: question.text,
     answers: question.answers.map(answer => ({ text: answer.text, correct: answer.correct }))
   });
 
-  const deleteQuestion = async question => {
+  const deleteQuestion = async (question: AdminQuestion): Promise<void> => {
     if (!window.confirm(`Видалити запитання «${question.text}»?`)) return;
     const result = await onExecute("question-delete", () => api.deleteQuestion(question.id), "Запитання видалено.");
     if (result !== null) await loadQuestions(selectedQuizId);
   };
 
-  const changeUserStatus = async user => {
+  const changeUserStatus = async (user: AdminUser): Promise<void> => {
     const nextStatus = user.status.toLowerCase() === "active" ? "blocked" : "active";
     if (nextStatus === "blocked" && !window.confirm(`Заблокувати користувача ${user.username}?`)) return;
     await onExecute("user-status", () => api.updateUserStatus(user.id, nextStatus),
@@ -595,29 +801,29 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
         </div>
 
         <AdminSection eyebrow="Каталог" title="Предмети">
-          <form className="admin-inline-form" onSubmit={createSubject}><label><span className="sr-only">Назва нового предмета</span><input required maxLength="25" value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder="Новий предмет" /></label><button className="button button--dark" disabled={working}>Додати</button></form>
-          <div className="admin-list">{data.subjects.map(subject => <div className="admin-list__row" key={subject.id}><div><span className="admin-id">#{subject.id}</span><strong>{subject.name}</strong></div><div className="button-row"><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => renameSubject(subject)}>Перейменувати</button><button className="button button--danger button--small" type="button" disabled={working} onClick={() => deleteSubject(subject)}>Видалити</button></div></div>)}</div>
+          <form className="admin-inline-form" onSubmit={createSubject}><label><span className="sr-only">Назва нового предмета</span><input required maxLength={25} value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder="Новий предмет" /></label><button className="button button--dark" disabled={working}>Додати</button></form>
+          <div className="admin-list">{data.subjects.map(subject => <div className="admin-list__row" key={subject.id}><div><span className="admin-id">#{subject.id}</span><strong>{subject.name}</strong></div><div className="button-row"><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => void renameSubject(subject)}>Перейменувати</button><button className="button button--danger button--small" type="button" disabled={working} onClick={() => void deleteSubject(subject)}>Видалити</button></div></div>)}</div>
         </AdminSection>
 
         <AdminSection eyebrow="Контент" title="Тести">
           <form className="admin-grid-form" onSubmit={submitQuiz}>
-            <label><span>Назва</span><input required maxLength="50" value={quizDraft.name} onChange={event => setQuizDraft({ ...quizDraft, name: event.target.value })} /></label>
+            <label><span>Назва</span><input required maxLength={50} value={quizDraft.name} onChange={event => setQuizDraft({ ...quizDraft, name: event.target.value })} /></label>
             <label><span>Предмет</span><select required value={quizDraft.subjectId} onChange={event => setQuizDraft({ ...quizDraft, subjectId: event.target.value })}>{data.subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
             <label><span>Складність</span><select required value={quizDraft.levelId} onChange={event => setQuizDraft({ ...quizDraft, levelId: event.target.value })}>{data.levels.map(level => <option key={level.id} value={level.id}>{difficultyLabel(level.name)}</option>)}</select></label>
             <label><span>Хвилин</span><input required min="1" max="1440" type="number" value={quizDraft.timeToPassMinutes} onChange={event => setQuizDraft({ ...quizDraft, timeToPassMinutes: event.target.value })} /></label>
             <div className="button-row"><button className="button button--dark" disabled={working}>{quizDraft.id ? "Зберегти" : "Створити тест"}</button>{quizDraft.id && <button className="button button--ghost" type="button" onClick={() => setQuizDraft({ id: null, name: "", subjectId: String(data.subjects[0]?.id || ""), levelId: String(data.levels[0]?.id || ""), timeToPassMinutes: 10 })}>Скасувати</button>}</div>
           </form>
-          <div className="admin-table"><div className="admin-table__head"><span>Тест</span><span>Параметри</span><span>Дії</span></div>{data.quizzes.map(quiz => <div className="admin-table__row" key={quiz.id}><div><strong>{quiz.name}</strong><small>{quiz.subject}</small></div><span>{difficultyLabel(quiz.complexity)} · {quiz.timeToPassMinutes} хв · {quiz.totalQuestions} зап.</span><div className="button-row"><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => editQuiz(quiz)}>Редагувати</button><button className="button button--danger button--small" type="button" disabled={working} onClick={() => deleteQuiz(quiz)}>Видалити</button></div></div>)}</div>
+          <div className="admin-table"><div className="admin-table__head"><span>Тест</span><span>Параметри</span><span>Дії</span></div>{data.quizzes.map(quiz => <div className="admin-table__row" key={quiz.id}><div><strong>{quiz.name}</strong><small>{quiz.subject}</small></div><span>{difficultyLabel(quiz.complexity)} · {quiz.timeToPassMinutes} хв · {quiz.totalQuestions} зап.</span><div className="button-row"><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => editQuiz(quiz)}>Редагувати</button><button className="button button--danger button--small" type="button" disabled={working} onClick={() => void deleteQuiz(quiz)}>Видалити</button></div></div>)}</div>
         </AdminSection>
 
         <AdminSection eyebrow="Редактор" title="Запитання" action={<select className="admin-quiz-select" value={selectedQuizId} onChange={event => { setSelectedQuizId(event.target.value); setQuestionDraft({ id: null, text: "", answers: blankAnswers() }); }}>{data.quizzes.map(quiz => <option key={quiz.id} value={quiz.id}>{quiz.name}</option>)}</select>}>
           {!selectedQuizId ? <div className="empty-state"><p>Спочатку створіть тест.</p></div> : <>
-            <form className="admin-question-form" onSubmit={submitQuestion}><label><span>Текст запитання</span><textarea required maxLength="250" value={questionDraft.text} onChange={event => setQuestionDraft({ ...questionDraft, text: event.target.value })} /></label><div className="admin-answer-grid">{questionDraft.answers.map((answer, index) => <label key={index}><span>Варіант {index + 1}</span><input required maxLength="50" value={answer.text} onChange={event => changeAnswer(index, "text", event.target.value)} /><span className="admin-check"><input type="checkbox" checked={answer.correct} onChange={event => changeAnswer(index, "correct", event.target.checked)} /> Правильна відповідь</span></label>)}</div><div className="button-row"><button className="button button--dark" disabled={working}>{questionDraft.id ? "Зберегти запитання" : "Додати запитання"}</button>{questionDraft.id && <button className="button button--ghost" type="button" onClick={() => setQuestionDraft({ id: null, text: "", answers: blankAnswers() })}>Скасувати</button>}</div></form>
-            {questionError && <div className="alert alert--error">{questionError}</div>}{questionLoading ? <p>Завантаження запитань…</p> : <div className="admin-question-list">{questions.map((question, index) => <article key={question.id}><div><span>{String(index + 1).padStart(2, "0")}</span><strong>{question.text}</strong></div><ol>{question.answers.map(answer => <li className={answer.correct ? "is-correct" : ""} key={answer.id}>{answer.text}{answer.correct && " ✓"}</li>)}</ol><div className="button-row"><button className="button button--ghost button--small" type="button" onClick={() => editQuestion(question)}>Редагувати</button><button className="button button--danger button--small" type="button" onClick={() => deleteQuestion(question)}>Видалити</button></div></article>)}</div>}
+            <form className="admin-question-form" onSubmit={submitQuestion}><label><span>Текст запитання</span><textarea required maxLength={250} value={questionDraft.text} onChange={event => setQuestionDraft({ ...questionDraft, text: event.target.value })} /></label><div className="admin-answer-grid">{questionDraft.answers.map((answer, index) => <label key={index}><span>Варіант {index + 1}</span><input required maxLength={50} value={answer.text} onChange={event => changeAnswer(index, "text", event.target.value)} /><span className="admin-check"><input type="checkbox" checked={answer.correct} onChange={event => changeAnswer(index, "correct", event.target.checked)} /> Правильна відповідь</span></label>)}</div><div className="button-row"><button className="button button--dark" disabled={working}>{questionDraft.id ? "Зберегти запитання" : "Додати запитання"}</button>{questionDraft.id && <button className="button button--ghost" type="button" onClick={() => setQuestionDraft({ id: null, text: "", answers: blankAnswers() })}>Скасувати</button>}</div></form>
+            {questionError && <div className="alert alert--error">{questionError}</div>}{questionLoading ? <p>Завантаження запитань…</p> : <div className="admin-question-list">{questions.map((question, index) => <article key={question.id}><div><span>{String(index + 1).padStart(2, "0")}</span><strong>{question.text}</strong></div><ol>{question.answers.map(answer => <li className={answer.correct ? "is-correct" : ""} key={answer.id}>{answer.text}{answer.correct && " ✓"}</li>)}</ol><div className="button-row"><button className="button button--ghost button--small" type="button" onClick={() => editQuestion(question)}>Редагувати</button><button className="button button--danger button--small" type="button" onClick={() => void deleteQuestion(question)}>Видалити</button></div></article>)}</div>}
           </>}
         </AdminSection>
 
-        <AdminSection eyebrow="Доступ" title="Користувачі"><div className="admin-table"><div className="admin-table__head"><span>Користувач</span><span>Роль і статус</span><span>Дія</span></div>{data.users.map(user => <div className="admin-table__row" key={user.id}><div><strong>{user.username}</strong><small>#{user.id}</small></div><span>{user.role} · <b className={`status-dot status-dot--${user.status.toLowerCase()}`}>{user.status}</b></span><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => changeUserStatus(user)}>{user.status.toLowerCase() === "active" ? "Заблокувати" : "Активувати"}</button></div>)}</div><Pager meta={data.usersPage} onChange={onUsersPageChange} busy={working || loading} label="Користувачі" /></AdminSection>
+        <AdminSection eyebrow="Доступ" title="Користувачі"><div className="admin-table"><div className="admin-table__head"><span>Користувач</span><span>Роль і статус</span><span>Дія</span></div>{data.users.map(user => <div className="admin-table__row" key={user.id}><div><strong>{user.username}</strong><small>#{user.id}</small></div><span>{user.role} · <b className={`status-dot status-dot--${user.status.toLowerCase()}`}>{user.status}</b></span><button className="button button--ghost button--small" type="button" disabled={working} onClick={() => void changeUserStatus(user)}>{user.status.toLowerCase() === "active" ? "Заблокувати" : "Активувати"}</button></div>)}</div><Pager meta={data.usersPage} onChange={onUsersPageChange} busy={working || loading} label="Користувачі" /></AdminSection>
 
         <AdminSection eyebrow="Аналітика" title="Усі результати" action={<div className="admin-date-filter"><label>Від<input type="datetime-local" value={resultRange.from} onChange={event => onResultRangeChange({ from: event.target.value })} /></label><label>До<input type="datetime-local" value={resultRange.to} onChange={event => onResultRangeChange({ to: event.target.value })} /></label></div>}><div className="admin-table"><div className="admin-table__head"><span>Користувач і тест</span><span>Дата</span><span>Результат</span></div>{visibleResults.map(result => <div className="admin-table__row" key={result.attemptId}><div><strong>{result.username}</strong><small>{result.quizName} · спроба #{result.attemptId}</small></div><span>{formatDate(result.completedAt)}</span><strong>{result.score}%</strong></div>)}</div><Pager meta={data.resultsPage} onChange={onResultsPageChange} busy={working || loading} label="Результати" />{!visibleResults.length && <p className="admin-empty">У вибраному діапазоні результатів немає.</p>}</AdminSection>
       </section>

@@ -1,0 +1,46 @@
+{
+  // One config for the whole repository. The app, the unit tests and the
+  // Playwright specs all run on the same two hosts — a browser and Node 22 —
+  // and splitting them into project references would buy nothing but a second
+  // file to keep in sync.
+  //
+  // Nothing is emitted from here. Vite compiles the app with esbuild, the unit
+  // tests are transformed by the same esbuild through a module hook, and
+  // Playwright has its own transform. tsc's only job in this repository is to
+  // answer whether the types hold, which is why `noEmit` is on and the target
+  // is set high enough that downlevelling never becomes a question.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["node"],
+
+    "strict": true,
+    // Beyond `strict`. Each of these caught something real during the
+    // conversion, which is the only reason any of them is here:
+    //   noUncheckedIndexedAccess  — attempts[id] and route.params[0] are both
+    //                               lookups that can miss, and both were read
+    //                               as though they could not.
+    //   exactOptionalPropertyTypes — `{ from: undefined }` is not the same
+    //                               request as omitting `from`.
+    //   noImplicitOverride, noFallthroughCasesInSwitch,
+    //   noPropertyAccessFromIndexSignature — cheap, and nothing had to change.
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src", "tests", "e2e", "vite.config.ts", "playwright.config.ts", "scripts"]
+}

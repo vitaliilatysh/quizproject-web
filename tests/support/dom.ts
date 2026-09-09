@@ -10,11 +10,18 @@
 // happy-dom rather than a browser: React needs somewhere to commit to and
 // something to dispatch events at, not a rendering engine. The E2E suite still
 // answers "does this work in Chromium", which is a different question.
-import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
+import { act, createElement, type ComponentType } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { Window } from "happy-dom";
 
 // React refuses to run act() unless it is told the environment is a test one.
+// Declared as well as set: it is not part of any published type, and an
+// undeclared global assignment is exactly what the compiler should object to.
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 // FormData is on this list for a reason worth stating: Node has one of its own,
@@ -26,9 +33,14 @@ const COPIED_GLOBALS = [
   "SVGElement", "Event", "SubmitEvent", "CustomEvent", "MouseEvent",
   "KeyboardEvent", "MutationObserver", "DOMParser", "FormData", "Blob", "File",
   "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "Text"
-];
+] as const;
 
-let active = null;
+interface ActiveBrowser {
+  window: Window;
+  roots: Root[];
+}
+
+let active: ActiveBrowser | null = null;
 
 /**
  * Install a fresh window. Fresh, not reused, because these tests are about
@@ -36,7 +48,7 @@ let active = null;
  * server-clock offset — and a window carried between tests would carry that
  * state with it.
  */
-export function openBrowser({ url = "http://localhost:4173/" } = {}) {
+export function openBrowser({ url = "http://localhost:4173/" } = {}): Window {
   closeBrowser();
 
   const window = new Window({ url });
@@ -44,8 +56,9 @@ export function openBrowser({ url = "http://localhost:4173/" } = {}) {
 
   // defineProperty rather than assignment: Node already owns some of these
   // names — navigator is a getter with no setter — and assigning to them throws.
-  const install = (name, value) =>
+  const install = (name: string, value: unknown): void => {
     Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
+  };
 
   install("window", window);
   install("document", window.document);
@@ -53,12 +66,14 @@ export function openBrowser({ url = "http://localhost:4173/" } = {}) {
   install("location", window.location);
   install("localStorage", window.localStorage);
   install("sessionStorage", window.sessionStorage);
-  for (const name of COPIED_GLOBALS) install(name, window[name]);
+  for (const name of COPIED_GLOBALS) {
+    install(name, (window as unknown as Record<string, unknown>)[name]);
+  }
 
   return window;
 }
 
-export function closeBrowser() {
+export function closeBrowser(): void {
   if (!active) return;
   for (const root of active.roots) {
     try {
@@ -73,17 +88,47 @@ export function closeBrowser() {
 }
 
 /**
+ * What {@link render} hands back: the mounted DOM and the ways to drive it.
+ *
+ * `find` insists the element is there and `query` allows it not to be. They
+ * used to be one method returning `Element | null`, which meant every call site
+ * either checked a null it knew could not happen or dereferenced one the
+ * compiler had to be told about. Splitting them says which of the two a given
+ * assertion actually means: three call sites in this suite are asserting
+ * absence, and the rest would be broken tests if the element were missing.
+ *
+ * Both are generic so a test that needs `.checked` or `.disabled` can ask for
+ * the element type that has it, rather than casting at the point of use.
+ */
+export interface Rendered<P> {
+  container: HTMLElement;
+  rerender: (nextProps: P) => void;
+  unmount: () => void;
+  html: () => string;
+  text: () => string;
+  find: <E extends Element = HTMLElement>(selector: string) => E;
+  query: <E extends Element = HTMLElement>(selector: string) => E | null;
+  findAll: <E extends Element = HTMLElement>(selector: string) => E[];
+  /**
+   * The nth match, insisting there is one. Destructuring `findAll` gives
+   * `E | undefined` for every element, and a test that reaches for the second
+   * pager button when only one exists is a failing test, not a case to handle.
+   */
+  at: <E extends Element = HTMLElement>(selector: string, index: number) => E;
+}
+
+/**
  * Mount a component and return its container plus the tools to drive it.
  * Everything that changes React state goes through act(), so effects have run
  * and the DOM has settled by the time the call returns.
  */
-export function render(component, props = {}) {
+export function render<P extends object>(component: ComponentType<P>, props: P = {} as P): Rendered<P> {
   if (!active) openBrowser();
 
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  active.roots.push(root);
+  active?.roots.push(root);
 
   act(() => root.render(createElement(component, props)));
 
@@ -92,32 +137,46 @@ export function render(component, props = {}) {
     rerender: nextProps => act(() => root.render(createElement(component, nextProps))),
     unmount: () => act(() => root.unmount()),
     html: () => container.innerHTML,
-    text: () => container.textContent,
-    find: selector => container.querySelector(selector),
-    findAll: selector => [...container.querySelectorAll(selector)]
+    text: () => container.textContent ?? "",
+    find: <E extends Element = HTMLElement>(selector: string): E => {
+      const found = container.querySelector<E>(selector);
+      if (!found) throw new Error(`Nothing matched ${selector} in the rendered output`);
+      return found;
+    },
+    query: <E extends Element = HTMLElement>(selector: string): E | null =>
+      container.querySelector<E>(selector),
+    findAll: <E extends Element = HTMLElement>(selector: string): E[] =>
+      [...container.querySelectorAll<E>(selector)],
+    at: <E extends Element = HTMLElement>(selector: string, index: number): E => {
+      const found = container.querySelectorAll<E>(selector)[index];
+      if (!found) throw new Error(`${selector} has no match at index ${index}`);
+      return found;
+    }
   };
 }
 
 // Clicks the way a reader does: a real event, bubbling to React's listener on
 // the container, inside act() so the resulting render is finished on return.
-export function click(element) {
+export function click(element: Element | null | undefined): void {
   if (!element) throw new Error("click() was given nothing to click");
   act(() => {
     element.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
   });
 }
 
-export function type(input, value) {
+export function type(input: Element | null | undefined, value: string): void {
+  if (!input) throw new Error("type() was given nothing to type into");
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-    setter ? setter.call(input, value) : (input.value = value);
+    if (setter) setter.call(input, value);
+    else (input as HTMLInputElement).value = value;
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
 }
 
 // Lets pending promises settle and React flush what they caused. Awaited rather
 // than timed, so a slow machine cannot turn a passing test into a failing one.
-export async function settle(times = 3) {
+export async function settle(times = 3): Promise<void> {
   for (let index = 0; index < times; index += 1) {
     await act(async () => { await Promise.resolve(); });
   }

@@ -10,7 +10,13 @@ WORKDIR /workspace
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY index.html vite.config.js ./
+# tsconfig.json changes nothing about today's bundle — the build produces a
+# byte-identical file without it, because plugin-react sets the JSX transform
+# and vite.config sets the target. It is copied so that it keeps changing
+# nothing: esbuild does honour some compiler options that affect emitted code,
+# and the day one of those is added, the container would otherwise transform
+# under different settings from every other build without saying so.
+COPY index.html vite.config.ts tsconfig.json ./
 COPY .openai ./.openai
 COPY public ./public
 COPY scripts ./scripts

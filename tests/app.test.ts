@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
-import App from "../src/App.jsx";
+import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
-import { fakeToken, loginResponse, stubApi } from "./support/api-stub.mjs";
-import { act, click, closeBrowser, openBrowser, render, settle, type } from "./support/dom.mjs";
+import { fakeToken, loginResponse, stubApi } from "./support/api-stub.js";
+import { act, click, closeBrowser, openBrowser, render, settle, type, type Rendered } from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
 
@@ -15,16 +15,19 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-const ANSWERS = attemptId => `quizproject.answers.${attemptId}`;
+const ANSWERS = (attemptId: number): string => `quizproject.answers.${attemptId}`;
 
-function goTo(hash) {
+function goTo(hash: string): void {
   act(() => {
     window.location.hash = hash;
     window.dispatchEvent(new window.Event("hashchange"));
   });
 }
 
-function seedSession(username, { roles = ["ROLE_USER"], expiresInMs = 900_000 } = {}) {
+function seedSession(
+  username: string,
+  { roles = ["ROLE_USER"], expiresInMs = 900_000 }: { roles?: string[]; expiresInMs?: number } = {}
+): void {
   sessionStorage.setItem("quizproject.session", JSON.stringify({
     accessToken: fakeToken(username, { roles }),
     tokenType: "Bearer",
@@ -34,7 +37,11 @@ function seedSession(username, { roles = ["ROLE_USER"], expiresInMs = 900_000 } 
   }));
 }
 
-async function signIn(view, username, password = "Password1!") {
+async function signIn(
+  view: Rendered<Record<string, never>>,
+  username: string,
+  password = "Password1!"
+): Promise<void> {
   type(view.find("input[name=username]"), username);
   type(view.find("input[name=password]"), password);
   await act(async () => {
@@ -48,7 +55,7 @@ async function signIn(view, username, password = "Password1!") {
 // declaration time would instead start the clock before the app has even
 // rendered — spending the window on setup and leaving the deadline test to race
 // its own preamble on a slow machine.
-const attemptBody = (attemptId, { minutes = 30 } = {}) => () => ({
+const attemptBody = (attemptId: number, { minutes = 30 }: { minutes?: number } = {}) => () => ({
   body: {
     attemptId, quizId: 7, completed: false,
     expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
@@ -180,7 +187,7 @@ test("a refreshed token is not a different reader", async () => {
 
   // Expiring inside the refresh margin, so the timer takes its 5s floor.
   seedSession("olena", { expiresInMs: 61_000 });
-  const before = JSON.parse(sessionStorage.getItem("quizproject.session")).accessToken;
+  const before = JSON.parse(String(sessionStorage.getItem("quizproject.session"))).accessToken;
   sessionStorage.setItem(ANSWERS(4), JSON.stringify([101, 102]));
 
   const view = render(App);
@@ -198,9 +205,9 @@ test("a refreshed token is not a different reader", async () => {
   // installing what came back, everything below would still hold — same login,
   // same draft, same name on screen — and this test would pass without the
   // session ever having been replaced. So: the stored token is the new one.
-  const after = JSON.parse(sessionStorage.getItem("quizproject.session"));
+  const after = JSON.parse(String(sessionStorage.getItem("quizproject.session")));
   assert.notEqual(after.accessToken, before, "the refreshed token was never installed");
-  assert.equal(after.accessToken, refreshed.body.accessToken);
+  assert.equal(after.accessToken, (refreshed.body as { accessToken: string }).accessToken);
   assert.equal(after.username, "olena", "the refresh did not leave a usable session behind");
   assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101, 102]),
     "a silent token refresh threw away the reader's draft");
@@ -226,12 +233,12 @@ test("a ticked answer survives renders it did not cause", async () => {
   goTo("#/attempt/4");
   await settle();
 
-  click(view.findAll("input[type=checkbox]")[0]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
   view.rerender({});
   view.rerender({});
   await settle();
 
-  assert.equal(view.findAll("input[type=checkbox]")[0].checked, true);
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, true);
 });
 
 // Leaving the attempt and coming back mounts the page afresh, with no selection
@@ -248,7 +255,7 @@ test("a reader who navigates away and back finds the page as they left it", asyn
   goTo("#/attempt/4");
   await settle();
 
-  click(view.findAll("input[type=checkbox]")[1]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 1));
   await settle();
 
   goTo("#/quizzes");
@@ -257,9 +264,9 @@ test("a reader who navigates away and back finds the page as they left it", asyn
 
   goTo("#/attempt/4");
   await settle();
-  const boxes = view.findAll("input[type=checkbox]");
-  assert.equal(boxes[0].checked, false);
-  assert.equal(boxes[1].checked, true, "the answer chosen before leaving was lost");
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, false);
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 1).checked, true,
+    "the answer chosen before leaving was lost");
 });
 
 test("a ticked answer is written down, and unticking takes it back", async () => {
@@ -274,17 +281,17 @@ test("a ticked answer is written down, and unticking takes it back", async () =>
   goTo("#/attempt/4");
   await settle();
 
-  click(view.findAll("input[type=checkbox]")[0]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
   await settle();
-  assert.deepEqual(JSON.parse(sessionStorage.getItem(ANSWERS(4))), [101]);
+  assert.deepEqual(JSON.parse(String(sessionStorage.getItem(ANSWERS(4)))), [101]);
 
-  click(view.findAll("input[type=checkbox]")[1]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 1));
   await settle();
-  assert.deepEqual(JSON.parse(sessionStorage.getItem(ANSWERS(4))), [101, 102]);
+  assert.deepEqual(JSON.parse(String(sessionStorage.getItem(ANSWERS(4)))), [101, 102]);
 
-  click(view.findAll("input[type=checkbox]")[0]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
   await settle();
-  assert.deepEqual(JSON.parse(sessionStorage.getItem(ANSWERS(4))), [102]);
+  assert.deepEqual(JSON.parse(String(sessionStorage.getItem(ANSWERS(4)))), [102]);
 });
 
 test("a reader who reopens a paused attempt finds their answers still ticked", async () => {
@@ -301,9 +308,9 @@ test("a reader who reopens a paused attempt finds their answers still ticked", a
   goTo("#/attempt/4");
   await settle();
 
-  const boxes = view.findAll("input[type=checkbox]");
-  assert.equal(boxes[0].checked, false);
-  assert.equal(boxes[1].checked, true, "a saved answer was not restored");
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, false);
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 1).checked, true,
+    "a saved answer was not restored");
 });
 
 test("submitting asks first, and does not submit when the answer is no", async () => {
@@ -318,15 +325,15 @@ test("submitting asks first, and does not submit when the answer is no", async (
   await settle();
   goTo("#/attempt/4");
   await settle();
-  click(view.findAll("input[type=checkbox]")[0]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
 
-  const asked = [];
-  window.confirm = message => { asked.push(message); return false; };
+  const asked: string[] = [];
+  window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
   click(view.find(".attempt-submit button"));
   await settle();
 
   assert.equal(asked.length, 1);
-  assert.match(asked[0], /1 вибраних відповідей/, "the reader was not told what they were sending");
+  assert.match(String(asked[0]), /1 вибраних відповідей/, "the reader was not told what they were sending");
   assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 0,
     "the attempt was submitted after the reader said no");
 
@@ -335,7 +342,7 @@ test("submitting asks first, and does not submit when the answer is no", async (
   await settle();
 
   assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 1);
-  assert.deepEqual(api.lastOf("POST /api/v1/attempts/4/complete").body, { answerIds: [101] });
+  assert.deepEqual(api.lastOf("POST /api/v1/attempts/4/complete")?.body, { answerIds: [101] });
   assert.match(view.text(), /Ваш результат/);
   assert.equal(sessionStorage.getItem(ANSWERS(4)), null, "a submitted draft was left behind");
 });
@@ -361,7 +368,7 @@ test("the deadline submits by itself, and does not stop to ask", async () => {
   await settle();
   goTo("#/attempt/4");
   await settle();
-  click(view.findAll("input[type=checkbox]")[0]);
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
   assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 0, "it submitted before the deadline");
 
   // 4.8 seconds of quiz from the moment the API handed it over, less the
@@ -374,7 +381,7 @@ test("the deadline submits by itself, and does not stop to ask", async () => {
   assert.equal(asked, 0, "the deadline stopped to ask a question nobody was there to answer");
   assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 1,
     "the deadline passed and the attempt stayed open");
-  assert.deepEqual(api.lastOf("POST /api/v1/attempts/4/complete").body, { answerIds: [101] },
+  assert.deepEqual(api.lastOf("POST /api/v1/attempts/4/complete")?.body, { answerIds: [101] },
     "the answer chosen before the deadline did not go with it");
   assert.match(view.text(), /Ваш результат/);
 });

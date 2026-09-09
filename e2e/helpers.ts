@@ -1,11 +1,16 @@
-import { expect } from "@playwright/test";
+import { expect, type Locator, type Page, type Response, type TestInfo } from "@playwright/test";
 
-export function uniqueUsername(testInfo, prefix) {
+export function uniqueUsername(testInfo: TestInfo, prefix: string): string {
   const run = Date.now().toString(36).slice(-6);
   return `${prefix}${run}${testInfo.retry}`.slice(0, 15);
 }
 
-export async function submitAndExpectApiResponse(page, button, path, expectedStatus) {
+export async function submitAndExpectApiResponse(
+  page: Page,
+  button: Locator,
+  path: string,
+  expectedStatus: number
+): Promise<Response> {
   const [response] = await Promise.all([
     page.waitForResponse(candidate =>
       new URL(candidate.url()).pathname === path
@@ -18,7 +23,7 @@ export async function submitAndExpectApiResponse(page, button, path, expectedSta
   return response;
 }
 
-export async function register(page, username, password) {
+export async function register(page: Page, username: string, password: string): Promise<void> {
   await page.goto("/#/signup");
   await page.getByLabel("Ім’я", { exact: true }).fill("Endtoend");
   await page.getByLabel("Прізвище", { exact: true }).fill("Student");
@@ -34,7 +39,7 @@ export async function register(page, username, password) {
   await expect(page).toHaveURL(/#\/quizzes$/);
 }
 
-export async function login(page, username, password) {
+export async function login(page: Page, username: string, password: string): Promise<void> {
   await page.goto("/#/login");
   await page.getByLabel("Логін", { exact: true }).fill(username);
   await page.getByLabel("Пароль", { exact: true }).fill(password);

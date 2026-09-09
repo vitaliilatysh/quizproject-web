@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, QuizApi, normalizeBaseUrl } from "./api.js";
 import { resetServerClock } from "./clock.js";
 import {
@@ -14,7 +14,8 @@ import {
   rememberReturnTo,
   writeAnswers,
   writeApiUrl,
-  writeSession
+  writeSession,
+  type Session
 } from "./session.js";
 import {
   AttemptPage,
@@ -27,11 +28,25 @@ import {
   QuizzesPage,
   ResultsPage,
   SettingsPage,
-  SignupPage
-} from "./components.jsx";
-import { autoSubmitDelay, complexityLabels, HOME_TEASER_SIZE, parseRoute, safeHash } from "./utils.js";
+  SignupPage,
+  type AdminData,
+  type ExecuteAdmin,
+  type ResultRange,
+  type Toast
+} from "./components.js";
+import type {
+  Attempt,
+  AttemptCompletion,
+  CatalogueSummary,
+  PageMeta,
+  Profile,
+  Quiz,
+  RegisterRequest,
+  Result
+} from "./types.js";
+import { autoSubmitDelay, complexityLabels, HOME_TEASER_SIZE, parseRoute, safeHash, type Route } from "./utils.js";
 
-function navigate(hash) {
+function navigate(hash: string): void {
   globalThis.location.hash = safeHash(hash);
 }
 
@@ -45,16 +60,16 @@ const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 // One shared empty Set, so a route without a valid attempt does not hand the
 // page a new identity on every render either.
-const EMPTY_SELECTION = new Set();
+const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
 
-function friendlyError(error) {
+function friendlyError(error: unknown): string {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
   const correlationId = error instanceof ApiError ? error.correlationId : null;
   return correlationId ? `${error.message} (код підтримки: ${correlationId})` : error.message;
 }
 
-function pageTitle(name) {
-  return ({
+function pageTitle(name: string): string {
+  const titles: Record<string, string> = {
     quizzes: "Тести",
     login: "Вхід",
     signup: "Реєстрація",
@@ -63,11 +78,12 @@ function pageTitle(name) {
     results: "Результати",
     attempt: "Проходження тесту",
     admin: "Адміністрування"
-  })[name] || "Сторінка";
+  };
+  return titles[name] || "Сторінка";
 }
 
-function useRoute() {
-  const [route, setRoute] = useState(() => parseRoute());
+function useRoute(): Route {
+  const [route, setRoute] = useState<Route>(() => parseRoute());
   useEffect(() => {
     const onChange = () => setRoute(parseRoute());
     window.addEventListener("hashchange", onChange);
@@ -78,18 +94,18 @@ function useRoute() {
 
 export default function App() {
   const route = useRoute();
-  const [session, setSession] = useState(() => readSession());
+  const [session, setSession] = useState<Session | null>(() => readSession());
   // Who the cached data belongs to. A refreshed token keeps the same login, so
   // this only changes when a different person is actually signed in.
   const accountName = session?.username ?? null;
-  const [apiUrl, setApiUrl] = useState(() => readApiUrl());
-  const [quizzes, setQuizzes] = useState(null);
+  const [apiUrl, setApiUrl] = useState<string>(() => readApiUrl());
+  const [quizzes, setQuizzes] = useState<Quiz[] | null>(null);
   const [quizzesLoading, setQuizzesLoading] = useState(false);
   const [quizError, setQuizError] = useState("");
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState<Result[] | null>(null);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultError, setResultError] = useState("");
-  const [adminData, setAdminData] = useState(null);
+  const [adminData, setAdminData] = useState<AdminData | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState("");
   // Paging and the results date range live here rather than inside AdminPage
@@ -97,15 +113,15 @@ export default function App() {
   // would hide every match that sits on another page.
   const [adminUsersPage, setAdminUsersPage] = useState(0);
   const [adminResultsPage, setAdminResultsPage] = useState(0);
-  const [adminResultRange, setAdminResultRange] = useState({ from: "", to: "" });
-  const [profile, setProfile] = useState(null);
+  const [adminResultRange, setAdminResultRange] = useState<ResultRange>({ from: "", to: "" });
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
-  const [attempts, setAttempts] = useState({});
-  const [attemptLoading, setAttemptLoading] = useState({});
-  const [attemptErrors, setAttemptErrors] = useState({});
-  const [selections, setSelections] = useState({});
-  const [completions, setCompletions] = useState({});
+  const [attempts, setAttempts] = useState<Record<number, Attempt>>({});
+  const [attemptLoading, setAttemptLoading] = useState<Record<number, boolean>>({});
+  const [attemptErrors, setAttemptErrors] = useState<Record<number, string>>({});
+  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
+  const [completions, setCompletions] = useState<Record<number, AttemptCompletion>>({});
   const [actionBusy, setActionBusy] = useState("");
   const [loginError, setLoginError] = useState("");
   const [signupError, setSignupError] = useState("");
@@ -118,27 +134,27 @@ export default function App() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [quizzesPage, setQuizzesPage] = useState(0);
-  const [quizzesMeta, setQuizzesMeta] = useState(null);
-  const [catalogueSummary, setCatalogueSummary] = useState(null);
-  const [toasts, setToasts] = useState([]);
+  const [quizzesMeta, setQuizzesMeta] = useState<PageMeta | null>(null);
+  const [catalogueSummary, setCatalogueSummary] = useState<CatalogueSummary | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const quizzesRequest = useRef(false);
   const resultsRequest = useRef(false);
   const adminRequest = useRef(false);
   const profileRequest = useRef(false);
-  const attemptRequests = useRef(new Set());
+  const attemptRequests = useRef(new Set<number>());
   // Completions in flight, so the deadline and the button cannot submit the
   // same attempt twice and leave one of them to report a conflict.
-  const completionRequests = useRef(new Set());
+  const completionRequests = useRef(new Set<number>());
   // The account the cached data currently belongs to. Also what an in-flight
   // request compares itself against before committing what it loaded.
-  const activeAccount = useRef(accountName);
+  const activeAccount = useRef<string | null>(accountName);
 
   const api = useMemo(() => new QuizApi({
     baseUrl: apiUrl,
     getToken: () => session?.accessToken
   }), [apiUrl, session?.accessToken]);
 
-  const toast = useCallback((message, tone = "success") => {
+  const toast = useCallback((message: string, tone = "success") => {
     const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     setToasts(current => [...current, { id, message, tone }]);
     window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 4200);
@@ -150,10 +166,10 @@ export default function App() {
     let timer = window.setTimeout(attemptRefresh,
       Math.max(5000, session.expiresAt - Date.now() - TOKEN_REFRESH_MARGIN_MS));
 
-    async function attemptRefresh() {
+    async function attemptRefresh(): Promise<void> {
       try {
         const tokenResponse = await api.refresh();
-        if (!cancelled) setSession(writeSession(tokenResponse, session.username));
+        if (!cancelled) setSession(writeSession(tokenResponse, session!.username));
       } catch (error) {
         if (cancelled) return;
         if (error instanceof ApiError && error.status === 401) {
@@ -180,7 +196,7 @@ export default function App() {
     resetServerClock();
   }, [apiUrl]);
 
-  const handleAuthError = useCallback((error, returnTo) => {
+  const handleAuthError = useCallback((error: unknown, returnTo: string): boolean => {
     if (!(error instanceof ApiError) || error.status !== 401) return false;
     clearSession();
     setSession(null);
@@ -193,7 +209,7 @@ export default function App() {
 
   const catalogueRoute = route.name === "quizzes";
 
-  const loadQuizzes = useCallback(async () => {
+  const loadQuizzes = useCallback(async (): Promise<void> => {
     if (quizzesRequest.current) return;
     quizzesRequest.current = true;
     setQuizzesLoading(true);
@@ -218,7 +234,9 @@ export default function App() {
       // render a working home page with dashes where the totals go.
       const [{ items, page }, summary] = await Promise.all([
         request,
-        catalogueRoute ? Promise.resolve(null) : api.catalogueSummary().catch(() => null)
+        catalogueRoute
+          ? Promise.resolve<CatalogueSummary | null>(null)
+          : api.catalogueSummary().catch((): CatalogueSummary | null => null)
       ]);
       setQuizzes(items);
       setQuizzesMeta(page);
@@ -231,7 +249,7 @@ export default function App() {
     }
   }, [api, appliedSearch, catalogueRoute, filter, quizzesPage]);
 
-  const loadResults = useCallback(async () => {
+  const loadResults = useCallback(async (): Promise<void> => {
     if (!session || resultsRequest.current) return;
     // Whose data this request is for. A request already in flight when a
     // different account signs in would otherwise land after the caches were
@@ -252,7 +270,7 @@ export default function App() {
     }
   }, [api, handleAuthError, session]);
 
-  const loadAttempt = useCallback(async attemptId => {
+  const loadAttempt = useCallback(async (attemptId: number): Promise<void> => {
     if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || attemptRequests.current.has(attemptId)) return;
     const requestedBy = session.username;
     attemptRequests.current.add(attemptId);
@@ -275,14 +293,14 @@ export default function App() {
     }
   }, [api, handleAuthError, session]);
 
-  const changeAdminResultRange = useCallback(patch => {
+  const changeAdminResultRange = useCallback((patch: Partial<ResultRange>): void => {
     // A narrower range can have fewer pages than the one currently selected,
     // which would otherwise land on an empty page that looks like "no results".
     setAdminResultsPage(0);
     setAdminResultRange(current => ({ ...current, ...patch }));
   }, []);
 
-  const loadAdmin = useCallback(async () => {
+  const loadAdmin = useCallback(async (): Promise<void> => {
     if (!session || adminRequest.current) return;
     const requestedBy = session.username;
     adminRequest.current = true;
@@ -326,7 +344,7 @@ export default function App() {
   }, [adminResultRange.from, adminResultRange.to, adminResultsPage, adminUsersPage,
       api, handleAuthError, session]);
 
-  const loadProfile = useCallback(async () => {
+  const loadProfile = useCallback(async (): Promise<void> => {
     if (!session || profileRequest.current) return;
     const requestedBy = session.username;
     profileRequest.current = true;
@@ -482,7 +500,7 @@ export default function App() {
   }, [loadProfile, profile, profileLoading, route.name, session]);
 
   useEffect(() => {
-    const onStorage = event => {
+    const onStorage = (event: StorageEvent) => {
       if (event.key !== "quizproject.apiUrl") return;
       setApiUrl(readApiUrl());
       setQuizzes(null);
@@ -496,7 +514,7 @@ export default function App() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const startQuiz = useCallback(async quizId => {
+  const startQuiz = useCallback(async (quizId: number): Promise<void> => {
     if (!session) {
       rememberReturnTo("#/quizzes");
       rememberPendingQuiz(quizId);
@@ -516,7 +534,7 @@ export default function App() {
     }
   }, [api, handleAuthError, session, toast]);
 
-  const submitLogin = useCallback(async event => {
+  const submitLogin = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const username = String(data.get("username") || "").trim();
@@ -549,7 +567,7 @@ export default function App() {
     }
   }, [api, apiUrl, toast]);
 
-  const submitRegistration = useCallback(async event => {
+  const submitRegistration = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const password = String(data.get("password") || "");
@@ -563,7 +581,7 @@ export default function App() {
       setSignupError("Пароль не повинен містити пробіли.");
       return;
     }
-    const account = {
+    const account: RegisterRequest = {
       username: String(data.get("username") || "").trim(),
       firstName: String(data.get("firstName") || "").trim(),
       lastName: String(data.get("lastName") || "").trim(),
@@ -597,7 +615,7 @@ export default function App() {
     }
   }, [api, apiUrl, toast]);
 
-  const changePassword = useCallback(async event => {
+  const changePassword = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const currentPassword = String(data.get("currentPassword") || "");
@@ -634,7 +652,7 @@ export default function App() {
     }
   }, [api, handleAuthError, toast]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((): void => {
     clearSession();
     // Dropping the cached data is the account effect's job, and only its job:
     // this bug existed because signing out cleared some of it here while
@@ -645,22 +663,23 @@ export default function App() {
     navigate("#/");
   }, [toast]);
 
-  const executeAdmin = useCallback(async (key, operation, successMessage) => {
-    setActionBusy(`admin-${key}`);
-    try {
-      const result = await operation();
-      await loadAdmin();
-      toast(successMessage);
-      return result;
-    } catch (error) {
-      if (!handleAuthError(error, "#/admin")) toast(friendlyError(error), "error");
-      return null;
-    } finally {
-      setActionBusy("");
-    }
-  }, [handleAuthError, loadAdmin, toast]);
+  const executeAdmin = useCallback(
+    async <T,>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
+      setActionBusy(`admin-${key}`);
+      try {
+        const result = await operation();
+        await loadAdmin();
+        toast(successMessage);
+        return result;
+      } catch (error) {
+        if (!handleAuthError(error, "#/admin")) toast(friendlyError(error), "error");
+        return null;
+      } finally {
+        setActionBusy("");
+      }
+    }, [handleAuthError, loadAdmin, toast]) satisfies ExecuteAdmin;
 
-  const toggleAnswer = useCallback((attemptId, answerId, checked) => {
+  const toggleAnswer = useCallback((attemptId: number, answerId: number, checked: boolean): void => {
     setSelections(current => {
       const next = new Set(current[attemptId] ?? readAnswers(attemptId));
       if (checked) next.add(answerId);
@@ -682,7 +701,7 @@ export default function App() {
   // `confirm` is false when the deadline submits instead of the reader: there is
   // nothing to agree to, and a dialog nobody is there to dismiss would hold the
   // answers until the attempt expired — the very thing this avoids.
-  const completeAttempt = useCallback(async (attemptId, { confirm = true } = {}) => {
+  const completeAttempt = useCallback(async (attemptId: number, { confirm = true } = {}): Promise<void> => {
     if (completionRequests.current.has(attemptId)) return;
     const selected = selections[attemptId] || readAnswers(attemptId);
     if (confirm
@@ -748,14 +767,14 @@ export default function App() {
   // short JWT_TTL the E2E uses is every few seconds. A click landing in that
   // window could be reverted before React committed it, which is what
   // "Clicking the checkbox did not change its state" looks like from Playwright.
-  const attemptSelection = useMemo(() => {
+  const attemptSelection = useMemo((): ReadonlySet<number> => {
     if (route.name !== "attempt") return EMPTY_SELECTION;
     const attemptId = Number(route.params[0]);
     if (!Number.isInteger(attemptId) || attemptId <= 0) return EMPTY_SELECTION;
     return selections[attemptId] ?? readAnswers(attemptId);
   }, [route.name, route.params, selections]);
 
-  const testConnection = useCallback(async value => {
+  const testConnection = useCallback(async (value: string): Promise<boolean> => {
     setConnection("checking");
     setSettingsError("");
     try {
@@ -774,7 +793,7 @@ export default function App() {
     return false;
   }, []);
 
-  const saveApiUrl = useCallback(async value => {
+  const saveApiUrl = useCallback(async (value: string): Promise<void> => {
     try {
       const normalized = normalizeBaseUrl(value);
       writeApiUrl(normalized);
@@ -787,31 +806,31 @@ export default function App() {
       if (await testConnection(normalized)) toast("Адресу API збережено.");
     } catch (error) {
       setConnection("error");
-      setSettingsError(error.message);
+      setSettingsError(error instanceof Error ? error.message : String(error));
     }
   }, [testConnection, toast]);
 
   let page;
   if (route.name === "home") {
-    page = <HomePage session={session} quizzes={quizzes} summary={catalogueSummary} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={loadQuizzes} onStart={startQuiz} />;
+    page = <HomePage session={session} quizzes={quizzes} summary={catalogueSummary} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={() => void loadQuizzes()} onStart={quizId => void startQuiz(quizId)} />;
   } else if (route.name === "quizzes") {
-    page = <QuizzesPage quizzes={quizzes} pageMeta={quizzesMeta} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onPageChange={setQuizzesPage} onRetry={loadQuizzes} onStart={startQuiz} />;
+    page = <QuizzesPage quizzes={quizzes} pageMeta={quizzesMeta} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onPageChange={setQuizzesPage} onRetry={() => void loadQuizzes()} onStart={quizId => void startQuiz(quizId)} />;
   } else if (route.name === "login") {
-    page = <LoginPage error={loginError} busy={actionBusy === "login"} onSubmit={submitLogin} />;
+    page = <LoginPage error={loginError} busy={actionBusy === "login"} onSubmit={event => void submitLogin(event)} />;
   } else if (route.name === "signup") {
-    page = <SignupPage error={signupError} busy={actionBusy === "signup"} onSubmit={submitRegistration} />;
+    page = <SignupPage error={signupError} busy={actionBusy === "signup"} onSubmit={event => void submitRegistration(event)} />;
   } else if (route.name === "profile") {
-    page = <ProfilePage profile={profile} loading={profileLoading} error={profileError} passwordError={passwordError} busy={actionBusy === "password"} onRetry={loadProfile} onPasswordChange={changePassword} />;
+    page = <ProfilePage profile={profile} loading={profileLoading} error={profileError} passwordError={passwordError} busy={actionBusy === "password"} onRetry={() => void loadProfile()} onPasswordChange={event => void changePassword(event)} />;
   } else if (route.name === "settings") {
-    page = <SettingsPage apiUrl={apiUrl} connection={connection} error={settingsError} onSave={saveApiUrl} onTest={testConnection} />;
+    page = <SettingsPage apiUrl={apiUrl} connection={connection} error={settingsError} onSave={value => void saveApiUrl(value)} onTest={value => void testConnection(value)} />;
   } else if (route.name === "results") {
-    page = <ResultsPage results={results} loading={resultsLoading} error={resultError} onRetry={loadResults} />;
+    page = <ResultsPage results={results} loading={resultsLoading} error={resultError} onRetry={() => void loadResults()} />;
   } else if (route.name === "attempt") {
     const attemptId = Number(route.params[0]);
     const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
-    page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={attemptSelection} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={completeAttempt} />;
+    page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={attemptSelection} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={id => void completeAttempt(id)} />;
   } else if (route.name === "admin") {
-    page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} resultRange={adminResultRange} onResultRangeChange={changeAdminResultRange} onUsersPageChange={setAdminUsersPage} onResultsPageChange={setAdminResultsPage} onRetry={loadAdmin} onExecute={executeAdmin} />;
+    page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} resultRange={adminResultRange} onResultRangeChange={changeAdminResultRange} onUsersPageChange={setAdminUsersPage} onResultsPageChange={setAdminResultsPage} onRetry={() => void loadAdmin()} onExecute={executeAdmin} />;
   } else {
     page = <NotFoundPage />;
   }

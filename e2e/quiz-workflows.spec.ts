@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { login, register, uniqueUsername } from "./helpers.js";
 
-const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const ADMIN_USERNAME = process.env["E2E_ADMIN_USERNAME"] ?? "";
+const ADMIN_PASSWORD = process.env["E2E_ADMIN_PASSWORD"] ?? "";
 
 test("registration, profile and password change work end to end", async ({ page }, testInfo) => {
   const username = uniqueUsername(testInfo, "acct");
