@@ -788,3 +788,32 @@ test("a password change refused as unauthorised ends the session rather than bla
   assert.equal(sessionStorage.getItem("quizproject.session"), null);
   assert.equal(sessionStorage.getItem("quizproject.returnTo"), "#/profile");
 });
+
+// The other half of the guard above, and the half that makes it safe: an
+// attempt page has no retry button — it offers the way back to the catalogue —
+// so without this a transient 503 would hold a timed attempt shut until the
+// whole app was reloaded, while its clock ran.
+test("coming back to an attempt that failed asks for it again", async () => {
+  seedSession("olena");
+  let failing = true;
+  const { view, stub } = await open("#/attempt/4", {
+    "GET /api/v1/attempts/4": () => failing
+      ? { status: 503, body: { message: "Тимчасовий збій." } }
+      : ATTEMPT_BODY(4)()
+  });
+
+  await settle();
+  assert.equal(stub.countOf("GET /api/v1/attempts/4"), 1, "the failure was retried without being asked");
+  assert.match(view.text(), /Тимчасовий збій/);
+
+  failing = false;
+  goTo("#/quizzes");
+  await settle();
+  goTo("#/attempt/4");
+  await settle();
+
+  assert.equal(stub.countOf("GET /api/v1/attempts/4"), 2,
+    "returning to the attempt showed the old error and asked for nothing");
+  assert.match(view.text(), /Що таке JVM/);
+  assert.doesNotMatch(view.text(), /Тимчасовий збій/, "the error outlived the load that succeeded");
+});

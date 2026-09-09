@@ -479,6 +479,27 @@ export default function App() {
     clearStoredAnswers();
   }, [accountName]);
 
+  // Which attempt the route names, or null when it names none.
+  const routedAttemptId = route.name === "attempt" ? Number(route.params[0]) : null;
+
+  // Arriving at an attempt clears whatever the last visit's failure left
+  // behind, so a reader who comes back gets another request rather than an
+  // error frozen from before. Without this the guard below is a dead end: the
+  // attempt page offers a way to the catalogue and no retry, so a transient
+  // 503 would hold a timed attempt shut until the whole app was reloaded —
+  // while its clock ran.
+  //
+  // Keyed on the id rather than on the route object, so it fires on arriving
+  // and on nothing else. A failed request does not change the id, so this
+  // cannot become the loop the guard exists to prevent; neither can a second
+  // hashchange for the same hash, which is why the number is the dependency
+  // and not the object parseRoute rebuilds around it. It is a separate effect
+  // for the same reason: the one below depends on the errors this clears.
+  useEffect(() => {
+    if (routedAttemptId === null) return;
+    setAttemptErrors(current => current[routedAttemptId] ? { ...current, [routedAttemptId]: "" } : current);
+  }, [routedAttemptId]);
+
   useEffect(() => {
     if (route.name !== "attempt") return;
     const attemptId = Number(route.params[0]);
@@ -495,9 +516,9 @@ export default function App() {
     // for as long as the page stayed open — measured, not estimated. The
     // catalogue was written with the guard; this was not.
     //
-    // loadAttempt clears the error before each request, so anything that starts
-    // one — a revisit that changes the route, an attempt started from a quiz —
-    // still retries. What no longer happens is retrying nobody asked for.
+    // Coming back is how a reader retries this one — the effect above clears
+    // the error the moment the route lands here again. What no longer happens
+    // is retrying nobody asked for.
     if (Number.isInteger(attemptId) && attemptId > 0
         && !attempts[attemptId] && !attemptLoading[attemptId] && !attemptErrors[attemptId]) {
       void loadAttempt(attemptId);
