@@ -35,7 +35,11 @@ const USABLE_ROUND_TRIP_MS = 10_000;
  * @param receivedAt Date.now() from the moment the response headers arrived
  * @returns whether the reading was usable
  */
-export function recordServerTime(header, sentAt, receivedAt = Date.now()) {
+export function recordServerTime(
+  header: string | null | undefined,
+  sentAt: number,
+  receivedAt: number = Date.now()
+): boolean {
   const serverTime = Date.parse(header ?? "");
   if (!Number.isFinite(serverTime)) return false;
 
@@ -48,16 +52,16 @@ export function recordServerTime(header, sentAt, receivedAt = Date.now()) {
 
 // Now, in server time. Identical to Date.now() until a response has been read,
 // so nothing behaves differently against an API that does not expose Date.
-export function serverNow() {
+export function serverNow(): number {
   return Date.now() + offsetMs;
 }
 
-export function serverClockOffset() {
+export function serverClockOffset(): number {
   return offsetMs;
 }
 
 // Tests only: the offset is module state, and a test that skews it would
 // otherwise skew every test that runs after it.
-export function resetServerClock() {
+export function resetServerClock(): void {
   offsetMs = 0;
 }

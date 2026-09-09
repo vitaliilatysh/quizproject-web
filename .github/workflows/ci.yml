@@ -30,5 +30,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test and build
-        run: npm run check
+      # Three steps rather than one `npm run check`, so the job list says which
+      # of the three failed without opening a log. They are the same three
+      # commands `npm run check` runs locally, in the same order: types first,
+      # because a type error makes the other two answers uninteresting.
+      #
+      # The type check is a separate command on purpose. esbuild — which both
+      # Vite and the unit tests transform with — erases types without checking
+      # them, so nothing else in this pipeline would notice one that is wrong.
+      - name: Check types
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

@@ -1,17 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// Node has no sessionStorage, and session.js reads it lazily inside each
+// Node has no sessionStorage, and session.ts reads it lazily inside each
 // function, so a stub installed before the first call is enough.
-function useStubStorage(entries = {}) {
-  const store = new Map(Object.entries(entries));
-  globalThis.sessionStorage = {
-    getItem: key => (store.has(key) ? store.get(key) : null),
-    setItem: (key, value) => store.set(key, String(value)),
-    removeItem: key => store.delete(key),
+//
+// Typed as a real Storage so the stub cannot quietly drift from the interface
+// the code under test is written against — `clear` is not used by anything here
+// and was missing from this object entirely until the compiler said so.
+function useStubStorage(entries: Record<string, string> = {}): void {
+  const store = new Map<string, string>(Object.entries(entries));
+  const storage: Storage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, String(value)); },
+    removeItem: (key: string) => { store.delete(key); },
+    clear: () => { store.clear(); },
     get length() { return store.size; },
-    key: index => [...store.keys()][index] ?? null
+    key: (index: number) => [...store.keys()][index] ?? null
   };
+  globalThis.sessionStorage = storage;
 }
 
 test("clearStoredAnswers removes every attempt's answers and nothing else", async () => {

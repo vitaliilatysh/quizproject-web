@@ -9,7 +9,7 @@ afterEach(resetServerClock);
 // The header this reads is the one the backend had to be changed to expose:
 // Date is not CORS-safelisted, so before that change every one of these
 // readings was a null and the offset stayed at zero.
-const rfc1123 = milliseconds => new Date(milliseconds).toUTCString();
+const rfc1123 = (milliseconds: number): string => new Date(milliseconds).toUTCString();
 
 test("no reading yet means the device's own clock, unchanged", () => {
   assert.equal(serverClockOffset(), 0);
@@ -111,7 +111,7 @@ test("the countdown and the automatic submission read the same clock", () => {
   // Within a second, because `now` above was floored to one so the header
   // would survive its own rounding; without the correction this delay is a
   // whole minute short, which no tolerance this tight would hide.
-  assert.ok(Math.abs(autoSubmitDelay(expiresAt) - (10 * 60_000 - AUTO_SUBMIT_LEAD_MS)) < 1000,
+  assert.ok(Math.abs(Number(autoSubmitDelay(expiresAt)) - (10 * 60_000 - AUTO_SUBMIT_LEAD_MS)) < 1000,
     `delay was ${autoSubmitDelay(expiresAt)}`);
 
   // Same instant read off the uncorrected device clock, for contrast: this is

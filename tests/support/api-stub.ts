@@ -3,16 +3,49 @@
 // Routes are matched on method and pathname only; the query string is handed to
 // the handler, because several of these tests are about what the app asked for
 // rather than what it did with the answer.
-export function stubApi(routes) {
-  const calls = [];
 
-  globalThis.fetch = async (url, options = {}) => {
-    const target = new URL(url);
+/** One recorded request, as the assertions read it back. */
+export interface StubCall {
+  key: string;
+  method: string;
+  path: string;
+  query: URLSearchParams;
+  body: unknown;
+  authorization: string | null;
+}
+
+/** What a route hands back. A bare object is a 200 with that body. */
+export interface StubResponse {
+  status?: number;
+  body?: unknown;
+}
+
+export type StubHandler =
+  | StubResponse
+  | ((call: StubCall) => StubResponse | Promise<StubResponse>);
+
+export interface StubbedApi {
+  calls: StubCall[];
+  countOf: (key: string) => number;
+  lastOf: (key: string) => StubCall | null;
+}
+
+export function stubApi(routes: Record<string, StubHandler>): StubbedApi {
+  const calls: StubCall[] = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, options: RequestInit = {}) => {
+    const target = new URL(String(url));
     const method = options.method || "GET";
     const key = `${method} ${target.pathname}`;
-    calls.push({ key, method, path: target.pathname, query: target.searchParams,
-      body: options.body ? JSON.parse(options.body) : null,
-      authorization: options.headers?.Authorization ?? null });
+    const headers = options.headers as Record<string, string> | undefined;
+    calls.push({
+      key,
+      method,
+      path: target.pathname,
+      query: target.searchParams,
+      body: typeof options.body === "string" ? JSON.parse(options.body) : null,
+      authorization: headers?.["Authorization"] ?? null
+    });
 
     const handler = routes[key];
     if (!handler) {
@@ -22,14 +55,14 @@ export function stubApi(routes) {
     }
 
     const result = typeof handler === "function"
-      ? await handler(calls.at(-1))
+      ? await handler(calls.at(-1) as StubCall)
       : handler;
     const { status = 200, body = {} } = result ?? {};
     return new Response(JSON.stringify(body), {
       status,
       headers: { "content-type": "application/json" }
     });
-  };
+  }) as typeof globalThis.fetch;
 
   return {
     calls,
@@ -38,11 +71,16 @@ export function stubApi(routes) {
   };
 }
 
-// A JWT only as far as session.js reads one: it splits on ".", base64-decodes
+// A JWT only as far as session.ts reads one: it splits on ".", base64-decodes
 // the middle and takes sub, roles and exp. Nothing verifies a signature here.
 let issued = 0;
 
-export function fakeToken(username, { roles = ["ROLE_USER"], ttlSeconds = 900 } = {}) {
+export interface FakeTokenOptions {
+  roles?: string[];
+  ttlSeconds?: number;
+}
+
+export function fakeToken(username: string, { roles = ["ROLE_USER"], ttlSeconds = 900 }: FakeTokenOptions = {}): string {
   const payload = {
     sub: username,
     roles,
@@ -53,10 +91,10 @@ export function fakeToken(username, { roles = ["ROLE_USER"], ttlSeconds = 900 } 
     // as a refresh being mistaken for a different reader signing in.
     jti: (issued += 1)
   };
-  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
   return `${encode({ alg: "none" })}.${encode(payload)}.signature`;
 }
 
-export function loginResponse(username, options) {
+export function loginResponse(username: string, options?: FakeTokenOptions): StubResponse {
   return { body: { accessToken: fakeToken(username, options), tokenType: "Bearer", expiresIn: 900 } };
 }

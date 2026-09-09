@@ -38,10 +38,10 @@ test("a chosen answer survives a silent token refresh", async ({ page }, testInf
   // inside the state updater, so the choice must also have reached storage.
   const stored = await page.evaluate(() => {
     const key = Object.keys(sessionStorage).find(name => name.startsWith("quizproject.answers."));
-    return key ? JSON.parse(sessionStorage.getItem(key)) : null;
-  });
+    return key ? JSON.parse(sessionStorage.getItem(key) ?? "null") : null;
+  }) as number[] | null;
   expect(Array.isArray(stored)).toBe(true);
-  expect(stored.length).toBe(1);
+  expect(stored?.length).toBe(1);
 });
 
 test("a selection survives a reload of the attempt page", async ({ page }, testInfo) => {

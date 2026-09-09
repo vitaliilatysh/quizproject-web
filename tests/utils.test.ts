@@ -79,13 +79,13 @@ test("every stored level is translated and coloured, not only filtered", () => {
 
 test("autoSubmitDelay starts the submission before the deadline, not on it", () => {
   const now = Date.parse("2026-01-01T00:00:00Z");
-  const at = milliseconds => new Date(now + milliseconds).toISOString();
+  const at = (milliseconds: number): string => new Date(now + milliseconds).toISOString();
 
   // The API stamps a completion when it handles the request and refuses one
   // stamped after the deadline, so a request that leaves at zero arrives late
   // by however long the network took. It has to leave earlier than that.
   assert.equal(autoSubmitDelay(at(600_000), now), 600_000 - AUTO_SUBMIT_LEAD_MS);
-  assert.ok(autoSubmitDelay(at(600_000), now) < 600_000);
+  assert.ok(Number(autoSubmitDelay(at(600_000), now)) < 600_000);
 
   // Closer than the lead: still worth trying, because not trying loses the
   // attempt for certain.

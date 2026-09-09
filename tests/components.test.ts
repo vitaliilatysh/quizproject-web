@@ -2,21 +2,34 @@ import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
 import {
-  AttemptPage, HomePage, Layout, QuizCollection, QuizzesPage, ResultsPage
-} from "../src/components.jsx";
+  AttemptPage, HomePage, Layout, QuizCollection, QuizzesPage, ResultsPage,
+  type AttemptPageProps, type HomePageProps, type LayoutProps,
+  type QuizCollectionProps, type QuizzesPageProps
+} from "../src/components.js";
 import { resetServerClock } from "../src/clock.js";
-import { click, closeBrowser, openBrowser, render } from "./support/dom.mjs";
+import type { Session } from "../src/session.js";
+import type { Attempt, AttemptCompletion, Quiz } from "../src/types.js";
+import { click, closeBrowser, openBrowser, render } from "./support/dom.js";
+
+// A signed-in reader, complete enough to be a real Session. Only `username` and
+// `roles` are ever rendered, but a partial object would be a different type
+// from the one the app actually holds, and the point of typing the fixtures is
+// that they stand in for the real thing.
+const sessionFor = (username: string, roles: string[] = []): Session => ({
+  accessToken: "header.payload.signature", tokenType: "Bearer",
+  expiresAt: Date.now() + 900_000, username, roles
+});
 
 beforeEach(() => openBrowser());
 afterEach(() => { closeBrowser(); resetServerClock(); });
 
-const quiz = (over = {}) => ({
+const quiz = (over: Partial<Quiz> = {}): Quiz => ({
   id: 7, name: "Java", subject: "Програмування",
   complexity: "medium", totalQuestions: 12, timeToPassMinutes: 30, ...over
 });
 
-const collection = (over = {}) => ({
-  quizzes: [quiz()], loading: false, error: "", limit: 0, busy: null,
+const collection = (over: Partial<QuizCollectionProps> = {}): QuizCollectionProps => ({
+  quizzes: [quiz()], loading: false, error: "", limit: 0, busy: "",
   onRetry: () => {}, onStart: () => {}, ...over
 });
 
@@ -26,7 +39,7 @@ const collection = (over = {}) => ({
 // badge that means "easiest" — a card contradicting the filter that produced it.
 // Every level the database seeds is checked here, not just the one that broke.
 test("a quiz card names its difficulty in the reader's language", () => {
-  const expected = [
+  const expected: ReadonlyArray<readonly [complexity: string, label: string, tone: string]> = [
     ["low", "Початковий", "pill--green"],
     ["medium", "Середній", "pill--blue"],
     ["high", "Просунутий", "pill--coral"],
@@ -52,8 +65,13 @@ test("an untranslated difficulty is shown, a missing one is named as missing", (
   assert.ok(shown.find(".pill").className.includes("pill--green"));
   shown.unmount();
 
+  // The API declares `complexity` as a non-null string, so this is deliberately
+  // a shape it does not produce — which is the point. The card guards against a
+  // missing level, and the cast is what says that guard is being exercised
+  // rather than that the type is wrong.
   for (const missing of [null, undefined, ""]) {
-    const view = render(QuizCollection, collection({ quizzes: [quiz({ complexity: missing })] }));
+    const degraded = { ...quiz(), complexity: missing } as unknown as Quiz;
+    const view = render(QuizCollection, collection({ quizzes: [degraded] }));
     assert.equal(view.find(".pill").textContent, "Не вказано", `${String(missing)} was not treated as missing`);
     view.unmount();
   }
@@ -92,17 +110,17 @@ test("the home page teases a limited number of quizzes, the catalogue does not",
 });
 
 test("starting a quiz reports which quiz, and says so while it is working", () => {
-  const started = [];
+  const started: number[] = [];
   const view = render(QuizCollection, collection({
     quizzes: [quiz({ id: 4 }), quiz({ id: 9, name: "SQL" })],
-    onStart: id => started.push(id)
+    onStart: (id: number) => { started.push(id); }
   }));
 
-  click(view.findAll(".quiz-card button")[1]);
+  click(view.at(".quiz-card button", 1));
   assert.deepEqual(started, [9], "the wrong card's id was reported");
 
   view.rerender(collection({ quizzes: [quiz({ id: 4 })], busy: "start-4" }));
-  const button = view.find(".quiz-card button");
+  const button = view.find<HTMLButtonElement>(".quiz-card button");
   assert.match(button.textContent, /Створюємо спробу/);
   assert.equal(button.disabled, true, "a second click could open a second attempt");
 });
@@ -114,82 +132,82 @@ test("the catalogue counts every match, not the page in front of you", () => {
   const view = render(QuizzesPage, {
     quizzes: [quiz(), quiz({ id: 8 })],
     pageMeta: { number: 1, size: 2, totalCount: 47, totalPages: 24 },
-    loading: false, error: "", busy: null, search: "", filter: "all",
+    loading: false, error: "", busy: "", search: "", filter: "all",
     onSearch: () => {}, onFilter: () => {}, onPageChange: () => {},
     onRetry: () => {}, onStart: () => {}
   });
 
-  assert.match(view.find(".catalog-count").textContent, /^47 /);
-  assert.match(view.find(".pager__status").textContent, /3–4 з 47/);
+  assert.match(String(view.find(".catalog-count").textContent), /^47 /);
+  assert.match(String(view.find(".pager__status").textContent), /3–4 з 47/);
 });
 
 test("paging stops at both ends and reports the page it is asking for", () => {
-  const asked = [];
-  const page = number => ({
+  const asked: number[] = [];
+  const page = (number: number): QuizzesPageProps => ({
     quizzes: [quiz()], pageMeta: { number, size: 10, totalCount: 30, totalPages: 3 },
-    loading: false, error: "", busy: null, search: "", filter: "all",
-    onSearch: () => {}, onFilter: () => {}, onPageChange: n => asked.push(n),
+    loading: false, error: "", busy: "", search: "", filter: "all",
+    onSearch: () => {}, onFilter: () => {}, onPageChange: (n: number) => { asked.push(n); },
     onRetry: () => {}, onStart: () => {}
   });
 
   const view = render(QuizzesPage, page(0));
-  const [back, next] = view.findAll(".pager button");
-  assert.equal(back.disabled, true, "there is no page before the first");
-  click(next);
+  assert.equal(view.at<HTMLButtonElement>(".pager button", 0).disabled, true,
+    "there is no page before the first");
+  click(view.at(".pager button", 1));
   assert.deepEqual(asked, [1]);
 
   view.rerender(page(2));
-  const ends = view.findAll(".pager button");
-  assert.equal(ends[1].disabled, true, "there is no page after the last");
-  click(ends[0]);
+  assert.equal(view.at<HTMLButtonElement>(".pager button", 1).disabled, true,
+    "there is no page after the last");
+  click(view.at(".pager button", 0));
   assert.deepEqual(asked, [1, 1]);
 });
 
 test("a single page of results is not worth a pager", () => {
   const view = render(QuizzesPage, {
     quizzes: [quiz()], pageMeta: { number: 0, size: 10, totalCount: 4, totalPages: 1 },
-    loading: false, error: "", busy: null, search: "", filter: "all",
+    loading: false, error: "", busy: "", search: "", filter: "all",
     onSearch: () => {}, onFilter: () => {}, onPageChange: () => {},
     onRetry: () => {}, onStart: () => {}
   });
-  assert.equal(view.find(".pager"), null);
+  assert.equal(view.query(".pager"), null);
 });
 
 test("the header shows administration only to administrators", () => {
-  const shell = (session, route = { name: "home", params: [] }) => ({
+  const shell = (session: Session | null, route = { name: "home", params: [] as string[] }): LayoutProps => ({
     route, session, onLogout: () => {}, toasts: [], children: null
   });
 
   const anonymous = render(Layout, shell(null));
-  assert.equal(anonymous.find(".account-name"), null);
+  assert.equal(anonymous.query(".account-name"), null);
   assert.equal(anonymous.findAll("a").filter(a => a.textContent === "Адміністрування").length, 0);
   anonymous.unmount();
 
-  const reader = render(Layout, shell({ username: "olena", roles: ["ROLE_USER"] }));
+  const reader = render(Layout, shell(sessionFor("olena", ["ROLE_USER"])));
   assert.equal(reader.find(".account-name").textContent, "olena");
   assert.equal(reader.find(".avatar").textContent, "O");
   assert.equal(reader.findAll("a").filter(a => a.textContent === "Адміністрування").length, 0,
     "a reader was offered the administration screen");
   reader.unmount();
 
-  const admin = render(Layout, shell({ username: "root", roles: ["ROLE_USER", "ROLE_ADMIN"] }));
+  const admin = render(Layout, shell(sessionFor("root", ["ROLE_USER", "ROLE_ADMIN"])));
   assert.equal(admin.findAll("a").filter(a => a.textContent === "Адміністрування").length, 1);
 });
 
 test("an attempt keeps the catalogue tab lit, since that is where it came from", () => {
   const view = render(Layout, {
-    route: { name: "attempt", params: ["12"] }, session: { username: "olena", roles: [] },
+    route: { name: "attempt", params: ["12"] }, session: sessionFor("olena"),
     onLogout: () => {}, toasts: [], children: null
   });
   const active = view.findAll(".main-nav a").filter(a => a.className.includes("is-active"));
   assert.equal(active.length, 1);
-  assert.equal(active[0].textContent, "Тести");
+  assert.equal(active[0]?.textContent, "Тести");
 });
 
 test("signing out is offered only to someone signed in, and reports the press", () => {
   let signedOut = 0;
-  const view = render(Layout, {
-    route: { name: "home", params: [] }, session: { username: "olena", roles: [] },
+  const view = render<LayoutProps>(Layout, {
+    route: { name: "home", params: [] }, session: sessionFor("olena"),
     onLogout: () => { signedOut += 1; }, toasts: [], children: null
   });
   click(view.findAll("button").find(button => button.textContent === "Вийти"));
@@ -212,10 +230,10 @@ test("results are averaged over every attempt, and the best is the best", () => 
     loading: false, error: "", onRetry: () => {}
   });
 
-  const [completed, average, best] = view.findAll(".result-summary strong");
-  assert.equal(completed.textContent, "3");
-  assert.equal(average.textContent, "67%", "the mean of 90, 40 and 71 is 67");
-  assert.equal(best.textContent, "90%");
+  assert.equal(view.at(".result-summary strong", 0).textContent, "3");
+  assert.equal(view.at(".result-summary strong", 1).textContent, "67%",
+    "the mean of 90, 40 and 71 is 67");
+  assert.equal(view.at(".result-summary strong", 2).textContent, "90%");
   assert.equal(view.findAll(".result-row").length, 3);
 });
 
@@ -226,7 +244,7 @@ test("an empty history reads as empty rather than as a zero score", () => {
 });
 
 test("a score is banded, and the bands do not overlap", () => {
-  const at = score => {
+  const at = (score: number): string => {
     const view = render(ResultsPage, {
       results: [{ attemptId: 1, quizId: 1, quizName: "Java", score, completedAt: "2026-03-01T10:00:00Z" }],
       loading: false, error: "", onRetry: () => {}
@@ -243,8 +261,9 @@ test("a score is banded, and the bands do not overlap", () => {
   assert.ok(!at(59).includes("score-badge--great"));
 });
 
-const attempt = (over = {}) => ({
-  attemptId: 3, quizId: 7, completed: false,
+const attempt = (over: Partial<Attempt> = {}): Attempt => ({
+  attemptId: 3, quizId: 7, completed: false, score: null,
+  startedAt: new Date().toISOString(), completedAt: null,
   expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
   questions: [{
     id: 11, text: "Що таке JVM?",
@@ -253,20 +272,23 @@ const attempt = (over = {}) => ({
   ...over
 });
 
-const attemptProps = (over = {}) => ({
-  attempt: attempt(), loading: false, error: "", selected: new Set(),
-  completion: null, busy: false, onToggle: () => {}, onComplete: () => {}, ...over
+const completionOf = (score: number): AttemptCompletion => ({
+  attemptId: 3, quizId: 7, score, completedAt: new Date().toISOString()
+});
+
+const attemptProps = (over: Partial<AttemptPageProps> = {}): AttemptPageProps => ({
+  attempt: attempt(), loading: false, error: "", selected: new Set<number>(),
+  completion: undefined, busy: false, onToggle: () => {}, onComplete: () => {}, ...over
 });
 
 test("an answer is checked when the page is told it is, and not otherwise", () => {
   const view = render(AttemptPage, attemptProps({ selected: new Set([102]) }));
-  const boxes = view.findAll("input[type=checkbox]");
-  assert.equal(boxes[0].checked, false);
-  assert.equal(boxes[1].checked, true);
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, false);
+  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 1).checked, true);
 });
 
 test("ticking an answer reports the attempt, the answer and the direction", () => {
-  const toggles = [];
+  const toggles: Array<[number, number, boolean]> = [];
   const view = render(AttemptPage, attemptProps({
     onToggle: (attemptId, answerId, checked) => toggles.push([attemptId, answerId, checked])
   }));
@@ -284,36 +306,36 @@ test("ticking an answer reports the attempt, the answer and the direction", () =
 });
 
 test("a finished attempt shows its score instead of its questions", () => {
-  const view = render(AttemptPage, attemptProps({ completion: { score: 83 } }));
+  const view = render(AttemptPage, attemptProps({ completion: completionOf(83) }));
   assert.equal(view.find(".completion__score strong").textContent, "83");
   assert.equal(view.findAll("input[type=checkbox]").length, 0,
     "a completed attempt still offered its answer boxes");
 });
 
 test("an attempt the API already marked complete needs no completion payload", () => {
-  const view = render(AttemptPage, attemptProps({ attempt: attempt({ completed: true, score: 55 }), completion: null }));
+  const view = render(AttemptPage, attemptProps({ attempt: attempt({ completed: true, score: 55 }), completion: undefined }));
   assert.equal(view.find(".completion__score strong").textContent, "55");
 });
 
 test("submitting is announced and blocked while it is in flight", () => {
-  const completed = [];
-  const view = render(AttemptPage, attemptProps({ busy: true, onComplete: id => completed.push(id) }));
-  const submit = view.find(".attempt-submit button");
+  const completed: number[] = [];
+  const view = render(AttemptPage, attemptProps({ busy: true, onComplete: (id: number) => { completed.push(id); } }));
+  const submit = view.find<HTMLButtonElement>(".attempt-submit button");
   assert.match(submit.textContent, /Перевіряємо/);
   assert.equal(submit.disabled, true, "the attempt could be submitted twice");
   assert.deepEqual(completed, []);
 });
 
 test("an unreachable attempt offers a way out rather than a blank page", () => {
-  const view = render(AttemptPage, attemptProps({ attempt: null, error: "Спроба не знайдена" }));
+  const view = render(AttemptPage, attemptProps({ attempt: undefined, error: "Спроба не знайдена" }));
   assert.match(view.text(), /Спроба не знайдена/);
   assert.equal(view.find("a[href='#/quizzes']").textContent, "До каталогу");
 });
 
 test("the home page sends a stranger to sign in and a reader to their results", () => {
-  const props = session => ({
+  const props = (session: Session | null): HomePageProps => ({
     session, quizzes: [quiz()], summary: { totalQuizzes: 12, totalSubjects: 4 },
-    loading: false, error: "", busy: null, onRetry: () => {}, onStart: () => {}
+    loading: false, error: "", busy: "", onRetry: () => {}, onStart: () => {}
   });
 
   const stranger = render(HomePage, props(null));
@@ -322,7 +344,7 @@ test("the home page sends a stranger to sign in and a reader to their results", 
   assert.match(invitation.textContent, /Увійти до кабінету/);
   stranger.unmount();
 
-  const reader = render(HomePage, props({ username: "olena", roles: [] }));
+  const reader = render(HomePage, props(sessionFor("olena")));
   const link = reader.find(".hero__actions .text-link");
   assert.equal(link.getAttribute("href"), "#/results");
   assert.match(link.textContent, /Мої результати/);
@@ -336,20 +358,19 @@ test("the home page's totals come from the catalogue, not from what it teased", 
     session: null,
     quizzes: [quiz({ id: 1 }), quiz({ id: 2 }), quiz({ id: 3 })],
     summary: { totalQuizzes: 137, totalSubjects: 9 },
-    loading: false, error: "", busy: null, onRetry: () => {}, onStart: () => {}
+    loading: false, error: "", busy: "", onRetry: () => {}, onStart: () => {}
   });
 
-  const [quizzes, subjects] = view.findAll(".hero__stats strong");
-  assert.equal(quizzes.textContent, "137");
-  assert.equal(subjects.textContent, "9");
+  assert.equal(view.at(".hero__stats strong", 0).textContent, "137");
+  assert.equal(view.at(".hero__stats strong", 1).textContent, "9");
 });
 
 test("totals that have not arrived are left blank rather than shown as zero", () => {
   const view = render(HomePage, {
     session: null, quizzes: null, summary: null,
-    loading: true, error: "", busy: null, onRetry: () => {}, onStart: () => {}
+    loading: true, error: "", busy: "", onRetry: () => {}, onStart: () => {}
   });
-  const [quizzes, subjects] = view.findAll(".hero__stats strong");
-  assert.equal(quizzes.textContent, "—", "an unknown catalogue size was reported as a number");
-  assert.equal(subjects.textContent, "—");
+  assert.equal(view.at(".hero__stats strong", 0).textContent, "—",
+    "an unknown catalogue size was reported as a number");
+  assert.equal(view.at(".hero__stats strong", 1).textContent, "—");
 });
