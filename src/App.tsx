@@ -62,7 +62,17 @@ const SEARCH_DEBOUNCE_MS = 300;
 // page a new identity on every render either.
 const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
 
-function friendlyError(error: unknown): string {
+/**
+ * What the reader is told when something failed.
+ *
+ * Exported because it is the app's whole vocabulary for failure and it is worth
+ * pinning directly: every catch in this file ends here, and the correlation id
+ * it appends is the only thing that makes a 500 answerable by whoever is asked
+ * about it. The first line is a guard, not a case the API can produce — a
+ * rejection that is not an Error has no message to show, and "undefined" is not
+ * one.
+ */
+export function friendlyError(error: unknown): string {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
   const correlationId = error instanceof ApiError ? error.correlationId : null;
   return correlationId ? `${error.message} (код підтримки: ${correlationId})` : error.message;
