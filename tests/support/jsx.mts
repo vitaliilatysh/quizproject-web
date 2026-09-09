@@ -82,6 +82,32 @@ export async function load(
     jsx: "automatic",
     format: "esm",
     target: "node22",
+    // Without this the transform's output has no line mapping back to the
+    // source, and everything downstream counts lines in the erased code while
+    // reporting them against the original file. Both readers of those numbers
+    // were wrong, in ways that looked plausible:
+    //
+    //   coverage      it named request<T>'s body uncovered — a method every
+    //                 one of the eighty-five tests goes through — while
+    //                 clock.ts read 25% of lines against 100% of its
+    //                 functions. The contradiction is the only reason anyone
+    //                 looked.
+    //   stack traces  a throw was reported one line above itself.
+    //
+    // The map alone fixes neither completely: Node applies it to stack traces
+    // only under --enable-source-maps, which both npm scripts now pass. With
+    // the pair in place the coverage report names real gaps — the request
+    // timeout branch and QuizApi.quiz(), neither of which has a test.
+    //
+    // One caveat that is not worth hiding: `line %` is now conservative. Lines
+    // with no mapping — a file's comment header, chiefly — count against the
+    // total, so a heavily commented module reads low even at full coverage of
+    // its code. `branch %` and `funcs %` do not have that problem and are the
+    // better summary.
+    //
+    // Inline rather than a file, because there is no build directory here: the
+    // transformed source only ever exists in memory.
+    sourcemap: "inline",
     sourcefile: url
   });
   return { format: "module", shortCircuit: true, source: code };
