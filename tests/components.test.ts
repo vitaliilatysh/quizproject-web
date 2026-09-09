@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
 import {
-  AttemptPage, HomePage, Layout, QuizCollection, QuizzesPage, ResultsPage,
+  AttemptPage, HomePage, Layout, LoginPage, NotFoundPage, ProfilePage,
+  QuizCollection, QuizzesPage, ResultsPage, SettingsPage, SignupPage,
   type AttemptPageProps, type HomePageProps, type LayoutProps,
-  type QuizCollectionProps, type QuizzesPageProps
+  type ProfilePageProps, type QuizCollectionProps, type QuizzesPageProps
 } from "../src/components.js";
 import { resetServerClock } from "../src/clock.js";
 import type { Session } from "../src/session.js";
-import type { Attempt, AttemptCompletion, Quiz } from "../src/types.js";
-import { click, closeBrowser, openBrowser, render } from "./support/dom.js";
+import type { Attempt, AttemptCompletion, Profile, Quiz } from "../src/types.js";
+import { click, closeBrowser, openBrowser, render, submit as submitForm, type } from "./support/dom.js";
 
 // A signed-in reader, complete enough to be a real Session. Only `username` and
 // `roles` are ever rendered, but a partial object would be a different type
@@ -26,6 +27,17 @@ afterEach(() => { closeBrowser(); resetServerClock(); });
 const quiz = (over: Partial<Quiz> = {}): Quiz => ({
   id: 7, name: "Java", subject: "Програмування",
   complexity: "medium", totalQuestions: 12, timeToPassMinutes: 30, ...over
+});
+
+const profile = (over: Partial<Profile> = {}): Profile => ({
+  username: "olena", firstName: "Олена", lastName: "Ковальчук",
+  role: "user", status: "active",
+  registeredAt: "2026-01-15T10:00:00Z", lastLoginAt: "2026-03-01T09:07:00Z", ...over
+});
+
+const profileProps = (over: Partial<ProfilePageProps> = {}): ProfilePageProps => ({
+  profile: profile(), loading: false, error: "", passwordError: "", busy: false,
+  onRetry: () => {}, onPasswordChange: () => {}, ...over
 });
 
 const collection = (over: Partial<QuizCollectionProps> = {}): QuizCollectionProps => ({
@@ -373,4 +385,261 @@ test("totals that have not arrived are left blank rather than shown as zero", ()
   assert.equal(view.at(".hero__stats strong", 0).textContent, "—",
     "an unknown catalogue size was reported as a number");
   assert.equal(view.at(".hero__stats strong", 1).textContent, "—");
+});
+
+// The four screens that had no unit test at all. Three of them are forms the
+// reader meets before anything else works — registration, the password change,
+// and the API address — and the fourth is what they get when a link rots.
+
+test("the registration form asks for everything the API requires, and no more", async () => {
+  let submitted = 0;
+  const view = render(SignupPage, { error: "", busy: false, onSubmit: () => { submitted += 1; } });
+
+  // The constraints are the backend's, transcribed: a username of 5–15, a
+  // password of at least 8, names of at most 20. A field that asks for less
+  // than the API accepts turns a valid account into a rejected one at submit.
+  const fields = view.findAll<HTMLInputElement>("input")
+    .map(input => [input.name, input.minLength, input.maxLength, input.required] as const);
+  assert.deepEqual(fields, [
+    ["firstName", 1, 20, true],
+    ["lastName", 1, 20, true],
+    ["username", 5, 15, true],
+    ["password", 8, 128, true],
+    ["confirmPassword", 8, 128, true]
+  ]);
+
+  // The two passwords are compared in App, not here, but both have to be
+  // present for it to have anything to compare.
+  assert.equal(view.findAll("input[type=password]").length, 2);
+
+  await submitForm(view.find("form"));
+  assert.equal(submitted, 1);
+  assert.equal(view.find<HTMLAnchorElement>(".form-footnote a").getAttribute("href"), "#/login",
+    "someone who already has an account had nowhere to go");
+});
+
+test("a registration in flight says so and cannot be sent twice", () => {
+  const idle = render(SignupPage, { error: "", busy: false, onSubmit: () => {} });
+  assert.equal(idle.find<HTMLButtonElement>("form button").disabled, false);
+
+  const working = render(SignupPage, { error: "", busy: true, onSubmit: () => {} });
+  const button = working.find<HTMLButtonElement>("form button");
+  assert.equal(button.disabled, true);
+  assert.match(button.textContent ?? "", /Створюємо/);
+
+  const refused = render(SignupPage, { error: "Логін уже зайнято.", busy: false, onSubmit: () => {} });
+  assert.equal(refused.find("[role=alert]").textContent, "Логін уже зайнято.");
+});
+
+test("the profile names the reader's role and status in their own language", () => {
+  const admin = render(ProfilePage, profileProps({
+    profile: profile({ role: "admin", status: "active" })
+  }));
+  assert.match(admin.text(), /Адміністратор/);
+  assert.match(admin.text(), /Активний/);
+  assert.match(admin.find(".profile-identity span").textContent ?? "", /^O$/,
+    "the avatar initial is not the first letter of the username");
+
+  const student = render(ProfilePage, profileProps({
+    profile: profile({ role: "user", status: "blocked" })
+  }));
+  assert.match(student.text(), /Студент/);
+  // A status the interface has no word for is shown as the backend spells it,
+  // rather than silently reported as active.
+  assert.match(student.text(), /blocked/);
+
+  // A profile the API returned without a status at all: a dash, not "undefined".
+  const partial = render(ProfilePage, profileProps({ profile: profile({ status: "" }) }));
+  assert.match(partial.find(".profile-details").textContent ?? "", /—/);
+});
+
+test("the profile waits, fails and recovers without ever showing a blank card", () => {
+  const loading = render(ProfilePage, profileProps({ profile: null, loading: true }));
+  assert.match(loading.text(), /Завантажуємо профіль/);
+  assert.ok(loading.query(".result-skeleton"));
+
+  let retried = 0;
+  const failed = render(ProfilePage, profileProps({
+    profile: null, error: "401 Unauthorized", onRetry: () => { retried += 1; }
+  }));
+  assert.match(failed.text(), /401 Unauthorized/);
+  click(failed.find("button"));
+  assert.equal(retried, 1);
+
+  // Reloading a profile that is already on screen keeps it there: the card must
+  // not blink back to a skeleton on every refresh.
+  const refreshing = render(ProfilePage, profileProps({ loading: true }));
+  assert.match(refreshing.text(), /Олена/);
+});
+
+test("changing a password is a form of three, and its failure is shown above it", async () => {
+  let submitted = 0;
+  const view = render(ProfilePage, profileProps({ onPasswordChange: () => { submitted += 1; } }));
+
+  assert.deepEqual(
+    view.findAll<HTMLInputElement>(".profile-card--password input").map(input => input.name),
+    ["currentPassword", "newPassword", "confirmPassword"]);
+  await submitForm(view.find(".profile-card--password form"));
+  assert.equal(submitted, 1);
+
+  const failed = render(ProfilePage, profileProps({ passwordError: "Поточний пароль неправильний." }));
+  assert.equal(failed.find("[role=alert]").textContent, "Поточний пароль неправильний.");
+
+  const working = render(ProfilePage, profileProps({ busy: true }));
+  assert.match(working.find<HTMLButtonElement>(".profile-card--password button").textContent ?? "", /Оновлюємо/);
+});
+
+test("the settings screen saves the address typed into it, or only tests it", async () => {
+  const saved: string[] = [];
+  const tested: string[] = [];
+  const view = render(SettingsPage, {
+    apiUrl: "http://localhost:8081", connection: "", error: "",
+    onSave: value => saved.push(value), onTest: value => tested.push(value)
+  });
+
+  const field = view.find<HTMLInputElement>("input[name=apiUrl]");
+  assert.equal(field.value, "http://localhost:8081", "the field did not open on the address in use");
+  type(field, "https://api.example.com");
+
+  // "Лише перевірити" must send what is in the field, not what is saved:
+  // testing before saving is the whole point of the second button.
+  click(view.find("button[type=button]"));
+  assert.deepEqual(tested, ["https://api.example.com"]);
+  assert.deepEqual(saved, [], "the address was saved by a button that only promised to test it");
+
+  await submitForm(view.find("form"));
+  assert.deepEqual(saved, ["https://api.example.com"]);
+});
+
+test("an address changed elsewhere replaces what the settings field is showing", () => {
+  const view = render(SettingsPage, {
+    apiUrl: "http://localhost:8081", connection: "", error: "", onSave: () => {}, onTest: () => {}
+  });
+  type(view.find("input[name=apiUrl]"), "https://typed.example.com");
+
+  view.rerender({
+    apiUrl: "https://loaded.example.com", connection: "", error: "", onSave: () => {}, onTest: () => {}
+  });
+  assert.equal(view.find<HTMLInputElement>("input[name=apiUrl]").value, "https://loaded.example.com");
+});
+
+test("the connection is reported in words, not only as a colour", () => {
+  const states: ReadonlyArray<readonly [state: string, text: string]> = [
+    ["checking", "Перевіряємо…"],
+    ["ok", "API доступний"],
+    ["error", "Немає з’єднання"],
+    ["", "Не перевірено"]
+  ];
+  for (const [state, text] of states) {
+    const view = render(SettingsPage, {
+      apiUrl: "http://localhost:8081", connection: state, error: "", onSave: () => {}, onTest: () => {}
+    });
+    const indicator = view.find(".connection-state");
+    assert.equal(indicator.textContent, text);
+    assert.ok(indicator.className.includes(`connection-state--${state}`),
+      `"${state}" was not reflected in the class the stylesheet paints`);
+  }
+
+  const failed = render(SettingsPage, {
+    apiUrl: "http://x.example", connection: "error", error: "Не вдалося з’єднатися.",
+    onSave: () => {}, onTest: () => {}
+  });
+  assert.equal(failed.find("[role=alert]").textContent, "Не вдалося з’єднатися.");
+});
+
+test("a rotted link lands somewhere that says so and offers the way back", () => {
+  const view = render(NotFoundPage);
+  assert.match(view.text(), /404/);
+  assert.match(view.text(), /Цієї сторінки немає/);
+  assert.equal(view.find<HTMLAnchorElement>("a").getAttribute("href"), "#/");
+});
+
+test("a refused sign-in says why, above the form that refused it", () => {
+  const clean = render(LoginPage, { error: "", busy: false, onSubmit: () => {} });
+  assert.equal(clean.query("[role=alert]"), null, "an alert appeared with nothing to report");
+
+  const refused = render(LoginPage, { error: "Невірний логін або пароль.", busy: false, onSubmit: () => {} });
+  assert.equal(refused.find("[role=alert]").textContent, "Невірний логін або пароль.");
+  assert.equal(refused.find<HTMLAnchorElement>(".form-footnote a").getAttribute("href"), "#/signup");
+});
+
+test("the catalogue reports what was searched for and which difficulty was picked", () => {
+  const searches: string[] = [];
+  const filters: string[] = [];
+  const view = render(QuizzesPage, {
+    quizzes: [quiz()], pageMeta: null, loading: false, error: "", busy: "",
+    search: "", filter: "all",
+    onSearch: value => searches.push(value), onFilter: value => filters.push(value),
+    onPageChange: () => {}, onRetry: () => {}, onStart: () => {}
+  });
+
+  type(view.find("input[type=search]"), "java");
+  assert.deepEqual(searches, ["java"]);
+
+  const buttons = view.findAll<HTMLButtonElement>(".filter-button");
+  assert.deepEqual(buttons.map(button => button.textContent), ["Усі", "Початкові", "Середні", "Просунуті"]);
+  assert.ok(buttons[0]?.className.includes("is-active"), "the filter in force is not the one lit");
+  buttons.forEach(button => click(button));
+  assert.deepEqual(filters, ["all", "easy", "medium", "hard"]);
+});
+
+test("results that could not be loaded offer the reason and a retry", () => {
+  let retried = 0;
+  const view = render(ResultsPage, {
+    results: null, loading: false, error: "500 Internal Server Error",
+    onRetry: () => { retried += 1; }
+  });
+  assert.match(view.text(), /500 Internal Server Error/);
+  click(view.find("button"));
+  assert.equal(retried, 1);
+});
+
+test("a result whose quiz has no name still gets an initial rather than a blank", () => {
+  const view = render(ResultsPage, {
+    results: [{ attemptId: 5, quizId: 7, quizName: "", score: 70, completedAt: "2026-03-01T09:00:00Z" }],
+    loading: false, error: "", onRetry: () => {}
+  });
+  assert.equal(view.find(".result-index").textContent, "Q");
+});
+
+test("a completed attempt with no score anywhere reads as zero, not as blank", () => {
+  // Both the completion payload and the attempt can be missing a score: the
+  // API returns the attempt without one until it has been marked complete, and
+  // a reader who reloads the page has no completion payload at all.
+  const view = render(AttemptPage, attemptProps({
+    attempt: attempt({ completed: true, score: null }), completion: undefined
+  }));
+  assert.equal(view.find(".completion__score strong").textContent, "0");
+  assert.match(view.text(), /ще раз/, "a zero was congratulated rather than encouraged");
+});
+
+test("an attempt that arrived without questions renders as empty, not as a crash", () => {
+  // Neither field is nullable in the API's own record, so these are shapes it
+  // does not produce — which is the point of the guards, and the cast is what
+  // says the guards are being exercised rather than that the type is wrong.
+  const noQuestions = { ...attempt(), questions: null } as unknown as Attempt;
+  const view = render(AttemptPage, attemptProps({ attempt: noQuestions }));
+  assert.equal(view.findAll(".question-card").length, 0);
+  assert.equal(view.findAll(".question-map button").length, 0);
+
+  const noAnswers = {
+    ...attempt(),
+    questions: [{ ...attempt().questions[0], answers: null }]
+  } as unknown as Attempt;
+  const bare = render(AttemptPage, attemptProps({ attempt: noAnswers }));
+  assert.equal(bare.findAll(".question-card").length, 1);
+  assert.equal(bare.findAll("input[type=checkbox]").length, 0);
+});
+
+test("the question map jumps to the question it names", () => {
+  const view = render(AttemptPage, attemptProps());
+  const jumps = view.findAll<HTMLButtonElement>(".question-map button");
+  assert.equal(jumps.length, view.findAll(".question-card").length,
+    "the map and the questions disagree about how many there are");
+
+  // The card is the scroll target, so it has to be findable by the id the map
+  // navigates to — a mismatch here is a button that does nothing.
+  const target = view.find(`#question-${attempt().questions[0]?.id}`);
+  assert.ok(target, "the first question card has no id for the map to reach");
+  click(jumps[0]);
 });

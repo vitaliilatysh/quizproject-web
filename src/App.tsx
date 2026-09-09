@@ -62,7 +62,17 @@ const SEARCH_DEBOUNCE_MS = 300;
 // page a new identity on every render either.
 const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
 
-function friendlyError(error: unknown): string {
+/**
+ * What the reader is told when something failed.
+ *
+ * Exported because it is the app's whole vocabulary for failure and it is worth
+ * pinning directly: every catch in this file ends here, and the correlation id
+ * it appends is the only thing that makes a 500 answerable by whoever is asked
+ * about it. The first line is a guard, not a case the API can produce — a
+ * rejection that is not an Error has no message to show, and "undefined" is not
+ * one.
+ */
+export function friendlyError(error: unknown): string {
   if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
   const correlationId = error instanceof ApiError ? error.correlationId : null;
   return correlationId ? `${error.message} (код підтримки: ${correlationId})` : error.message;
@@ -407,8 +417,11 @@ export default function App() {
       navigate("#/login");
       return;
     }
-    if (results === null && !resultsLoading) void loadResults();
-  }, [loadResults, results, resultsLoading, route.name, session]);
+    // The error is part of the guard for the reason given over the catalogue's
+    // loader: a failed load leaves the rows null with loading back to false, so
+    // a loading-based guard alone re-fires the request without end.
+    if (results === null && !resultsLoading && !resultError) void loadResults();
+  }, [loadResults, resultError, results, resultsLoading, route.name, session]);
 
   // Changing a page or the date range clears the cached slice so the existing
   // "load when null" effects refetch it. Dropping the data also keeps the
@@ -466,6 +479,27 @@ export default function App() {
     clearStoredAnswers();
   }, [accountName]);
 
+  // Which attempt the route names, or null when it names none.
+  const routedAttemptId = route.name === "attempt" ? Number(route.params[0]) : null;
+
+  // Arriving at an attempt clears whatever the last visit's failure left
+  // behind, so a reader who comes back gets another request rather than an
+  // error frozen from before. Without this the guard below is a dead end: the
+  // attempt page offers a way to the catalogue and no retry, so a transient
+  // 503 would hold a timed attempt shut until the whole app was reloaded —
+  // while its clock ran.
+  //
+  // Keyed on the id rather than on the route object, so it fires on arriving
+  // and on nothing else. A failed request does not change the id, so this
+  // cannot become the loop the guard exists to prevent; neither can a second
+  // hashchange for the same hash, which is why the number is the dependency
+  // and not the object parseRoute rebuilds around it. It is a separate effect
+  // for the same reason: the one below depends on the errors this clears.
+  useEffect(() => {
+    if (routedAttemptId === null) return;
+    setAttemptErrors(current => current[routedAttemptId] ? { ...current, [routedAttemptId]: "" } : current);
+  }, [routedAttemptId]);
+
   useEffect(() => {
     if (route.name !== "attempt") return;
     const attemptId = Number(route.params[0]);
@@ -474,10 +508,22 @@ export default function App() {
       navigate("#/login");
       return;
     }
-    if (Number.isInteger(attemptId) && attemptId > 0 && !attempts[attemptId] && !attemptLoading[attemptId]) {
+    // Gated on the error as well as on the loading flag, and for the reason
+    // spelled out over the catalogue's loader: a failed load leaves the attempt
+    // missing with loading back to false, so a loading-based guard re-fires the
+    // request forever. Here it really did. Against an API answering 500 this
+    // effect asked for the same attempt about seventeen hundred times a second,
+    // for as long as the page stayed open — measured, not estimated. The
+    // catalogue was written with the guard; this was not.
+    //
+    // Coming back is how a reader retries this one — the effect above clears
+    // the error the moment the route lands here again. What no longer happens
+    // is retrying nobody asked for.
+    if (Number.isInteger(attemptId) && attemptId > 0
+        && !attempts[attemptId] && !attemptLoading[attemptId] && !attemptErrors[attemptId]) {
       void loadAttempt(attemptId);
     }
-  }, [attemptLoading, attempts, loadAttempt, route, session]);
+  }, [attemptErrors, attemptLoading, attempts, loadAttempt, route, session]);
 
   useEffect(() => {
     if (route.name !== "admin") return;
@@ -496,8 +542,8 @@ export default function App() {
       navigate("#/login");
       return;
     }
-    if (profile === null && !profileLoading) void loadProfile();
-  }, [loadProfile, profile, profileLoading, route.name, session]);
+    if (profile === null && !profileLoading && !profileError) void loadProfile();
+  }, [loadProfile, profile, profileError, profileLoading, route.name, session]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
