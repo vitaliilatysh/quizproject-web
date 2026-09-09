@@ -10,6 +10,11 @@
 // happy-dom rather than a browser: React needs somewhere to commit to and
 // something to dispatch events at, not a rendering engine. The E2E suite still
 // answers "does this work in Chromium", which is a different question.
+// First, and deliberately: this installs the window that react-dom measures on
+// the import below. Moving it after react-dom breaks every controlled field in
+// the suite — see browser-globals.ts.
+import { installBrowserGlobals } from "./browser-globals.js";
+
 import { act, createElement, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Window } from "happy-dom";
@@ -23,17 +28,6 @@ declare global {
 }
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-// FormData is on this list for a reason worth stating: Node has one of its own,
-// and it refuses a form element that did not come from Node's own DOM. The
-// login form reads itself with `new FormData(event.currentTarget)`, so without
-// the window's version every sign-in in these tests throws inside React.
-const COPIED_GLOBALS = [
-  "Node", "Element", "HTMLElement", "HTMLInputElement", "HTMLFormElement",
-  "SVGElement", "Event", "SubmitEvent", "CustomEvent", "MouseEvent",
-  "KeyboardEvent", "MutationObserver", "DOMParser", "FormData", "Blob", "File",
-  "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "Text"
-] as const;
 
 interface ActiveBrowser {
   window: Window;
@@ -53,23 +47,7 @@ export function openBrowser({ url = "http://localhost:4173/" } = {}): Window {
 
   const window = new Window({ url });
   active = { window, roots: [] };
-
-  // defineProperty rather than assignment: Node already owns some of these
-  // names — navigator is a getter with no setter — and assigning to them throws.
-  const install = (name: string, value: unknown): void => {
-    Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
-  };
-
-  install("window", window);
-  install("document", window.document);
-  install("navigator", window.navigator);
-  install("location", window.location);
-  install("localStorage", window.localStorage);
-  install("sessionStorage", window.sessionStorage);
-  for (const name of COPIED_GLOBALS) {
-    install(name, (window as unknown as Record<string, unknown>)[name]);
-  }
-
+  installBrowserGlobals(window);
   return window;
 }
 
@@ -164,21 +142,64 @@ export function click(element: Element | null | undefined): void {
   });
 }
 
+/**
+ * Types into a field the way a reader does.
+ *
+ * The value goes in through the prototype's own setter rather than through the
+ * element, because React replaces the element's `value` property with a tracked
+ * one: assigning to that records the new value as already seen and the change
+ * event never fires. Taking the setter off the element's own prototype rather
+ * than off HTMLInputElement matters too — a <textarea> given the input
+ * element's setter throws, and the question editor is a textarea.
+ */
 export function type(input: Element | null | undefined, value: string): void {
   if (!input) throw new Error("type() was given nothing to type into");
   act(() => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
     if (setter) setter.call(input, value);
     else (input as HTMLInputElement).value = value;
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
 }
 
-// Lets pending promises settle and React flush what they caused. Awaited rather
-// than timed, so a slow machine cannot turn a passing test into a failing one.
+// Submits a form the way pressing its button does, and waits for the handler.
+// Every submit handler in this app is async — it calls the API — so a dispatch
+// that only ran the synchronous part would assert against a half-finished
+// render. `settle` here is what makes a submit mean "and then it happened".
+export async function submit(form: Element | null | undefined): Promise<void> {
+  if (!form) throw new Error("submit() was given nothing to submit");
+  act(() => {
+    form.dispatchEvent(new window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  });
+  await settle();
+}
+
+// A <select> changed the way a reader changes it. React listens for "change" on
+// a select rather than the "input" that drives a text field, which is why this
+// cannot share an implementation with type().
+export function select(element: Element | null | undefined, value: string): void {
+  if (!element) throw new Error("select() was given nothing to choose from");
+  act(() => {
+    (element as HTMLSelectElement).value = value;
+    element.dispatchEvent(new window.Event("change", { bubbles: true }));
+  });
+}
+
+/**
+ * Lets pending promises settle and React flush what they caused.
+ *
+ * Each pass yields to the macrotask queue, which drains every microtask behind
+ * it — so one pass finishes a whole await chain rather than advancing it by a
+ * single link. Counting microtasks was the earlier approach and it made the
+ * count part of the test: a handler that awaited one step more than the count
+ * allowed failed on the assertion after it, reported as the component not
+ * having done its work. This is still not a timeout — nothing here waits for
+ * elapsed time, so a slow machine cannot turn a passing test into a failing
+ * one.
+ */
 export async function settle(times = 3): Promise<void> {
   for (let index = 0; index < times; index += 1) {
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   }
 }
 
