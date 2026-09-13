@@ -17,6 +17,9 @@ export interface Session {
   tokenType: string;
   /** Epoch milliseconds, from the JWT's `exp` where usable, else `expiresIn`. */
   expiresAt: number;
+  refreshToken: string;
+  /** Epoch milliseconds, calculated from the refresh-token lifetime. */
+  refreshExpiresAt: number;
   username: string;
   roles: string[];
 }
@@ -63,13 +66,19 @@ function isSession(value: unknown): value is Session {
   const candidate = value as Partial<Session>;
   return typeof candidate.accessToken === "string"
     && typeof candidate.expiresAt === "number"
+    && typeof candidate.refreshToken === "string"
+    && typeof candidate.refreshExpiresAt === "number"
     && typeof candidate.username === "string";
 }
 
 export function readSession(): Session | null {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(SESSION_KEY) as string);
-    if (!isSession(value) || !value.accessToken || !value.expiresAt || value.expiresAt <= Date.now()) {
+    if (!isSession(value)
+      || !value.accessToken
+      || !value.refreshToken
+      || value.expiresAt <= Date.now()
+      || value.refreshExpiresAt <= Date.now()) {
       clearSession();
       return null;
     }
@@ -82,12 +91,15 @@ export function readSession(): Session | null {
 
 export function writeSession(tokenResponse: TokenResponse, username: string): Session {
   const payload = decodeJwtPayload(tokenResponse.accessToken);
+  const now = Date.now();
   const jwtExpiry = Number(payload.exp) * 1000;
-  const ttlExpiry = Date.now() + Number(tokenResponse.expiresIn || 0) * 1000;
+  const ttlExpiry = now + Number(tokenResponse.expiresIn || 0) * 1000;
   const session: Session = {
     accessToken: tokenResponse.accessToken,
     tokenType: tokenResponse.tokenType || "Bearer",
-    expiresAt: Number.isFinite(jwtExpiry) && jwtExpiry > Date.now() ? jwtExpiry : ttlExpiry,
+    expiresAt: Number.isFinite(jwtExpiry) && jwtExpiry > now ? jwtExpiry : ttlExpiry,
+    refreshToken: tokenResponse.refreshToken,
+    refreshExpiresAt: now + Number(tokenResponse.refreshExpiresIn || 0) * 1000,
     username: typeof payload.sub === "string" && payload.sub ? payload.sub : username,
     roles: Array.isArray(payload.roles) ? payload.roles.filter(role => typeof role === "string") : []
   };

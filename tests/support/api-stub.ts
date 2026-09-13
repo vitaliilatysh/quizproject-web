@@ -96,5 +96,13 @@ export function fakeToken(username: string, { roles = ["ROLE_USER"], ttlSeconds 
 }
 
 export function loginResponse(username: string, options?: FakeTokenOptions): StubResponse {
-  return { body: { accessToken: fakeToken(username, options), tokenType: "Bearer", expiresIn: 900 } };
+  return {
+    body: {
+      accessToken: fakeToken(username, options),
+      tokenType: "Bearer",
+      expiresIn: 900,
+      refreshToken: `refresh-${username}-${issued}`,
+      refreshExpiresIn: 604_800
+    }
+  };
 }

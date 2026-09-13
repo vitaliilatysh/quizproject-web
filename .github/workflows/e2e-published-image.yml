@@ -131,8 +131,8 @@ jobs:
             "${DIGEST_REF}" > /dev/null
 
       # --network host lets the container reach the MySQL and Redis service
-      # containers on 127.0.0.1 and exposes 8081 where the Vite dev server's
-      # proxy already looks, so no frontend configuration changes for this run.
+      # containers on 127.0.0.1 and exposes both the public API on 8081 and the
+      # management readiness endpoint on 9081, so no port publishing is needed.
       # The hardening flags mirror the production Kubernetes pod spec and the
       # backend's own smoke test.
       - name: Start the published API and wait for readiness
@@ -156,7 +156,7 @@ jobs:
             "${DIGEST_REF}"
 
           for attempt in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:8081/actuator/health/readiness > /dev/null; then
+            if curl --silent --fail http://127.0.0.1:9081/actuator/health/readiness > /dev/null; then
               exit 0
             fi
             if [ "${attempt}" -eq 60 ]; then

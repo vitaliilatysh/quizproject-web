@@ -178,7 +178,7 @@ export default function App() {
 
     async function attemptRefresh(): Promise<void> {
       try {
-        const tokenResponse = await api.refresh();
+        const tokenResponse = await api.refresh(session!.refreshToken);
         if (!cancelled) setSession(writeSession(tokenResponse, session!.username));
       } catch (error) {
         if (cancelled) return;
@@ -530,9 +530,9 @@ export default function App() {
     if (!session) {
       rememberReturnTo("#/admin");
       navigate("#/login");
-      return;
+    } else if (adminData === null) {
+      void loadAdmin();
     }
-    if (adminData === null) void loadAdmin();
   }, [adminData, loadAdmin, route.name, session]);
 
   useEffect(() => {
@@ -540,9 +540,9 @@ export default function App() {
     if (!session) {
       rememberReturnTo("#/profile");
       navigate("#/login");
-      return;
+    } else if (profile === null && !profileLoading && !profileError) {
+      void loadProfile();
     }
-    if (profile === null && !profileLoading && !profileError) void loadProfile();
   }, [loadProfile, profile, profileError, profileLoading, route.name, session]);
 
   useEffect(() => {
@@ -699,6 +699,7 @@ export default function App() {
   }, [api, handleAuthError, toast]);
 
   const logout = useCallback((): void => {
+    void api.logout().catch(() => undefined);
     clearSession();
     // Dropping the cached data is the account effect's job, and only its job:
     // this bug existed because signing out cleared some of it here while
@@ -707,7 +708,7 @@ export default function App() {
     setPasswordError("");
     toast("Ви вийшли з облікового запису.");
     navigate("#/");
-  }, [toast]);
+  }, [api, toast]);
 
   const executeAdmin = useCallback(
     async <T,>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
@@ -825,13 +826,9 @@ export default function App() {
     setSettingsError("");
     try {
       const probe = new QuizApi({ baseUrl: value, readsServerClock: false });
-      const health = await probe.health();
-      if (String(health?.status).toUpperCase() === "UP") {
-        setConnection("ok");
-        return true;
-      }
-      setConnection("error");
-      setSettingsError("API відповів, але його стан не UP.");
+      await probe.checkConnection();
+      setConnection("ok");
+      return true;
     } catch (error) {
       setConnection("error");
       setSettingsError(friendlyError(error));

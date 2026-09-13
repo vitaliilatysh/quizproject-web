@@ -13,13 +13,6 @@ spec:
     - host: quiz.local
       http:
         paths:
-          - path: /actuator/health
-            pathType: Exact
-            backend:
-              service:
-                name: quiz-api
-                port:
-                  name: http
           - path: /api
             pathType: Prefix
             backend:
