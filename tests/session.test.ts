@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { TokenResponse } from "../src/types.js";
+
+const tokenResponse = (
+  accessToken: string,
+  expiresIn = 900,
+  refreshToken = "opaque-refresh-token",
+  refreshExpiresIn = 604_800
+): TokenResponse => ({ accessToken, tokenType: "Bearer", expiresIn, refreshToken, refreshExpiresIn });
 
 // Node has no sessionStorage, and session.ts reads it lazily inside each
 // function, so a stub installed before the first call is enough.
@@ -58,7 +66,8 @@ test("a session that is absent, malformed or expired reads as no session", async
   useStubStorage({
     "quizproject.session": JSON.stringify({
       accessToken: "x", tokenType: "Bearer", username: "olena", roles: [],
-      expiresAt: Date.now() - 1
+      expiresAt: Date.now() - 1,
+      refreshToken: "refresh", refreshExpiresAt: Date.now() + 60_000
     })
   });
   assert.equal(readSession(), null, "an expired session is over");
@@ -70,7 +79,9 @@ test("a stored session is returned whole", async () => {
   const { readSession } = await import("../src/session.js");
   const stored = {
     accessToken: "header.payload.signature", tokenType: "Bearer",
-    expiresAt: Date.now() + 60_000, username: "olena", roles: ["ROLE_USER"]
+    expiresAt: Date.now() + 60_000,
+    refreshToken: "opaque-refresh-token", refreshExpiresAt: Date.now() + 120_000,
+    username: "olena", roles: ["ROLE_USER"]
   };
   useStubStorage({ "quizproject.session": JSON.stringify(stored) });
   assert.deepEqual(readSession(), stored);
@@ -87,16 +98,18 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
   const exp = Math.floor(Date.now() / 1000) + 600;
   const jwt = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: ["ROLE_ADMIN"], exp })}.sig`;
 
-  const fromClaim = writeSession({ accessToken: jwt, tokenType: "Bearer", expiresIn: 900 }, "ignored");
+  const fromClaim = writeSession(tokenResponse(jwt), "ignored");
   assert.equal(fromClaim.username, "olena", "the token's subject wins over the typed login");
   assert.deepEqual(fromClaim.roles, ["ROLE_ADMIN"]);
   assert.equal(fromClaim.expiresAt, exp * 1000);
+  assert.equal(fromClaim.refreshToken, "opaque-refresh-token");
+  assert.ok(fromClaim.refreshExpiresAt >= Date.now() + 604_799_000);
   assert.equal(JSON.parse(String(sessionStorage.getItem("quizproject.session"))).username, "olena");
 
   // A token this function cannot read at all: the decode fails, the payload is
   // empty, and both the login and the expiry come from what the API said.
   const before = Date.now();
-  const opaque = writeSession({ accessToken: "not-a-jwt", tokenType: "", expiresIn: 900 }, "petro");
+  const opaque = writeSession({ ...tokenResponse("not-a-jwt"), tokenType: "" }, "petro");
   assert.equal(opaque.username, "petro", "with no subject to read, the typed login stands");
   assert.deepEqual(opaque.roles, []);
   assert.equal(opaque.tokenType, "Bearer", "an empty token type still authorises as Bearer");
@@ -104,15 +117,15 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
 
   // An expiry already in the past is not an expiry worth keeping.
   const stale = `${encode({ alg: "none" })}.${encode({ sub: "olena", exp: 1 })}.sig`;
-  const recovered = writeSession({ accessToken: stale, tokenType: "Bearer", expiresIn: 60 }, "olena");
+  const recovered = writeSession(tokenResponse(stale, 60), "olena");
   assert.ok(recovered.expiresAt > Date.now(), "a past claim was preferred over the live lifetime");
 
   // roles that are not a list, and entries inside one that are not strings.
   const odd = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: "ROLE_USER" })}.sig`;
-  assert.deepEqual(writeSession({ accessToken: odd, tokenType: "Bearer", expiresIn: 60 }, "olena").roles, []);
+  assert.deepEqual(writeSession(tokenResponse(odd, 60), "olena").roles, []);
   const mixed = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: ["ROLE_USER", 7] })}.sig`;
   assert.deepEqual(
-    writeSession({ accessToken: mixed, tokenType: "Bearer", expiresIn: 60 }, "olena").roles,
+    writeSession(tokenResponse(mixed, 60), "olena").roles,
     ["ROLE_USER"], "a non-string role was carried into the session");
 });
 
@@ -202,7 +215,7 @@ test("a login that advertises no lifetime is a session that is over on arrival",
   // session has to read back as no session rather than as one with a deadline
   // in the past that nothing checks.
   const written = writeSession(
-    { accessToken: "opaque", tokenType: "Bearer", expiresIn: 0 }, "olena");
+    tokenResponse("opaque", 0), "olena");
   assert.ok(written.expiresAt <= Date.now(), "a zero lifetime bought the token time it was not given");
   assert.equal(written.username, "olena");
   assert.equal(readSession(), null, "an already-expired session was handed back as current");

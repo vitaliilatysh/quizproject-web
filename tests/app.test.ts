@@ -32,6 +32,8 @@ function seedSession(
     accessToken: fakeToken(username, { roles }),
     tokenType: "Bearer",
     expiresAt: Date.now() + expiresInMs,
+    refreshToken: `refresh-${username}`,
+    refreshExpiresAt: Date.now() + 604_800_000,
     username,
     roles
   }));
@@ -121,7 +123,10 @@ test("a session that expires keeps the reader's answers for their return", async
 });
 
 test("signing out is not a handover either", async () => {
-  stubApi(CATALOGUE);
+  const api = stubApi({
+    ...CATALOGUE,
+    "POST /api/v1/auth/logout": { body: {} }
+  });
 
   seedSession("olena");
   sessionStorage.setItem(ANSWERS(4), JSON.stringify([101]));
@@ -133,6 +138,7 @@ test("signing out is not a handover either", async () => {
   await settle();
 
   assert.equal(sessionStorage.getItem("quizproject.session"), null);
+  assert.match(api.lastOf("POST /api/v1/auth/logout")?.authorization ?? "", /^Bearer /);
   assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101]),
     "signing out threw away a draft the same reader can still come back to");
 });
@@ -200,6 +206,8 @@ test("a refreshed token is not a different reader", async () => {
 
   assert.equal(api.countOf("POST /api/v1/auth/refresh"), 1,
     "the refresh never ran, so this test proves nothing about it");
+  assert.deepEqual(api.lastOf("POST /api/v1/auth/refresh")?.body, { refreshToken: "refresh-olena" });
+  assert.equal(api.lastOf("POST /api/v1/auth/refresh")?.authorization, null);
 
   // The request alone is not the transition under test. Were the app to stop
   // installing what came back, everything below would still hold — same login,
@@ -208,6 +216,7 @@ test("a refreshed token is not a different reader", async () => {
   const after = JSON.parse(String(sessionStorage.getItem("quizproject.session")));
   assert.notEqual(after.accessToken, before, "the refreshed token was never installed");
   assert.equal(after.accessToken, (refreshed.body as { accessToken: string }).accessToken);
+  assert.equal(after.refreshToken, (refreshed.body as { refreshToken: string }).refreshToken);
   assert.equal(after.username, "olena", "the refresh did not leave a usable session behind");
   assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101, 102]),
     "a silent token refresh threw away the reader's draft");

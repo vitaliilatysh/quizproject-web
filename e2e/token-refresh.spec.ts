@@ -9,8 +9,18 @@ test("session survives past the original token lifetime via a silent refresh", a
     new URL(candidate.url()).pathname === "/api/v1/auth/refresh"
     && candidate.request().method() === "POST", { timeout: 30_000 });
   expect(refreshResponse.status()).toBe(200);
-  const refreshedToken = (await refreshResponse.json()).accessToken;
-  expect(refreshedToken).toBeTruthy();
+  const refreshRequest = refreshResponse.request();
+  expect(refreshRequest.headers()["authorization"]).toBeUndefined();
+  expect(refreshRequest.postDataJSON()).toEqual({ refreshToken: expect.any(String) });
+
+  const refreshed = await refreshResponse.json() as { accessToken: string; refreshToken: string };
+  expect(refreshed.accessToken).toBeTruthy();
+  expect(refreshed.refreshToken).toBeTruthy();
+  await expect.poll(() => page.evaluate(() => {
+    const stored = JSON.parse(sessionStorage.getItem("quizproject.session") ?? "null") as
+      { refreshToken?: string } | null;
+    return stored?.refreshToken;
+  })).toBe(refreshed.refreshToken);
 
   // The original short-lived JWT (JWT_TTL is configured short for this workflow) has
   // now expired. A subsequent authenticated action must still succeed on the refreshed

@@ -110,7 +110,7 @@ jobs:
           echo $! > api-e2e.pid
 
           for attempt in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:8081/actuator/health/readiness > /dev/null; then
+            if curl --silent --fail http://127.0.0.1:9081/actuator/health/readiness > /dev/null; then
               exit 0
             fi
             sleep 2

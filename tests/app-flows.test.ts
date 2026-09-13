@@ -40,6 +40,8 @@ function seedSession(username: string, roles: string[] = ["ROLE_USER"]): void {
     accessToken: fakeToken(username, { roles }),
     tokenType: "Bearer",
     expiresAt: Date.now() + 900_000,
+    refreshToken: `refresh-${username}`,
+    refreshExpiresAt: Date.now() + 604_800_000,
     username,
     roles
   }));
@@ -384,23 +386,21 @@ test("paging the panel asks for the page, not for the whole collection again", a
 
 test("the settings screen reports what it found at the address it was given", async () => {
   const { view, stub } = await open("#/settings", {
-    "GET /actuator/health": { body: { status: "UP" } }
+    "GET /api/v1/quizzes/summary": { body: { totalQuizzes: 12, totalSubjects: 4 } }
   });
 
   click(view.find("button[type=button]"));
   await settle();
   assert.equal(view.find(".connection-state").textContent, "API доступний");
-  assert.equal(stub.countOf("GET /actuator/health"), 1);
+  assert.equal(stub.countOf("GET /api/v1/quizzes/summary"), 2);
 
-  // An API that answers but is not UP is not a working API, and saying "no
-  // connection" would send the reader looking for a network fault.
-  const { view: down } = await open("#/settings", {
-    "GET /actuator/health": { body: { status: "DOWN" } }
+  const { view: unavailable } = await open("#/settings", {
+    "GET /api/v1/quizzes/summary": { status: 503, body: { message: "Сервіс недоступний." } }
   });
-  click(down.find("button[type=button]"));
+  click(unavailable.find("button[type=button]"));
   await settle();
-  assert.equal(down.find(".connection-state").textContent, "Немає з’єднання");
-  assert.match(down.text(), /стан не UP/);
+  assert.equal(unavailable.find(".connection-state").textContent, "Немає з’єднання");
+  assert.match(unavailable.text(), /Сервіс недоступний/);
 });
 
 test("an address that cannot be an API address is refused before it is saved", async () => {
@@ -416,7 +416,7 @@ test("an address that cannot be an API address is refused before it is saved", a
 
 test("a saved address is written down, confirmed, and used from then on", async () => {
   const { view, stub } = await open("#/settings", {
-    "GET /actuator/health": { body: { status: "UP" } }
+    "GET /api/v1/quizzes/summary": { body: { totalQuizzes: 12, totalSubjects: 4 } }
   });
 
   type(view.find("input[name=apiUrl]"), "https://api.example.com/");
@@ -426,7 +426,7 @@ test("a saved address is written down, confirmed, and used from then on", async 
   // double-slashed paths in every request built from it.
   assert.equal(localStorage.getItem("quizproject.apiUrl"), "https://api.example.com");
   assert.match(view.text(), /Адресу API збережено/);
-  assert.equal(stub.lastOf("GET /actuator/health")?.path, "/actuator/health");
+  assert.equal(stub.lastOf("GET /api/v1/quizzes/summary")?.path, "/api/v1/quizzes/summary");
 });
 
 test("an address changed in another tab is picked up in this one", async () => {
@@ -662,9 +662,16 @@ test("a submission the API refuses leaves the answers where they are", async () 
 });
 
 test("an address with nothing behind it is reported as no connection", async () => {
-  const { view } = await open("#/settings", {});
-  // No route for /actuator/health, so the stub refuses the call the way a
-  // browser refuses an unreachable host: it throws rather than answering.
+  let calls = 0;
+  const { view } = await open("#/settings", {
+    "GET /api/v1/quizzes/summary": () => {
+      calls += 1;
+      if (calls === 1) return { body: { totalQuizzes: 12, totalSubjects: 4 } };
+      throw new TypeError("Failed to fetch");
+    }
+  });
+  // The catalogue's public summary doubles as the probe. The second call is
+  // the explicit connection test and fails as an unreachable host would.
   type(view.find("input[name=apiUrl]"), "https://nothing.example.com");
   click(view.find("button[type=button]"));
   await settle();
@@ -682,7 +689,9 @@ test("a token the API refuses to renew ends the session", async () => {
   // Expiring inside the refresh margin, so the timer takes its 5s floor.
   sessionStorage.setItem("quizproject.session", JSON.stringify({
     accessToken: fakeToken("olena"), tokenType: "Bearer",
-    expiresAt: Date.now() + 61_000, username: "olena", roles: ["ROLE_USER"]
+    expiresAt: Date.now() + 61_000,
+    refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
+    username: "olena", roles: ["ROLE_USER"]
   }));
 
   const { view, stub } = await open("", { "POST /api/v1/auth/refresh": { status: 401, body: {} } });
@@ -690,6 +699,8 @@ test("a token the API refuses to renew ends the session", async () => {
   await settle();
 
   assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1, "the refresh never ran");
+  assert.deepEqual(stub.lastOf("POST /api/v1/auth/refresh")?.body, { refreshToken: "refresh-olena" });
+  assert.equal(stub.lastOf("POST /api/v1/auth/refresh")?.authorization, null);
   assert.equal(sessionStorage.getItem("quizproject.session"), null);
   assert.doesNotMatch(view.text(), /Вийти/, "the header still offers to sign out of a session that is over");
 });
@@ -697,7 +708,9 @@ test("a token the API refuses to renew ends the session", async () => {
 test("a refresh that could not be made keeps the session and tries again later", async () => {
   sessionStorage.setItem("quizproject.session", JSON.stringify({
     accessToken: fakeToken("olena"), tokenType: "Bearer",
-    expiresAt: Date.now() + 61_000, username: "olena", roles: ["ROLE_USER"]
+    expiresAt: Date.now() + 61_000,
+    refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
+    username: "olena", roles: ["ROLE_USER"]
   }));
 
   const { view, stub } = await open("", {
@@ -707,6 +720,7 @@ test("a refresh that could not be made keeps the session and tries again later",
   await settle();
 
   assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1);
+  assert.deepEqual(stub.lastOf("POST /api/v1/auth/refresh")?.body, { refreshToken: "refresh-olena" });
   // A 503 says nothing about the token. Signing the reader out over it would
   // lose an attempt in progress to a server hiccup.
   assert.notEqual(sessionStorage.getItem("quizproject.session"), null,

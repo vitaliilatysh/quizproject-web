@@ -8,7 +8,6 @@ import type {
   Attempt,
   AttemptCompletion,
   CatalogueSummary,
-  HealthResponse,
   Level,
   PageMeta,
   Paged,
@@ -284,8 +283,8 @@ export class QuizApi {
     }
   }
 
-  health(): Promise<HealthResponse> {
-    return this.request<HealthResponse>("/actuator/health");
+  async checkConnection(): Promise<void> {
+    await this.request<CatalogueSummary>("/api/v1/quizzes/summary");
   }
 
   login(username: string, password: string): Promise<TokenResponse> {
@@ -295,8 +294,15 @@ export class QuizApi {
     });
   }
 
-  refresh(): Promise<TokenResponse> {
+  refresh(refreshToken: string): Promise<TokenResponse> {
     return this.request<TokenResponse>("/api/v1/auth/refresh", {
+      method: "POST",
+      body: { refreshToken }
+    });
+  }
+
+  logout(): Promise<void> {
+    return this.request<void>("/api/v1/auth/logout", {
       method: "POST",
       authenticated: true
     });

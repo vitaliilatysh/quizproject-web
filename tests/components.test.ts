@@ -18,7 +18,9 @@ import { click, closeBrowser, openBrowser, render, submit as submitForm, type } 
 // that they stand in for the real thing.
 const sessionFor = (username: string, roles: string[] = []): Session => ({
   accessToken: "header.payload.signature", tokenType: "Bearer",
-  expiresAt: Date.now() + 900_000, username, roles
+  expiresAt: Date.now() + 900_000,
+  refreshToken: "opaque-refresh-token", refreshExpiresAt: Date.now() + 604_800_000,
+  username, roles
 });
 
 beforeEach(() => openBrowser());
