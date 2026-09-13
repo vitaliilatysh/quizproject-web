@@ -173,8 +173,13 @@ export default function App() {
   useEffect(() => {
     if (!session) return undefined;
     let cancelled = false;
+    // No lower bound. A session restored with an already-expired access token is
+    // now a normal state — readSession keeps it while the refresh token lives —
+    // and holding it back even five seconds is long enough for the first data
+    // load to answer 401, which handleAuthError turns into a sign-out. Zero for
+    // a token that has already expired, the usual margin otherwise.
     let timer = window.setTimeout(attemptRefresh,
-      Math.max(5000, session.expiresAt - Date.now() - TOKEN_REFRESH_MARGIN_MS));
+      Math.max(0, session.expiresAt - Date.now() - TOKEN_REFRESH_MARGIN_MS));
 
     async function attemptRefresh(): Promise<void> {
       try {
