@@ -14,8 +14,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 4173,
     proxy: {
-      "/api": { target: apiProxyTarget, changeOrigin: true },
-      "/actuator": { target: apiProxyTarget, changeOrigin: true }
+      "/api": { target: apiProxyTarget, changeOrigin: true }
     }
   },
   preview: {

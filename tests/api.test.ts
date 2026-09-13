@@ -30,15 +30,15 @@ test("default fetch keeps the browser global as its receiver", async () => {
     globalThis.fetch = async function (url) {
       assert.equal(this, globalThis);
       observedUrl = String(url);
-      return new Response(JSON.stringify({ status: "UP" }), {
+      return new Response(JSON.stringify({ totalQuizzes: 12, totalSubjects: 4 }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
     };
 
     const api = new QuizApi({ baseUrl: "https://api.example.com" });
-    assert.deepEqual(await api.health(), { status: "UP" });
-    assert.equal(observedUrl, "https://api.example.com/actuator/health");
+    assert.equal(await api.checkConnection(), undefined);
+    assert.equal(observedUrl, "https://api.example.com/api/v1/quizzes/summary");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -86,7 +86,7 @@ test("protected requests attach the short-lived bearer token", async () => {
   assert.equal(observed?.options.method, "POST");
 });
 
-test("refresh exchanges the current bearer token for a fresh one", async () => {
+test("refresh exchanges an opaque refresh token without bearer authentication", async () => {
   let observed: RecordedCall | undefined;
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
@@ -94,21 +94,42 @@ test("refresh exchanges the current bearer token for a fresh one", async () => {
     fetchImpl: async (url, options) => {
       observed = { url, options };
       return new Response(JSON.stringify({
-        accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900
+        accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900,
+        refreshToken: "rotated-refresh-token", refreshExpiresIn: 604_800
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
   });
 
-  assert.deepEqual(await api.refresh(),
-    { accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900 });
+  assert.deepEqual(await api.refresh("opaque-refresh-token"), {
+    accessToken: "fresh-token", tokenType: "Bearer", expiresIn: 900,
+    refreshToken: "rotated-refresh-token", refreshExpiresIn: 604_800
+  });
   assert.equal(observed?.url, "https://api.example.com/api/v1/auth/refresh");
   assert.equal(observed?.options.method, "POST");
-  assert.equal(headersOf(observed)["Authorization"], "Bearer expiring-token");
+  assert.equal(headersOf(observed)["Authorization"], undefined);
+  assert.deepEqual(JSON.parse(bodyOf(observed)), { refreshToken: "opaque-refresh-token" });
 });
 
-test("refresh fails before fetch when the session is absent", async () => {
+test("logout fails before fetch when the session is absent", async () => {
   const api = new QuizApi({ baseUrl: "https://api.example.com", getToken: () => null, fetchImpl: () => assert.fail("fetch must not be called") });
-  await assert.rejects(api.refresh(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
+  await assert.rejects(api.logout(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
+});
+
+test("logout revokes the authenticated backend session", async () => {
+  let observed: RecordedCall | undefined;
+  const api = new QuizApi({
+    baseUrl: "https://api.example.com",
+    getToken: () => "signed-token",
+    fetchImpl: async (url, options) => {
+      observed = { url, options };
+      return new Response(null, { status: 204 });
+    }
+  });
+
+  await api.logout();
+  assert.equal(observed?.url, "https://api.example.com/api/v1/auth/logout");
+  assert.equal(observed?.options.method, "POST");
+  assert.equal(headersOf(observed)["Authorization"], "Bearer signed-token");
 });
 
 test("completeAttempt serializes selected answer IDs", async () => {
@@ -200,7 +221,10 @@ test("account lifecycle uses public registration and protected profile resources
       observed.push({ url, options });
       if (options.method === "PUT") return new Response(null, { status: 204 });
       return new Response(JSON.stringify(url.endsWith("/register")
-        ? { accessToken: "jwt", tokenType: "Bearer", expiresIn: 900 }
+        ? {
+          accessToken: "jwt", tokenType: "Bearer", expiresIn: 900,
+          refreshToken: "refresh", refreshExpiresIn: 604_800
+        }
         : { username: "student" }), {
         status: url.endsWith("/register") ? 201 : 200,
         headers: { "content-type": "application/json" }
@@ -515,8 +539,8 @@ test("the home page asks for only the quizzes it teases", async () => {
 // own clock is not evidence. See src/clock.js for what the reading is for.
 test("every response sets the clock, including one that failed", async () => {
   const cases = [
-    { status: 200, body: { status: "UP" }, call: (api: QuizApi) => api.health() },
-    { status: 500, body: { message: "boom" }, call: (api: QuizApi) => api.health().catch(() => null) }
+    { status: 200, body: { totalQuizzes: 1, totalSubjects: 1 }, call: (api: QuizApi) => api.checkConnection() },
+    { status: 500, body: { message: "boom" }, call: (api: QuizApi) => api.checkConnection().catch(() => null) }
   ];
 
   for (const { status, body, call } of cases) {
@@ -543,13 +567,13 @@ test("a response without a readable Date leaves the device clock alone", async (
   resetServerClock();
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
-    fetchImpl: async () => new Response(JSON.stringify({ status: "UP" }), {
+    fetchImpl: async () => new Response(JSON.stringify({ totalQuizzes: 1, totalSubjects: 1 }), {
       status: 200,
       headers: { "content-type": "application/json" }
     })
   });
 
-  await api.health();
+  await api.checkConnection();
   assert.equal(serverClockOffset(), 0);
   assert.ok(Math.abs(serverNow() - Date.now()) < 50);
 });
@@ -560,26 +584,26 @@ test("a response without a readable Date leaves the device clock alone", async (
 test("a client that is not the app's API does not set the clock", async () => {
   resetServerClock();
   const anchored = Math.floor(Date.now() / 1000) * 1000 - 120_000;
-  const respond = () => new Response(JSON.stringify({ status: "UP" }), {
+  const respond = () => new Response(JSON.stringify({ totalQuizzes: 1, totalSubjects: 1 }), {
     status: 200,
     headers: { "content-type": "application/json", Date: new Date(anchored).toUTCString() }
   });
 
   const app = new QuizApi({ baseUrl: "https://api.example.com", fetchImpl: respond });
-  await app.health();
+  await app.checkConnection();
   const measured = serverClockOffset();
   assert.ok(measured < -119_000, "the app's own client should have set the clock");
 
   // Same response, from an address being tested rather than used.
   const probe = new QuizApi({
     baseUrl: "https://elsewhere.example.com",
-    fetchImpl: () => new Response(JSON.stringify({ status: "UP" }), {
+    fetchImpl: () => new Response(JSON.stringify({ totalQuizzes: 1, totalSubjects: 1 }), {
       status: 200,
       headers: { "content-type": "application/json", Date: new Date(Date.now() + 600_000).toUTCString() }
     }),
     readsServerClock: false
   });
-  await probe.health();
+  await probe.checkConnection();
   assert.equal(serverClockOffset(), measured, "the probe moved the app's clock");
   resetServerClock();
 });
@@ -604,11 +628,11 @@ test("a request that never answers is abandoned rather than left hanging", async
     })
   });
 
-  const failure = await api.health().then(() => null, (error: unknown) => error);
+  const failure = await api.checkConnection().then(() => null, (error: unknown) => error);
   assert.ok(failure instanceof ApiError);
   assert.equal(failure.code, "TIMEOUT");
   assert.equal(failure.status, 0, "a timeout is not an HTTP status");
-  assert.equal(failure.path, "/actuator/health");
+  assert.equal(failure.path, "/api/v1/quizzes/summary");
   assert.match(failure.message, /вчасно/);
   assert.ok(aborted, "the request was left running after the client gave up on it");
 });
@@ -622,7 +646,7 @@ test("a connection that cannot be opened is reported as a network error", async 
     fetchImpl: () => { throw refused; }
   });
 
-  const failure = await api.health().then(() => null, (error: unknown) => error);
+  const failure = await api.checkConnection().then(() => null, (error: unknown) => error);
   assert.ok(failure instanceof ApiError);
   assert.equal(failure.code, "NETWORK_ERROR");
   assert.equal(failure.status, 0);
@@ -640,11 +664,11 @@ test("an error the backend did not send as JSON still reaches the reader", async
     baseUrl: "https://api.example.com",
     fetchImpl: respond("<h1>502 Bad Gateway</h1>", "text/html")
   });
-  const first = await plain.health().then(() => null, (error: unknown) => error);
+  const first = await plain.checkConnection().then(() => null, (error: unknown) => error);
   assert.ok(first instanceof ApiError);
   assert.equal(first.status, 503);
   assert.equal(first.code, "API_ERROR", "there was no `error` field to take a code from");
-  assert.equal(first.path, "/actuator/health", "the requested path stands in for one the body did not name");
+  assert.equal(first.path, "/api/v1/quizzes/summary", "the requested path stands in for one the body did not name");
   assert.match(first.message, /503/);
 
   // JSON, well-formed, and empty where it matters. An empty message is not a
@@ -653,7 +677,7 @@ test("an error the backend did not send as JSON still reaches the reader", async
     baseUrl: "https://api.example.com",
     fetchImpl: respond(JSON.stringify({ message: "", error: "", path: "" }), "application/json")
   });
-  const second = await blank.health().then(() => null, (error: unknown) => error);
+  const second = await blank.checkConnection().then(() => null, (error: unknown) => error);
   assert.ok(second instanceof ApiError);
   assert.match(second.message, /503/);
 });

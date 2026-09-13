@@ -31,6 +31,8 @@ export interface TokenResponse {
   accessToken: string;
   tokenType: string;
   expiresIn: number;
+  refreshToken: string;
+  refreshExpiresIn: number;
 }
 
 /** api/auth/RegisterRequest.java */
@@ -235,9 +237,4 @@ export interface PageMeta {
 export interface Paged<T> {
   items: T[];
   page: PageMeta | null;
-}
-
-/** GET /actuator/health, of which this app reads only the status. */
-export interface HealthResponse {
-  status: string;
 }
