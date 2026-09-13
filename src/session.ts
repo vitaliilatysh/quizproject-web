@@ -74,10 +74,14 @@ function isSession(value: unknown): value is Session {
 export function readSession(): Session | null {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(SESSION_KEY) as string);
+    // An expired access token is not the end of the session — it is what the
+    // refresh token is for, and that one lasts days rather than minutes. Only
+    // the refresh token expiring ends it. Rejecting on expiresAt threw away a
+    // credential still good for a week and sent the reader back to the login
+    // form on any reload after fifteen idle minutes.
     if (!isSession(value)
       || !value.accessToken
       || !value.refreshToken
-      || value.expiresAt <= Date.now()
       || value.refreshExpiresAt <= Date.now()) {
       clearSession();
       return null;

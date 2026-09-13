@@ -67,12 +67,34 @@ test("a session that is absent, malformed or expired reads as no session", async
     "quizproject.session": JSON.stringify({
       accessToken: "x", tokenType: "Bearer", username: "olena", roles: [],
       expiresAt: Date.now() - 1,
-      refreshToken: "refresh", refreshExpiresAt: Date.now() + 60_000
+      refreshToken: "refresh", refreshExpiresAt: Date.now() - 1
     })
   });
   assert.equal(readSession(), null, "an expired session is over");
   assert.equal(sessionStorage.getItem("quizproject.session"), null,
     "the expired entry was left behind for the next read to trip over");
+});
+
+/**
+ * The access token expiring is not the session expiring.
+ *
+ * That is what the refresh token is for, and the server gives it seven days
+ * against the access token's fifteen minutes. Reading the session back against
+ * the wrong one of the two threw away a credential still good for a week: leave
+ * a tab open past the quarter hour, reload, and the reader was at the login
+ * form with the refresh token deleted from storage on the way out.
+ */
+test("an expired access token keeps the session while the refresh token lives", async () => {
+  const { readSession } = await import("../src/session.js");
+  const stored = {
+    accessToken: "x", tokenType: "Bearer", username: "olena", roles: [],
+    expiresAt: Date.now() - 5 * 60_000,
+    refreshToken: "opaque-refresh-token", refreshExpiresAt: Date.now() + 7 * 86_400_000
+  };
+  useStubStorage({ "quizproject.session": JSON.stringify(stored) });
+
+  assert.deepEqual(readSession(), stored, "a week of refresh was discarded over a stale access token");
+  assert.ok(sessionStorage.getItem("quizproject.session"), "and the refresh token was deleted with it");
 });
 
 test("a stored session is returned whole", async () => {
@@ -211,12 +233,13 @@ test("a login that advertises no lifetime is a session that is over on arrival",
   useStubStorage();
 
   // Zero is what the API sends for a token it will not honour, and it is also
-  // what an absent field falls back to. Either way the expiry is now, and the
-  // session has to read back as no session rather than as one with a deadline
-  // in the past that nothing checks.
+  // what an absent field falls back to. Either way the expiry is now. It is the
+  // refresh lifetime that decides, because a dead access token alone is a state
+  // the refresh flow recovers from; nothing recovers from a dead refresh token.
   const written = writeSession(
-    tokenResponse("opaque", 0), "olena");
+    tokenResponse("opaque", 0, "opaque-refresh-token", 0), "olena");
   assert.ok(written.expiresAt <= Date.now(), "a zero lifetime bought the token time it was not given");
+  assert.ok(written.refreshExpiresAt <= Date.now(), "nor did the refresh token get time it was not given");
   assert.equal(written.username, "olena");
   assert.equal(readSession(), null, "an already-expired session was handed back as current");
 });
