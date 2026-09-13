@@ -50,6 +50,14 @@ function navigate(hash: string): void {
   globalThis.location.hash = safeHash(hash);
 }
 
+// How early a token is renewed, and never more than half of the life it is
+// taken from. A flat minute subtracted from a token that never lives a minute
+// is always negative, so the delay collapsed to zero — and because installing
+// the renewed session re-runs the effect that schedules it, zero meant the next
+// renewal was already due when the last one landed, and the app rotated tokens
+// as fast as the network allowed. Deployments do issue tokens that short: the
+// end-to-end workflow runs on JWT_TTL=PT15S. Still zero once the token has
+// actually expired, which is the restored session readSession now keeps alive.
 const TOKEN_REFRESH_MARGIN_MS = 60_000;
 const TOKEN_REFRESH_RETRY_MS = 30_000;
 // Matches the API's own default page size, so the first page a client renders
@@ -173,13 +181,8 @@ export default function App() {
   useEffect(() => {
     if (!session) return undefined;
     let cancelled = false;
-    // No lower bound. A session restored with an already-expired access token is
-    // now a normal state — readSession keeps it while the refresh token lives —
-    // and holding it back even five seconds is long enough for the first data
-    // load to answer 401, which handleAuthError turns into a sign-out. Zero for
-    // a token that has already expired, the usual margin otherwise.
-    let timer = window.setTimeout(attemptRefresh,
-      Math.max(0, session.expiresAt - Date.now() - TOKEN_REFRESH_MARGIN_MS));
+    const remaining = session.expiresAt - Date.now();
+    let timer = window.setTimeout(attemptRefresh, Math.max(0, remaining - Math.min(TOKEN_REFRESH_MARGIN_MS, remaining / 2)));
 
     async function attemptRefresh(): Promise<void> {
       try {

@@ -191,8 +191,8 @@ test("a refreshed token is not a different reader", async () => {
     "POST /api/v1/auth/refresh": refreshed
   });
 
-  // Expiring inside the refresh margin, so the timer takes its 5s floor.
-  seedSession("olena", { expiresInMs: 61_000 });
+  // Expiring inside the refresh margin, so the timer takes half of what is left.
+  seedSession("olena", { expiresInMs: 4_000 });
   const before = JSON.parse(String(sessionStorage.getItem("quizproject.session"))).accessToken;
   sessionStorage.setItem(ANSWERS(4), JSON.stringify([101, 102]));
 
