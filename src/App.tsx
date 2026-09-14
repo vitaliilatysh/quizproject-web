@@ -42,10 +42,18 @@ export default function App() {
   const activeAccount = useRef<string | null>(accountName);
 
   const catalogue = useQuizCatalogue(auth.api, route.name);
-  const account = useAccountData(auth.api, auth.session, route.name, activeAccount, auth.handleAuthError);
+  const account = useAccountData(
+    auth.api,
+    auth.session,
+    auth.accessReady,
+    route.name,
+    activeAccount,
+    auth.handleAuthError
+  );
   const admin = useAdminData(
     auth.api,
     auth.session,
+    auth.accessReady,
     route.name,
     activeAccount,
     auth.handleAuthError,
@@ -59,6 +67,7 @@ export default function App() {
   const attempts = useAttempts(
     auth.api,
     auth.session,
+    auth.accessReady,
     route,
     activeAccount,
     auth.handleAuthError,

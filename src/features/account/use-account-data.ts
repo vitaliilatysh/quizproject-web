@@ -10,6 +10,7 @@ type HandleAuthError = (error: unknown, returnTo: string) => boolean;
 export function useAccountData(
   api: QuizApi,
   session: Session | null,
+  accessReady: boolean,
   routeName: string,
   activeAccount: RefObject<string | null>,
   handleAuthError: HandleAuthError
@@ -22,7 +23,6 @@ export function useAccountData(
   const [profileError, setProfileError] = useState("");
   const resultsRequest = useRef(false);
   const profileRequest = useRef(false);
-
   const loadResults = useCallback(async (): Promise<void> => {
     if (session && !resultsRequest.current) {
       const requestedBy = session.username;
@@ -65,20 +65,20 @@ export function useAccountData(
     if (!session) {
       rememberReturnTo("#/results");
       navigate("#/login");
-    } else if (results === null && !resultsLoading && !resultError) {
+    } else if (accessReady && results === null && !resultsLoading && !resultError) {
       void loadResults();
     }
-  }, [loadResults, resultError, results, resultsLoading, routeName, session]);
+  }, [accessReady, loadResults, resultError, results, resultsLoading, routeName, session]);
 
   useEffect(() => {
     if (routeName !== "profile") return;
     if (!session) {
       rememberReturnTo("#/profile");
       navigate("#/login");
-    } else if (profile === null && !profileLoading && !profileError) {
+    } else if (accessReady && profile === null && !profileLoading && !profileError) {
       void loadProfile();
     }
-  }, [loadProfile, profile, profileError, profileLoading, routeName, session]);
+  }, [accessReady, loadProfile, profile, profileError, profileLoading, routeName, session]);
 
   const invalidateResults = useCallback(() => setResults(null), []);
 

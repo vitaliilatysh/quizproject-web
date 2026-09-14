@@ -13,6 +13,10 @@ type ToastMessage = (message: string, tone?: string) => void;
 
 export function useAuthSession(apiUrl: string, toast: ToastMessage, onUnauthorized: () => void) {
   const [session, setSession] = useState<Session | null>(() => readSession());
+  // A restored session may legitimately have an expired access token while its
+  // refresh token still lives. Protected feature loaders must wait for the
+  // refresh effect instead of racing it with a request guaranteed to answer 401.
+  const accessReady = session === null || session.expiresAt > Date.now();
   const api = useMemo(() => new QuizApi({
     baseUrl: apiUrl,
     getToken: () => session?.accessToken
@@ -39,5 +43,5 @@ export function useAuthSession(apiUrl: string, toast: ToastMessage, onUnauthoriz
     navigate("#/");
   }, [api, toast]);
 
-  return { api, session, setSession, handleAuthError, logout };
+  return { api, session, accessReady, setSession, handleAuthError, logout };
 }

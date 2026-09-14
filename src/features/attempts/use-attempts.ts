@@ -21,6 +21,7 @@ type ToastMessage = (message: string, tone?: string) => void;
 export function useAttempts(
   api: QuizApi,
   session: Session | null,
+  accessReady: boolean,
   route: Route,
   activeAccount: RefObject<string | null>,
   handleAuthError: HandleAuthError,
@@ -139,11 +140,11 @@ export function useAttempts(
       navigate("#/login");
       return;
     }
-    if (Number.isInteger(attemptId) && attemptId > 0
+    if (accessReady && Number.isInteger(attemptId) && attemptId > 0
         && !attempts[attemptId] && !loading[attemptId] && !errors[attemptId]) {
       void load(attemptId);
     }
-  }, [attempts, errors, load, loading, route, session]);
+  }, [accessReady, attempts, errors, load, loading, route, session]);
 
   useEffect(() => {
     if (route.name !== "attempt") return undefined;

@@ -12,6 +12,7 @@ type ToastMessage = (message: string, tone?: string) => void;
 export function useAdminData(
   api: QuizApi,
   session: Session | null,
+  accessReady: boolean,
   routeName: string,
   activeAccount: RefObject<string | null>,
   handleAuthError: HandleAuthError,
@@ -81,10 +82,10 @@ export function useAdminData(
     if (!session) {
       rememberReturnTo("#/admin");
       navigate("#/login");
-    } else if (data === null) {
+    } else if (accessReady && data === null) {
       void load();
     }
-  }, [data, load, routeName, session]);
+  }, [accessReady, data, load, routeName, session]);
 
   const execute = useCallback(
     async <T,>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
