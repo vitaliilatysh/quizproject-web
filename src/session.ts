@@ -46,9 +46,9 @@ declare global {
 function decodeJwtPayload(token: string): JwtPayload {
   try {
     const segment = token.split(".")[1] ?? "";
-    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const normalized = segment.replaceAll("-", "+").replaceAll("_", "/");
     const json = decodeURIComponent(Array.from(atob(normalized), character =>
-      `%${character.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+      `%${character.codePointAt(0)!.toString(16).padStart(2, "0")}`).join(""));
     return JSON.parse(json) as JwtPayload;
   } catch {
     return {};

@@ -28,6 +28,11 @@ test("parseRoute extracts a route and its parameters", () => {
   assert.deepEqual(parseRoute(""), { name: "home", params: [] });
 });
 
+test("routes discard the entire query even with repeated delimiters or line breaks", () => {
+  const query = "?".repeat(20_000) + "\n/ignored";
+  assert.deepEqual(parseRoute(`#/attempt/42?${query}`), { name: "attempt", params: ["42"] });
+});
+
 test("quizCountLabel follows Ukrainian plural forms", () => {
   assert.equal(quizCountLabel(1), "тест");
   assert.equal(quizCountLabel(3), "тести");

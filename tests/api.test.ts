@@ -23,6 +23,12 @@ test("normalizeBaseUrl validates and canonicalizes HTTP URLs", () => {
   assert.throws(() => normalizeBaseUrl(""), /порожнім/);
 });
 
+test("base URLs retain internal slashes while trimming long trailing runs", () => {
+  const slashes = "/".repeat(20_000);
+  const base = `https://api.example.com/prefix${slashes}api`;
+  assert.equal(normalizeBaseUrl(`${base}${slashes}?discard=1#fragment`), base);
+});
+
 test("default fetch keeps the browser global as its receiver", async () => {
   const originalFetch = globalThis.fetch;
   let observedUrl: string | undefined;

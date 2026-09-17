@@ -9,16 +9,20 @@ const PAGE_SIZE = 20;
 type HandleAuthError = (error: unknown, returnTo: string) => boolean;
 type ToastMessage = (message: string, tone?: string) => void;
 
-export function useAdminData(
-  api: QuizApi,
-  session: Session | null,
-  accessReady: boolean,
-  routeName: string,
-  activeAccount: RefObject<string | null>,
-  handleAuthError: HandleAuthError,
-  setActionBusy: Dispatch<SetStateAction<string>>,
-  toast: ToastMessage
-) {
+interface AdminDataOptions {
+  api: QuizApi;
+  session: Session | null;
+  accessReady: boolean;
+  routeName: string;
+  activeAccount: RefObject<string | null>;
+  handleAuthError: HandleAuthError;
+  setActionBusy: Dispatch<SetStateAction<string>>;
+  toast: ToastMessage;
+}
+
+export function useAdminData({
+  api, session, accessReady, routeName, activeAccount, handleAuthError, setActionBusy, toast
+}: AdminDataOptions) {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

@@ -22,7 +22,7 @@ export interface LayoutProps {
   children: ReactNode;
 }
 
-export function Layout({ route, session, onLogout, toasts, children }: LayoutProps) {
+export function Layout({ route, session, onLogout, toasts, children }: Readonly<LayoutProps>) {
   return (
     <>
       <header className="site-header">

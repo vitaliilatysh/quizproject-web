@@ -50,31 +50,31 @@ export default function App() {
     activeAccount,
     auth.handleAuthError
   );
-  const admin = useAdminData(
-    auth.api,
-    auth.session,
-    auth.accessReady,
-    route.name,
+  const admin = useAdminData({
+    api: auth.api,
+    session: auth.session,
+    accessReady: auth.accessReady,
+    routeName: route.name,
     activeAccount,
-    auth.handleAuthError,
+    handleAuthError: auth.handleAuthError,
     setActionBusy,
     toast
-  );
+  });
   const onAttemptCompletion = useCallback(() => {
     account.invalidateResults();
     admin.invalidate();
   }, [account.invalidateResults, admin.invalidate]);
-  const attempts = useAttempts(
-    auth.api,
-    auth.session,
-    auth.accessReady,
+  const attempts = useAttempts({
+    api: auth.api,
+    session: auth.session,
+    accessReady: auth.accessReady,
     route,
     activeAccount,
-    auth.handleAuthError,
+    handleAuthError: auth.handleAuthError,
     setActionBusy,
     toast,
-    onAttemptCompletion
-  );
+    onCompletion: onAttemptCompletion
+  });
 
   const resetProtectedData = useCallback(() => {
     account.reset();

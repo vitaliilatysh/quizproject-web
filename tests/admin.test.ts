@@ -174,6 +174,18 @@ beforeEach(() => {
 
 afterEach(() => closeBrowser());
 
+test("editing an answer preserves its input and focus across rerenders", async () => {
+  const view = await mount();
+  const editor = card(view, "Запитання");
+  const answer = fieldIn(editor, '.admin-answer-grid input:not([type="checkbox"])');
+  answer.focus();
+  type(answer, "Нова відповідь");
+  await settle();
+  assert.equal(fieldIn(editor, '.admin-answer-grid input:not([type="checkbox"])'), answer);
+  assert.equal(document.activeElement, answer);
+  assert.equal(answer.value, "Нова відповідь");
+});
+
 test("the panel says it is loading before it has anything to show", async () => {
   const view = await mount({ data: null, loading: true });
   assert.match(view.text(), /Готуємо панель/);
