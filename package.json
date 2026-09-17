@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 tests/*.test.ts",
     "coverage": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' tests/*.test.ts",
+    "precoverage:sonar": "node -e \"require('node:fs').mkdirSync('coverage',{recursive:true})\"",
+    "coverage:sonar": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info tests/*.test.ts",
     "coverage:check": "node --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=96 tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -34,3 +36,4 @@
     "vite": "8.2.2"
   }
 }
+
