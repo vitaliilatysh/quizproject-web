@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SubmitEvent } from "react";
 import type { Profile, Result } from "../types.js";
 import { formatDate } from "../utils.js";
 
@@ -9,10 +9,10 @@ export interface ProfilePageProps {
   passwordError: string;
   busy: boolean;
   onRetry: () => void;
-  onPasswordChange: (event: FormEvent<HTMLFormElement>) => void;
+  onPasswordChange: (event: SubmitEvent<HTMLFormElement>) => void;
 }
 
-export function ProfilePage({ profile, loading, error, passwordError, busy, onRetry, onPasswordChange }: ProfilePageProps) {
+export function ProfilePage({ profile, loading, error, passwordError, busy, onRetry, onPasswordChange }: Readonly<ProfilePageProps>) {
   if (loading && !profile) {
     return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Завантажуємо профіль…</h1><div className="result-skeleton" /></section>;
   }
@@ -43,7 +43,7 @@ export function ProfilePage({ profile, loading, error, passwordError, busy, onRe
             <label><span>Поточний пароль</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required /></label>
             <label><span>Новий пароль</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
             <label><span>Повторіть новий пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
-            <button className="button button--dark button--large" disabled={busy}>{busy ? "Оновлюємо…" : "Оновити пароль"}</button>
+            <button className="button button--dark button--large" type="submit" disabled={busy}>{busy ? "Оновлюємо…" : "Оновити пароль"}</button>
           </form>
         </article>
       </section>
@@ -59,10 +59,16 @@ export interface SettingsPageProps {
   onTest: (value: string) => void;
 }
 
-export function SettingsPage({ apiUrl, connection, error, onSave, onTest }: SettingsPageProps) {
+const CONNECTION_LABELS: Readonly<Record<string, string>> = {
+  checking: "Перевіряємо…",
+  ok: "API доступний",
+  error: "Немає з’єднання"
+};
+
+export function SettingsPage({ apiUrl, connection, error, onSave, onTest }: Readonly<SettingsPageProps>) {
   const [value, setValue] = useState(apiUrl);
   useEffect(() => setValue(apiUrl), [apiUrl]);
-  const status = connection === "checking" ? "Перевіряємо…" : connection === "ok" ? "API доступний" : connection === "error" ? "Немає з’єднання" : "Не перевірено";
+  const status = CONNECTION_LABELS[connection] ?? "Не перевірено";
   return (
     <section className="settings-layout section-pad">
       <div><p className="eyebrow">Підключення</p><h1>Адреса<br /><em>REST API.</em></h1><p>Frontend працює окремо від Java-застосунку. Вкажіть адресу запущеного модуля <code>api</code>.</p></div>
@@ -86,7 +92,13 @@ export interface ResultsPageProps {
   onRetry: () => void;
 }
 
-export function ResultsPage({ results, loading, error, onRetry }: ResultsPageProps) {
+function scoreBadgeClass(score: number): string {
+  if (score >= 80) return "score-badge--great";
+  if (score >= 60) return "score-badge--good";
+  return "";
+}
+
+export function ResultsPage({ results, loading, error, onRetry }: Readonly<ResultsPageProps>) {
   if (loading && !results) return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Завантажуємо результати…</h1><div className="result-skeleton" /></section>;
   if (error) return <section className="section-pad content-page"><p className="eyebrow">Особистий кабінет</p><h1>Мої результати</h1><div className="empty-state"><h3>Не вдалося завантажити історію</h3><p>{error}</p><button className="button button--dark" type="button" onClick={onRetry}>Повторити</button></div></section>;
   const items = results || [];
@@ -104,7 +116,7 @@ export function ResultsPage({ results, loading, error, onRetry }: ResultsPagePro
               <article className="result-row" key={result.attemptId}>
                 <div><span className="result-index">{String(result.quizName || "Q").slice(0, 1).toUpperCase()}</span><div><strong>{result.quizName}</strong><small>Тест #{result.quizId} · Спроба #{result.attemptId}</small></div></div>
                 <time>{formatDate(result.completedAt)}</time>
-                <span className={`score-badge ${result.score >= 80 ? "score-badge--great" : result.score >= 60 ? "score-badge--good" : ""}`}>{result.score}%</span>
+                <span className={`score-badge ${scoreBadgeClass(result.score)}`}>{result.score}%</span>
               </article>
             ))}
           </div>

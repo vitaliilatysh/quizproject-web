@@ -7,7 +7,7 @@ export interface PagerProps {
   label: string;
 }
 
-export function Pager({ meta, onChange, busy, label }: PagerProps) {
+export function Pager({ meta, onChange, busy, label }: Readonly<PagerProps>) {
   if (!meta || meta.totalPages <= 1) return null;
   const first = meta.number * meta.size + 1;
   const last = Math.min(first + meta.size - 1, meta.totalCount);

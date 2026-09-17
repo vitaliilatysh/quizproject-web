@@ -326,6 +326,20 @@ test("a finished attempt shows its score instead of its questions", () => {
     "a completed attempt still offered its answer boxes");
 });
 
+test("completion feedback changes at the 60 and 80 percent boundaries", () => {
+  const cases: [number, RegExp][] = [
+    [59, /Це хороший старт/],
+    [60, /Гарний результат/],
+    [79, /Гарний результат/],
+    [80, /Відмінна робота/]
+  ];
+  for (const [score, message] of cases) {
+    const view = render(AttemptPage, attemptProps({ completion: completionOf(score) }));
+    assert.match(view.text(), message);
+    view.unmount();
+  }
+});
+
 test("an attempt the API already marked complete needs no completion payload", () => {
   const view = render(AttemptPage, attemptProps({ attempt: attempt({ completed: true, score: 55 }), completion: undefined }));
   assert.equal(view.find(".completion__score strong").textContent, "55");

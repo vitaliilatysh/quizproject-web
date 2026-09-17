@@ -11,7 +11,7 @@ interface QuizCardProps {
   onStart: (quizId: number) => void;
 }
 
-function QuizCard({ quiz, compact, busy, onStart }: QuizCardProps) {
+function QuizCard({ quiz, compact, busy, onStart }: Readonly<QuizCardProps>) {
   const tone = difficultyTone(quiz.complexity);
   return (
     <article className={`quiz-card ${compact ? "quiz-card--compact" : ""}`}>
@@ -41,7 +41,7 @@ export interface QuizCollectionProps {
   onStart: (quizId: number) => void;
 }
 
-export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, onStart }: QuizCollectionProps) {
+export function QuizCollection({ quizzes, loading, error, limit, busy, onRetry, onStart }: Readonly<QuizCollectionProps>) {
   if (loading && !quizzes) {
     return (
       <div className="quiz-grid" aria-label="Завантаження тестів">
@@ -86,7 +86,7 @@ export interface HomePageProps {
   onStart: (quizId: number) => void;
 }
 
-export function HomePage({ session, quizzes, summary, loading, error, busy, onRetry, onStart }: HomePageProps) {
+export function HomePage({ session, quizzes, summary, loading, error, busy, onRetry, onStart }: Readonly<HomePageProps>) {
   const total = summary?.totalQuizzes ?? "—";
   const subjects = summary?.totalSubjects ?? "—";
   return (
@@ -143,7 +143,7 @@ export interface QuizzesPageProps {
 }
 
 export function QuizzesPage({ quizzes, pageMeta, loading, error, busy, search, filter,
-  onSearch, onFilter, onPageChange, onRetry, onStart }: QuizzesPageProps) {
+  onSearch, onFilter, onPageChange, onRetry, onStart }: Readonly<QuizzesPageProps>) {
   const count = pageMeta?.totalCount ?? (quizzes || []).length;
   return (
     <>

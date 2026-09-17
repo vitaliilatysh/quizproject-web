@@ -116,7 +116,9 @@ export function normalizeBaseUrl(value: string | null | undefined): string {
     throw new TypeError("API URL має використовувати HTTP або HTTPS.");
   }
 
-  url.pathname = url.pathname.replace(/\/+$/, "");
+  let pathEnd = url.pathname.length;
+  while (url.pathname[pathEnd - 1] === "/") pathEnd -= 1;
+  url.pathname = url.pathname.slice(0, pathEnd);
   url.search = "";
   url.hash = "";
   return url.toString().replace(/\/$/, "");
@@ -154,6 +156,25 @@ interface ErrorPayload {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+async function readResponse(response: Response, path: string): Promise<unknown> {
+  const contentType = response.headers.get("content-type") ?? "";
+  const payload: unknown = contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
+  if (response.ok) return payload;
+
+  const problem: ErrorPayload = isRecord(payload) ? payload : {};
+  const message = typeof problem.message === "string" && problem.message
+    ? problem.message
+    : `Сервер повернув помилку ${response.status}.`;
+  throw new ApiError(message, {
+    status: response.status,
+    code: typeof problem.error === "string" ? problem.error : "API_ERROR",
+    path: typeof problem.path === "string" ? problem.path : path,
+    correlationId: response.headers.get("X-Correlation-ID")
+  });
 }
 
 export class QuizApi {
@@ -245,24 +266,7 @@ export class QuizApi {
       // readable Date leaves the previous reading standing.
       if (this.readsServerClock) recordServerTime(response.headers.get("Date"), sentAt);
 
-      const contentType = response.headers.get("content-type") ?? "";
-      const payload: unknown = contentType.includes("application/json")
-        ? await response.json()
-        : await response.text();
-
-      if (!response.ok) {
-        const problem: ErrorPayload = isRecord(payload) ? payload : {};
-        const message = typeof problem.message === "string" && problem.message
-          ? problem.message
-          : `Сервер повернув помилку ${response.status}.`;
-        throw new ApiError(message, {
-          status: response.status,
-          code: typeof problem.error === "string" ? problem.error : "API_ERROR",
-          path: typeof problem.path === "string" ? problem.path : path,
-          correlationId: response.headers.get("X-Correlation-ID")
-        });
-      }
-
+      const payload = await readResponse(response, path);
       return withPageMeta ? { items: payload, page: readPageMeta(response.headers) } : payload;
     } catch (error) {
       if (error instanceof ApiError) throw error;

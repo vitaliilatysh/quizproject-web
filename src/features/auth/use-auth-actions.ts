@@ -1,7 +1,8 @@
-import { useCallback, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import { useCallback, useState, type Dispatch, type SubmitEvent, type SetStateAction } from "react";
 import { ApiError, QuizApi, type QuizApi as QuizApiClient } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { navigate } from "../../app/navigation.js";
+import { formText } from "../../form-data.js";
 import {
   clearSession,
   consumePendingQuiz,
@@ -52,14 +53,14 @@ export function useAuthActions({
     }
   }, [apiUrl, rememberAttempt]);
 
-  const submitLogin = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+  const submitLogin = useCallback(async (event: SubmitEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const username = String(data.get("username") || "").trim();
+    const username = formText(data, "username").trim();
     setActionBusy("login");
     setLoginError("");
     try {
-      const token = await api.login(username, String(data.get("password") || ""));
+      const token = await api.login(username, formText(data, "password"));
       const nextSession = writeSession(token, username);
       setSession(nextSession);
       setPasswordError("");
@@ -74,11 +75,11 @@ export function useAuthActions({
     }
   }, [api, continueAfterAuthentication, setActionBusy, setSession, toast]);
 
-  const submitRegistration = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+  const submitRegistration = useCallback(async (event: SubmitEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const password = String(data.get("password") || "");
-    const confirmation = String(data.get("confirmPassword") || "");
+    const password = formText(data, "password");
+    const confirmation = formText(data, "confirmPassword");
     setSignupError("");
     if (password !== confirmation) {
       setSignupError("Паролі не збігаються.");
@@ -89,9 +90,9 @@ export function useAuthActions({
       return;
     }
     const account: RegisterRequest = {
-      username: String(data.get("username") || "").trim(),
-      firstName: String(data.get("firstName") || "").trim(),
-      lastName: String(data.get("lastName") || "").trim(),
+      username: formText(data, "username").trim(),
+      firstName: formText(data, "firstName").trim(),
+      lastName: formText(data, "lastName").trim(),
       password
     };
     setActionBusy("signup");
@@ -111,12 +112,12 @@ export function useAuthActions({
     }
   }, [api, continueAfterAuthentication, setActionBusy, setSession, toast]);
 
-  const changePassword = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+  const changePassword = useCallback(async (event: SubmitEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const currentPassword = String(data.get("currentPassword") || "");
-    const newPassword = String(data.get("newPassword") || "");
-    const confirmation = String(data.get("confirmPassword") || "");
+    const currentPassword = formText(data, "currentPassword");
+    const newPassword = formText(data, "newPassword");
+    const confirmation = formText(data, "confirmPassword");
     setPasswordError("");
     if (newPassword !== confirmation) {
       setPasswordError("Нові паролі не збігаються.");
@@ -136,11 +137,13 @@ export function useAuthActions({
       navigate("#/login");
     } catch (error) {
       if (handleAuthError(error, "#/profile")) return;
-      setPasswordError(error instanceof ApiError && error.status === 400
-        ? "Поточний пароль неправильний."
-        : error instanceof ApiError && error.status === 409
-          ? "Новий пароль має відрізнятися від поточного."
-          : friendlyError(error));
+      let message = friendlyError(error);
+      if (error instanceof ApiError && error.status === 400) {
+        message = "Поточний пароль неправильний.";
+      } else if (error instanceof ApiError && error.status === 409) {
+        message = "Новий пароль має відрізнятися від поточного.";
+      }
+      setPasswordError(message);
     } finally {
       setActionBusy("");
     }

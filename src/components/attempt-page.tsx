@@ -3,7 +3,7 @@ import { serverNow } from "../clock.js";
 import type { Attempt, AttemptCompletion } from "../types.js";
 import { formatCountdown } from "../utils.js";
 
-function Countdown({ expiresAt }: { expiresAt: string }) {
+function Countdown({ expiresAt }: { readonly expiresAt: string }) {
   const [now, setNow] = useState(serverNow());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(serverNow()), 1000);
@@ -24,7 +24,13 @@ export interface AttemptPageProps {
   onComplete: (attemptId: number) => void;
 }
 
-export function AttemptPage({ attempt, loading, error, selected, completion, busy, onToggle, onComplete }: AttemptPageProps) {
+function completionMessage(score: number): string {
+  if (score >= 80) return "Відмінна робота! Продовжуйте в тому ж темпі.";
+  if (score >= 60) return "Гарний результат. Ще трохи практики — і буде відмінно.";
+  return "Це хороший старт. Перегляньте тему й спробуйте ще раз.";
+}
+
+export function AttemptPage({ attempt, loading, error, selected, completion, busy, onToggle, onComplete }: Readonly<AttemptPageProps>) {
   if (loading && !attempt) return <section className="section-pad content-page"><p className="eyebrow">Тест</p><h1>Готуємо запитання…</h1><div className="result-skeleton" /></section>;
   if (error) return <section className="section-pad content-page"><p className="eyebrow">Тест</p><h1>Спроба недоступна</h1><div className="empty-state"><p>{error}</p><a className="button button--dark" href="#/quizzes">До каталогу</a></div></section>;
   if (!attempt) return <section className="section-pad content-page"><h1>Завантаження…</h1></section>;
@@ -34,7 +40,7 @@ export function AttemptPage({ attempt, loading, error, selected, completion, bus
       <section className="completion section-pad">
         <div className="completion__mark">✓</div><p className="eyebrow">Тест завершено</p><h1>Ваш результат</h1>
         <div className="completion__score"><strong>{score}</strong><span>%</span></div>
-        <p>{score >= 80 ? "Відмінна робота! Продовжуйте в тому ж темпі." : score >= 60 ? "Гарний результат. Ще трохи практики — і буде відмінно." : "Це хороший старт. Перегляньте тему й спробуйте ще раз."}</p>
+        <p>{completionMessage(score)}</p>
         <div className="button-row"><a className="button button--dark" href="#/results">Історія результатів</a><a className="button button--ghost" href="#/quizzes">Інші тести</a></div>
       </section>
     );

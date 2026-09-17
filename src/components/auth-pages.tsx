@@ -1,12 +1,12 @@
-import type { FormEvent } from "react";
+import type { SubmitEvent } from "react";
 
 export interface AuthPageProps {
   error: string;
   busy: boolean;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmit: (event: SubmitEvent<HTMLFormElement>) => void;
 }
 
-export function LoginPage({ error, busy, onSubmit }: AuthPageProps) {
+export function LoginPage({ error, busy, onSubmit }: Readonly<AuthPageProps>) {
   return (
     <section className="auth-layout section-pad">
       <div className="auth-story">
@@ -21,7 +21,7 @@ export function LoginPage({ error, busy, onSubmit }: AuthPageProps) {
         <form className="form-stack" onSubmit={onSubmit}>
           <label><span>Логін</span><input name="username" autoComplete="username" maxLength={15} required placeholder="Ваш логін" /></label>
           <label><span>Пароль</span><input name="password" type="password" autoComplete="current-password" maxLength={128} required placeholder="Ваш пароль" /></label>
-          <button className="button button--coral button--large button--full" disabled={busy}>{busy ? "Входимо…" : "Увійти"} <span aria-hidden="true">→</span></button>
+          <button className="button button--coral button--large button--full" type="submit" disabled={busy}>{busy ? "Входимо…" : "Увійти"} <span aria-hidden="true">→</span></button>
         </form>
         <p className="form-footnote">Ще немає облікового запису? <a className="text-link" href="#/signup">Зареєструватися</a></p>
       </div>
@@ -29,7 +29,7 @@ export function LoginPage({ error, busy, onSubmit }: AuthPageProps) {
   );
 }
 
-export function SignupPage({ error, busy, onSubmit }: AuthPageProps) {
+export function SignupPage({ error, busy, onSubmit }: Readonly<AuthPageProps>) {
   return (
     <section className="auth-layout section-pad">
       <div className="auth-story">
@@ -49,7 +49,7 @@ export function SignupPage({ error, busy, onSubmit }: AuthPageProps) {
           <label><span>Логін</span><input name="username" autoComplete="username" minLength={5} maxLength={15} required placeholder="5–15 літер або цифр" /></label>
           <label><span>Пароль</span><input name="password" type="password" autoComplete="new-password" minLength={8} maxLength={128} required placeholder="Щонайменше 8 символів без пробілів" /></label>
           <label><span>Повторіть пароль</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required placeholder="Повторіть пароль" /></label>
-          <button className="button button--coral button--large button--full" disabled={busy}>{busy ? "Створюємо…" : "Створити обліковий запис"} <span aria-hidden="true">→</span></button>
+          <button className="button button--coral button--large button--full" type="submit" disabled={busy}>{busy ? "Створюємо…" : "Створити обліковий запис"} <span aria-hidden="true">→</span></button>
         </form>
         <p className="form-footnote">Уже зареєстровані? <a className="text-link" href="#/login">Увійти</a></p>
       </div>

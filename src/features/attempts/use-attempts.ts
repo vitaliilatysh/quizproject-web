@@ -18,17 +18,21 @@ const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
 type HandleAuthError = (error: unknown, returnTo: string) => boolean;
 type ToastMessage = (message: string, tone?: string) => void;
 
-export function useAttempts(
-  api: QuizApi,
-  session: Session | null,
-  accessReady: boolean,
-  route: Route,
-  activeAccount: RefObject<string | null>,
-  handleAuthError: HandleAuthError,
-  setActionBusy: Dispatch<SetStateAction<string>>,
-  toast: ToastMessage,
-  onCompletion: () => void
-) {
+interface AttemptsOptions {
+  api: QuizApi;
+  session: Session | null;
+  accessReady: boolean;
+  route: Route;
+  activeAccount: RefObject<string | null>;
+  handleAuthError: HandleAuthError;
+  setActionBusy: Dispatch<SetStateAction<string>>;
+  toast: ToastMessage;
+  onCompletion: () => void;
+}
+
+export function useAttempts({
+  api, session, accessReady, route, activeAccount, handleAuthError, setActionBusy, toast, onCompletion
+}: AttemptsOptions) {
   const [attempts, setAttempts] = useState<Record<number, Attempt>>({});
   const [loading, setLoading] = useState<Record<number, boolean>>({});
   const [errors, setErrors] = useState<Record<number, string>>({});
