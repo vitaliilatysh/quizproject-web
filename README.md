@@ -16,10 +16,12 @@
 ## Технології
 
 - React 19 із функціональними компонентами та hooks;
+- TypeScript 7 — увесь `src/` типізований, перевірка окремою командою `npm run typecheck`;
 - Vite 8 для локальної розробки й production-збірки;
 - власна адаптивна CSS-система без Bootstrap;
-- браузерні ES-модулі для API-клієнта, сесії та форматування;
-- Node.js test runner для unit-тестів — компоненти й ефекти теж, без окремого фреймворку.
+- Node.js test runner для unit-тестів — компоненти й ефекти теж, без окремого фреймворку;
+- Playwright для наскрізних сценаріїв проти справжнього backend;
+- SonarCloud із блокувальним quality gate.
 
 ## Архітектура frontend
 
@@ -48,14 +50,23 @@ src/
 
 ## Локальний запуск
 
-Потрібен Node.js 22.13 або новіший.
+Потрібен Node.js 22.13 або новіший (`engines` у `package.json`); CI виконує всі перевірки на
+Node.js 24.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Frontend відкриється на `http://localhost:4173`. Spring Boot API типово працює на `http://localhost:8081`.
+Frontend відкриється на `http://127.0.0.1:4173`. Spring Boot API типово працює на
+`http://127.0.0.1:8081`.
+
+Dev-сервер Vite проксує `/api` на backend, тому в локальній розробці запити йдуть із того самого
+origin і CORS не задіяний. Ціль проксі змінюється через `QUIZ_API_PROXY_TARGET`:
+
+```bash
+QUIZ_API_PROXY_TARGET=http://127.0.0.1:9090 npm run dev
+```
 
 ## Підключення backend
 
@@ -110,6 +121,11 @@ npm run build
 Команда `npm run check` послідовно запускає перевірку типів, тести з порогом покриття й
 production-збірку. Окремо: `npm run typecheck` — лише `tsc --noEmit`.
 
+`npm run build` — це `vite build` плюс `scripts/prepare-hosting.mts`. Vite складає статику в
+`dist/client`, а скрипт перевіряє, що збірка справді та сама (`index.html` містить назву
+застосунку й `/assets/`), копіює `.openai/hosting.json` і генерує Sites/Cloudflare entrypoint
+`dist/server/index.js`, який підставляє поточний origin замість `__SITE_ORIGIN__` у HTML.
+
 ### Як влаштовані unit-тести
 
 Тестовий раннер — вбудований `node --test`, без Vitest і без testing-library. Щоб він міг
@@ -136,7 +152,8 @@ esbuild **стирає** типи, а не перевіряє їх — саме 
 ### Покриття
 
 Поточний обов'язковий поріг: 100% рядків, 100% функцій і щонайменше 96% гілок для всього
-`src/`. Звіт охоплює як базові модулі, так і всі hooks у `src/app/` та `src/features/`.
+`src/`. Фактично на `main` — 100% рядків, 100% функцій і 97.56% гілок. Звіт охоплює як базові
+модулі, так і всі hooks у `src/app/` та `src/features/`.
 
 `npm run coverage:check` запускає тести й падає, якщо покриття нижче порогу — те саме, що
 `jacocoTestCoverageVerification` робить у модулі `api`. Рядки й функції тримаються на 100%
@@ -170,7 +187,47 @@ frontend були саме в hooks — ефект, що витирав черн
 перевірялося, що падає саме той тест, який його стереже.
 
 E2E на Playwright лишається — він відповідає на інше питання: чи працює це у справжньому
-Chromium проти справжнього API. Готові frontend-артефакти створюються в `dist/client`, а Sites/Cloudflare entrypoint — у `dist/server/index.js`.
+Chromium проти справжнього API.
+
+### Аналіз SonarCloud
+
+Workflow **SonarQube analysis** аналізує код у SonarCloud на кожен pull request і на push у
+`main`. Налаштування — у `sonar-project.properties`: проєкт `vitaliilatysh_quizproject-web`
+в організації `vitaliilatysh`, джерела — `src`, тести — `tests` і `e2e`.
+
+Покриття Sonar читає з `coverage/lcov.info`, який створює окремий скрипт:
+
+```bash
+npm run coverage:sonar
+```
+
+Це третій запуск покриття, і він відрізняється від двох попередніх лише виводом: той самий
+збір, але з репортерами `spec` у stdout і `lcov` у файл. `coverage:check` порогів не пише в
+файл, а `lcov` без `spec` не показує нічого в логах — тому обидва.
+
+З аналізу виключені `src/main.tsx`, `src/types.ts` і `src/features/admin/contracts.ts`: перший
+лише монтує застосунок, два інші — декларації типів і контрактів без виконуваного коду, тож
+покриття для них не означає нічого.
+
+`sonar.qualitygate.wait=true` з таймаутом 300 секунд, тому крок чекає на вердикт quality gate і
+падає, якщо той не пройдений. Потрібен repository secret `SONAR_TOKEN`; для PR від Dependabot
+job пропускається, бо такі прогони не отримують секретів репозиторію.
+
+## Безперервна інтеграція
+
+Шість workflow у `.github/workflows`:
+
+| Workflow | Коли | Що робить |
+| --- | --- | --- |
+| `ci.yml` — **CI** | PR, push у `main` | `npm run typecheck`, `npm run coverage:check`, `npm run build` — трьома окремими кроками, щоб список job-ів сам казав, який із них упав |
+| `sonarqube.yml` — **SonarQube analysis** | PR, push у `main` | типи, LCOV-звіт, аналіз SonarCloud і quality gate |
+| `e2e.yml` — **Full-stack E2E** | PR, push у `main` | Playwright проти backend, зібраного з джерел `quizproject@master`, з MySQL 8.4 і Redis 8.2 |
+| `e2e-published-image.yml` — **E2E against published API image** | щодня о 03:00 UTC і вручну | той самий набір проти опублікованого образу backend із перевіркою підпису cosign |
+| `container.yml` — **Container delivery** | PR, push у `main` | збірка образу й overlays; після `main` — публікація, SBOM, provenance і підпис |
+| `deploy.yml` — **Deploy** | після успішного delivery з `main`, або вручну | розгортання за digest у `staging`, у production — лише вручну через protected environment |
+
+Node.js 24 у всіх job-ах, сторонні actions закріплені за commit SHA, а Dependabot тримає їх
+актуальними.
 
 ## Docker і Kubernetes
 
@@ -191,6 +248,7 @@ Kubernetes manifests побудовані через Kustomize:
 deploy/kubernetes/
   base/                 # Deployment, Service, Ingress, PDB і runtime ConfigMap
   overlays/local/       # quiz.local та локальний image
+  overlays/staging/     # namespace quizproject-staging, одна репліка, власний хост
   overlays/production/  # TLS, quiz.example.com і GHCR image
 ```
 
@@ -334,19 +392,25 @@ src/
   app/                 # загальні lifecycle hooks, навігація та помилки
   components/          # React-екрани й повторно використовувані presentation-блоки
   features/            # auth, catalogue, attempts, account, admin і settings
+  main.tsx             # точка входу, яка монтує застосунок
   App.tsx              # композиція маршрутів і feature-модулів
   components.tsx       # compatibility barrel для компонентів і props
   api.ts               # клієнт Spring Boot REST API, з generic request<T>
   types.ts             # доменна модель, переписана з Java-рекордів бекенда
   session.ts           # JWT-сесія та локальні налаштування
   clock.ts             # зсув годинника сервера відносно пристрою
+  form-data.ts         # читання текстових значень з FormData, щоб файл не став рядком
   utils.ts             # чисті функції форматування й маршрутизації
 public/
   runtime-config.js    # адреса API для конкретного оточення (не збирається)
   styles.css           # дизайн-система та адаптивні стилі
+  site.webmanifest     # web app manifest
   og.png               # social preview
 tests/                 # unit-тести: API-клієнт, утиліти, компоненти, ефекти App
   support/             # TS/JSX-трансформ і DOM, у якому виконуються компоненти
+e2e/                   # Playwright-сценарії проти справжнього backend
+scripts/               # prepare-hosting.mts — post-build крок для Sites/Cloudflare
+deploy/                # nginx.conf образу та Kubernetes-маніфести
 ```
 
 `src/types.ts` описує контракт API полем у поле за `record`-ами з репозиторію бекенда, а не
