@@ -1,25 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, QuizApi, normalizeBaseUrl } from "./api.js";
-import { resetServerClock } from "./clock.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { pageTitle, useRoute } from "./app/navigation.js";
+import { useToasts } from "./app/use-toasts.js";
 import {
-  clearAnswers,
-  clearSession,
-  clearStoredAnswers,
-  consumePendingQuiz,
-  consumeReturnTo,
-  readAnswers,
-  readApiUrl,
-  readSession,
-  rememberPendingQuiz,
-  rememberReturnTo,
-  writeAnswers,
-  writeApiUrl,
-  writeSession,
-  type Session
-} from "./session.js";
-import {
-  AttemptPage,
   AdminPage,
+  AttemptPage,
   HomePage,
   Layout,
   LoginPage,
@@ -28,863 +12,209 @@ import {
   QuizzesPage,
   ResultsPage,
   SettingsPage,
-  SignupPage,
-  type AdminData,
-  type ExecuteAdmin,
-  type ResultRange,
-  type Toast
+  SignupPage
 } from "./components.js";
-import type {
-  Attempt,
-  AttemptCompletion,
-  CatalogueSummary,
-  PageMeta,
-  Profile,
-  Quiz,
-  RegisterRequest,
-  Result
-} from "./types.js";
-import { autoSubmitDelay, complexityLabels, HOME_TEASER_SIZE, parseRoute, safeHash, type Route } from "./utils.js";
+import { useAccountData } from "./features/account/use-account-data.js";
+import { useAdminData } from "./features/admin/use-admin-data.js";
+import { useAttempts } from "./features/attempts/use-attempts.js";
+import { useAuthActions } from "./features/auth/use-auth-actions.js";
+import { useAuthSession } from "./features/auth/use-auth-session.js";
+import { useQuizCatalogue } from "./features/catalogue/use-quiz-catalogue.js";
+import { useApiSettings } from "./features/settings/use-api-settings.js";
 
-function navigate(hash: string): void {
-  globalThis.location.hash = safeHash(hash);
-}
-
-// How early a token is renewed, and never more than half of the life it is
-// taken from. A flat minute subtracted from a token that never lives a minute
-// is always negative, so the delay collapsed to zero — and because installing
-// the renewed session re-runs the effect that schedules it, zero meant the next
-// renewal was already due when the last one landed, and the app rotated tokens
-// as fast as the network allowed. Deployments do issue tokens that short: the
-// end-to-end workflow runs on JWT_TTL=PT15S. Still zero once the token has
-// actually expired, which is the restored session readSession now keeps alive.
-const TOKEN_REFRESH_MARGIN_MS = 60_000;
-const TOKEN_REFRESH_RETRY_MS = 30_000;
-// Matches the API's own default page size, so the first page a client renders
-// is the same size whether or not it asked for one.
-const PAGE_SIZE = 20;
-// Search now costs a request, so wait for a pause in typing instead of firing
-// one per keystroke.
-const SEARCH_DEBOUNCE_MS = 300;
-// One shared empty Set, so a route without a valid attempt does not hand the
-// page a new identity on every render either.
-const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
-
-/**
- * What the reader is told when something failed.
- *
- * Exported because it is the app's whole vocabulary for failure and it is worth
- * pinning directly: every catch in this file ends here, and the correlation id
- * it appends is the only thing that makes a 500 answerable by whoever is asked
- * about it. The first line is a guard, not a case the API can produce — a
- * rejection that is not an Error has no message to show, and "undefined" is not
- * one.
- */
-export function friendlyError(error: unknown): string {
-  if (!(error instanceof Error)) return "Сталася неочікувана помилка. Спробуйте ще раз.";
-  const correlationId = error instanceof ApiError ? error.correlationId : null;
-  return correlationId ? `${error.message} (код підтримки: ${correlationId})` : error.message;
-}
-
-function pageTitle(name: string): string {
-  const titles: Record<string, string> = {
-    quizzes: "Тести",
-    login: "Вхід",
-    signup: "Реєстрація",
-    profile: "Профіль",
-    settings: "Налаштування",
-    results: "Результати",
-    attempt: "Проходження тесту",
-    admin: "Адміністрування"
-  };
-  return titles[name] || "Сторінка";
-}
-
-function useRoute(): Route {
-  const [route, setRoute] = useState<Route>(() => parseRoute());
-  useEffect(() => {
-    const onChange = () => setRoute(parseRoute());
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
-  }, []);
-  return route;
-}
+export { friendlyError } from "./app/errors.js";
 
 export default function App() {
   const route = useRoute();
-  const [session, setSession] = useState<Session | null>(() => readSession());
-  // Who the cached data belongs to. A refreshed token keeps the same login, so
-  // this only changes when a different person is actually signed in.
-  const accountName = session?.username ?? null;
-  const [apiUrl, setApiUrl] = useState<string>(() => readApiUrl());
-  const [quizzes, setQuizzes] = useState<Quiz[] | null>(null);
-  const [quizzesLoading, setQuizzesLoading] = useState(false);
-  const [quizError, setQuizError] = useState("");
-  const [results, setResults] = useState<Result[] | null>(null);
-  const [resultsLoading, setResultsLoading] = useState(false);
-  const [resultError, setResultError] = useState("");
-  const [adminData, setAdminData] = useState<AdminData | null>(null);
-  const [adminLoading, setAdminLoading] = useState(false);
-  const [adminError, setAdminError] = useState("");
-  // Paging and the results date range live here rather than inside AdminPage
-  // because both now drive the request. Filtering a single page in the browser
-  // would hide every match that sits on another page.
-  const [adminUsersPage, setAdminUsersPage] = useState(0);
-  const [adminResultsPage, setAdminResultsPage] = useState(0);
-  const [adminResultRange, setAdminResultRange] = useState<ResultRange>({ from: "", to: "" });
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState("");
-  const [attempts, setAttempts] = useState<Record<number, Attempt>>({});
-  const [attemptLoading, setAttemptLoading] = useState<Record<number, boolean>>({});
-  const [attemptErrors, setAttemptErrors] = useState<Record<number, string>>({});
-  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
-  const [completions, setCompletions] = useState<Record<number, AttemptCompletion>>({});
   const [actionBusy, setActionBusy] = useState("");
-  const [loginError, setLoginError] = useState("");
-  const [signupError, setSignupError] = useState("");
-  const [passwordError, setPasswordError] = useState("");
-  const [settingsError, setSettingsError] = useState("");
-  const [connection, setConnection] = useState("idle");
-  // `search` tracks the input; `appliedSearch` is what actually gets requested,
-  // trailing it by one debounce interval.
-  const [search, setSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [quizzesPage, setQuizzesPage] = useState(0);
-  const [quizzesMeta, setQuizzesMeta] = useState<PageMeta | null>(null);
-  const [catalogueSummary, setCatalogueSummary] = useState<CatalogueSummary | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const quizzesRequest = useRef(false);
-  const resultsRequest = useRef(false);
-  const adminRequest = useRef(false);
-  const profileRequest = useRef(false);
-  const attemptRequests = useRef(new Set<number>());
-  // Completions in flight, so the deadline and the button cannot submit the
-  // same attempt twice and leave one of them to report a conflict.
-  const completionRequests = useRef(new Set<number>());
-  // The account the cached data currently belongs to. Also what an in-flight
-  // request compares itself against before committing what it loaded.
+  const { toasts, toast } = useToasts();
+
+  // Settings and auth sit above the feature stores because both determine
+  // which API client every feature uses. Stable relay callbacks break the
+  // dependency cycle without teaching either hook about unrelated data.
+  const protectedReset = useRef<() => void>(null!);
+  const apiReset = useRef<(external: boolean) => void>(null!);
+  const onUnauthorized = useCallback(() => protectedReset.current(), []);
+  const onApiChanged = useCallback((external: boolean) => apiReset.current(external), []);
+  const settings = useApiSettings(toast, onApiChanged);
+  const auth = useAuthSession(settings.apiUrl, toast, onUnauthorized);
+  const accountName = auth.session?.username ?? null;
   const activeAccount = useRef<string | null>(accountName);
 
-  const api = useMemo(() => new QuizApi({
-    baseUrl: apiUrl,
-    getToken: () => session?.accessToken
-  }), [apiUrl, session?.accessToken]);
+  const catalogue = useQuizCatalogue(auth.api, route.name);
+  const account = useAccountData(
+    auth.api,
+    auth.session,
+    auth.accessReady,
+    route.name,
+    activeAccount,
+    auth.handleAuthError
+  );
+  const admin = useAdminData(
+    auth.api,
+    auth.session,
+    auth.accessReady,
+    route.name,
+    activeAccount,
+    auth.handleAuthError,
+    setActionBusy,
+    toast
+  );
+  const onAttemptCompletion = useCallback(() => {
+    account.invalidateResults();
+    admin.invalidate();
+  }, [account.invalidateResults, admin.invalidate]);
+  const attempts = useAttempts(
+    auth.api,
+    auth.session,
+    auth.accessReady,
+    route,
+    activeAccount,
+    auth.handleAuthError,
+    setActionBusy,
+    toast,
+    onAttemptCompletion
+  );
 
-  const toast = useCallback((message: string, tone = "success") => {
-    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-    setToasts(current => [...current, { id, message, tone }]);
-    window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 4200);
-  }, []);
+  const resetProtectedData = useCallback(() => {
+    account.reset();
+    admin.invalidate();
+  }, [account.reset, admin.invalidate]);
+  const authActions = useAuthActions({
+    api: auth.api,
+    apiUrl: settings.apiUrl,
+    setSession: auth.setSession,
+    setActionBusy,
+    handleAuthError: auth.handleAuthError,
+    rememberAttempt: attempts.rememberAttempt,
+    resetProtectedData,
+    toast
+  });
 
-  useEffect(() => {
-    if (!session) return undefined;
-    let cancelled = false;
-    const remaining = session.expiresAt - Date.now();
-    let timer = window.setTimeout(attemptRefresh, Math.max(0, remaining - Math.min(TOKEN_REFRESH_MARGIN_MS, remaining / 2)));
-
-    async function attemptRefresh(): Promise<void> {
-      try {
-        const tokenResponse = await api.refresh(session!.refreshToken);
-        if (!cancelled) setSession(writeSession(tokenResponse, session!.username));
-      } catch (error) {
-        if (cancelled) return;
-        if (error instanceof ApiError && error.status === 401) {
-          clearSession();
-          setSession(null);
-        } else {
-          timer = window.setTimeout(attemptRefresh, TOKEN_REFRESH_RETRY_MS);
-        }
-      }
-    }
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [api, session]);
-
-  // An offset measured against a server the app has stopped talking to is
-  // worse than none at all: it is a confident wrong answer. Pointing the app
-  // at another API drops it, and the first response from the new one takes a
-  // fresh reading. Between the two the device's own clock is used, which is
-  // what happened everywhere before this was measured at all.
-  useEffect(() => {
-    resetServerClock();
-  }, [apiUrl]);
-
-  const handleAuthError = useCallback((error: unknown, returnTo: string): boolean => {
-    if (!(error instanceof ApiError) || error.status !== 401) return false;
-    clearSession();
-    setSession(null);
-    setProfile(null);
-    rememberReturnTo(returnTo);
-    toast("Сесія завершилась. Увійдіть ще раз.", "error");
-    navigate("#/login");
-    return true;
-  }, [toast]);
-
-  const catalogueRoute = route.name === "quizzes";
-
-  const loadQuizzes = useCallback(async (): Promise<void> => {
-    if (quizzesRequest.current) return;
-    quizzesRequest.current = true;
-    setQuizzesLoading(true);
-    setQuizError("");
-    try {
-      // The catalogue page asks the server to search, filter and page. The home
-      // page needs only the handful of quizzes it teases, plus two totals that
-      // no page can supply — how many quizzes exist and how many subjects they
-      // span — so it reads those from the summary endpoint instead of counting
-      // a catalogue it no longer downloads.
-      const request = catalogueRoute
-        ? api.quizzes({
-            search: appliedSearch,
-            complexity: complexityLabels(filter),
-            page: quizzesPage,
-            size: PAGE_SIZE
-        })
-        : api.quizzes({ page: 0, size: HOME_TEASER_SIZE });
-
-      // The hero's figures are worth degrading for, not failing for: web and
-      // API deploy separately, so an API without this endpoint should still
-      // render a working home page with dashes where the totals go.
-      const [{ items, page }, summary] = await Promise.all([
-        request,
-        catalogueRoute
-          ? Promise.resolve<CatalogueSummary | null>(null)
-          : api.catalogueSummary().catch((): CatalogueSummary | null => null)
-      ]);
-      setQuizzes(items);
-      setQuizzesMeta(page);
-      if (!catalogueRoute) setCatalogueSummary(summary);
-    } catch (error) {
-      setQuizError(friendlyError(error));
-    } finally {
-      quizzesRequest.current = false;
-      setQuizzesLoading(false);
-    }
-  }, [api, appliedSearch, catalogueRoute, filter, quizzesPage]);
-
-  const loadResults = useCallback(async (): Promise<void> => {
-    if (!session || resultsRequest.current) return;
-    // Whose data this request is for. A request already in flight when a
-    // different account signs in would otherwise land after the caches were
-    // emptied and put the previous reader's rows back on screen.
-    const requestedBy = session.username;
-    resultsRequest.current = true;
-    setResultsLoading(true);
-    setResultError("");
-    try {
-      const rows = await api.results();
-      if (activeAccount.current !== requestedBy) return;
-      setResults(rows);
-    } catch (error) {
-      if (!handleAuthError(error, "#/results")) setResultError(friendlyError(error));
-    } finally {
-      resultsRequest.current = false;
-      setResultsLoading(false);
-    }
-  }, [api, handleAuthError, session]);
-
-  const loadAttempt = useCallback(async (attemptId: number): Promise<void> => {
-    if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || attemptRequests.current.has(attemptId)) return;
-    const requestedBy = session.username;
-    attemptRequests.current.add(attemptId);
-    setAttemptLoading(current => ({ ...current, [attemptId]: true }));
-    setAttemptErrors(current => ({ ...current, [attemptId]: "" }));
-    try {
-      const attempt = await api.attempt(attemptId);
-      if (activeAccount.current !== requestedBy) return;
-      setAttempts(current => ({ ...current, [attemptId]: attempt }));
-      setSelections(current => current[attemptId]
-        ? current
-        : { ...current, [attemptId]: readAnswers(attemptId) });
-    } catch (error) {
-      if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
-        setAttemptErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));
-      }
-    } finally {
-      attemptRequests.current.delete(attemptId);
-      setAttemptLoading(current => ({ ...current, [attemptId]: false }));
-    }
-  }, [api, handleAuthError, session]);
-
-  const changeAdminResultRange = useCallback((patch: Partial<ResultRange>): void => {
-    // A narrower range can have fewer pages than the one currently selected,
-    // which would otherwise land on an empty page that looks like "no results".
-    setAdminResultsPage(0);
-    setAdminResultRange(current => ({ ...current, ...patch }));
-  }, []);
-
-  const loadAdmin = useCallback(async (): Promise<void> => {
-    if (!session || adminRequest.current) return;
-    const requestedBy = session.username;
-    adminRequest.current = true;
-    setAdminLoading(true);
-    setAdminError("");
-    try {
-      // Subjects, levels and quizzes are bounded catalogues, so they stay whole.
-      // Users and results grow with every registration and every finished
-      // attempt, so those two are the ones worth paging.
-      const [subjects, levels, adminQuizzes, users, allResults] = await Promise.all([
-        api.adminSubjects(),
-        api.adminLevels(),
-        api.adminQuizzes(),
-        api.adminUsers({ page: adminUsersPage, size: PAGE_SIZE }),
-        api.adminResults({
-          from: adminResultRange.from || undefined,
-          to: adminResultRange.to || undefined,
-          page: adminResultsPage,
-          size: PAGE_SIZE
-        })
-      ]);
-      if (activeAccount.current !== requestedBy) return;
-      setAdminData({
-        subjects,
-        levels,
-        quizzes: adminQuizzes,
-        users: users.items,
-        usersPage: users.page,
-        results: allResults.items,
-        resultsPage: allResults.page
-      });
-    } catch (error) {
-      if (handleAuthError(error, "#/admin")) return;
-      setAdminError(error instanceof ApiError && error.status === 403
-        ? "Для цієї сторінки потрібна роль адміністратора."
-        : friendlyError(error));
-    } finally {
-      adminRequest.current = false;
-      setAdminLoading(false);
-    }
-  }, [adminResultRange.from, adminResultRange.to, adminResultsPage, adminUsersPage,
-      api, handleAuthError, session]);
-
-  const loadProfile = useCallback(async (): Promise<void> => {
-    if (!session || profileRequest.current) return;
-    const requestedBy = session.username;
-    profileRequest.current = true;
-    setProfileLoading(true);
-    setProfileError("");
-    try {
-      const loaded = await api.profile();
-      if (activeAccount.current !== requestedBy) return;
-      setProfile(loaded);
-    } catch (error) {
-      if (!handleAuthError(error, "#/profile")) setProfileError(friendlyError(error));
-    } finally {
-      profileRequest.current = false;
-      setProfileLoading(false);
-    }
-  }, [api, handleAuthError, session]);
+  // The relays always point at the latest feature callbacks while preserving a
+  // stable identity for the settings/session effects that subscribe to them.
+  protectedReset.current = resetProtectedData;
+  apiReset.current = external => {
+    catalogue.invalidate();
+    if (external) account.reset();
+    else account.invalidateResults();
+    admin.reset();
+  };
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     document.title = `${route.name === "home" ? "Quiz Project" : pageTitle(route.name)} — Quiz Project`;
   }, [route]);
 
-  useEffect(() => {
-    // Gated on the error rather than on the loading flag. Gating on loading
-    // deadlocks against the reset effect below, which raises it; and a failed
-    // load leaves quizzes null with loading back to false, so a loading-based
-    // guard re-fires the request forever against an API that is still down.
-    // quizzesRequest already prevents overlapping calls, and the error is
-    // cleared whenever the query changes or the reader retries.
-    if (["home", "quizzes"].includes(route.name) && quizzes === null && !quizError) {
-      void loadQuizzes();
-    }
-  }, [loadQuizzes, quizError, quizzes, route.name]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setAppliedSearch(search), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  // A narrower search or filter can have fewer pages than the one selected,
-  // which would otherwise land on an empty page that reads as "nothing found".
-  useEffect(() => {
-    setQuizzesPage(0);
-  }, [appliedSearch, filter]);
-
-  // Any change to the query invalidates the cached slice. Loading is raised in
-  // the same effect: leaving it false for one render shows the empty state
-  // under the new controls, which looks like a search that found nothing.
-  useEffect(() => {
-    setQuizzes(null);
-    setQuizzesMeta(null);
-    setQuizError("");
-    setQuizzesLoading(true);
-  }, [appliedSearch, catalogueRoute, filter, quizzesPage]);
-
-  useEffect(() => {
-    if (route.name !== "results") return;
-    if (!session) {
-      rememberReturnTo("#/results");
-      navigate("#/login");
-      return;
-    }
-    // The error is part of the guard for the reason given over the catalogue's
-    // loader: a failed load leaves the rows null with loading back to false, so
-    // a loading-based guard alone re-fires the request without end.
-    if (results === null && !resultsLoading && !resultError) void loadResults();
-  }, [loadResults, resultError, results, resultsLoading, route.name, session]);
-
-  // Changing a page or the date range clears the cached slice so the existing
-  // "load when null" effects refetch it. Dropping the data also keeps the
-  // skeleton visible during the request instead of showing the previous page's
-  // rows under new controls.
-  useEffect(() => {
-    // Loading is raised in the same effect that drops the data. Without it there
-    // is one render where data is null and loading is still false, which falls
-    // through to the "Панель недоступна" branch — a failure banner flashing on
-    // every page click.
-    setAdminData(null);
-    setAdminLoading(true);
-  }, [adminUsersPage, adminResultsPage, adminResultRange.from, adminResultRange.to]);
-
-  // Everything held for one account is dropped when a different one takes over
-  // the tab — and only then.
-  //
-  // Keyed on the login rather than on the session object, because a silent token
-  // refresh mints a new object for the same person every few minutes and must
-  // not count as a change. And keyed on the login rather than on the session
-  // going falsy, because #/login renders its form to an authenticated reader
-  // too: one account can replace another without ever passing through
-  // signed-out, and that path used to clear nothing but the profile.
-  //
-  // Signing out is deliberately not a handover. An expiring session is the most
-  // likely way to be interrupted mid-quiz, and it remembers the attempt URL so
-  // the reader lands back on it — clearing then would greet them with their own
-  // unfinished quiz and none of their answers. Ownership is kept until somebody
-  // else actually signs in, which is safe because nothing renders account data
-  // while signed out: every guarded route sends a reader with no session to the
-  // login page.
-  //
-  // The attempt caches are the ones that matter. The route effect skips its
-  // request whenever attempts[id] is already there, so a leftover entry is
-  // rendered to the next reader rather than being refused by the API — which is
-  // what would happen, since an attempt only loads for the account that owns it.
-  // The clear runs before that can be seen: signing in as somebody else is only
-  // reachable from #/login or #/signup, so the attempt page is not mounted, and
-  // the effect commits before the hash change that navigates away from the form.
+  // A token refresh keeps the same owner. A genuinely different login drops
+  // every account-bound cache, including answers persisted outside React.
   useEffect(() => {
     if (accountName === null || activeAccount.current === accountName) return;
     activeAccount.current = accountName;
-    setAdminUsersPage(0);
-    setAdminResultsPage(0);
-    setAdminResultRange({ from: "", to: "" });
-    setAttempts({});
-    setAttemptErrors({});
-    setAttemptLoading({});
-    setSelections({});
-    setCompletions({});
-    setResults(null);
-    setAdminData(null);
-    setProfile(null);
-    // Saved answers outlive React state, and are read back by attempt id alone.
-    clearStoredAnswers();
-  }, [accountName]);
+    account.reset();
+    admin.reset();
+    attempts.reset();
+  }, [account.reset, accountName, admin.reset, attempts.reset]);
 
-  // Which attempt the route names, or null when it names none.
-  const routedAttemptId = route.name === "attempt" ? Number(route.params[0]) : null;
-
-  // Arriving at an attempt clears whatever the last visit's failure left
-  // behind, so a reader who comes back gets another request rather than an
-  // error frozen from before. Without this the guard below is a dead end: the
-  // attempt page offers a way to the catalogue and no retry, so a transient
-  // 503 would hold a timed attempt shut until the whole app was reloaded —
-  // while its clock ran.
-  //
-  // Keyed on the id rather than on the route object, so it fires on arriving
-  // and on nothing else. A failed request does not change the id, so this
-  // cannot become the loop the guard exists to prevent; neither can a second
-  // hashchange for the same hash, which is why the number is the dependency
-  // and not the object parseRoute rebuilds around it. It is a separate effect
-  // for the same reason: the one below depends on the errors this clears.
-  useEffect(() => {
-    if (routedAttemptId === null) return;
-    setAttemptErrors(current => current[routedAttemptId] ? { ...current, [routedAttemptId]: "" } : current);
-  }, [routedAttemptId]);
-
-  useEffect(() => {
-    if (route.name !== "attempt") return;
-    const attemptId = Number(route.params[0]);
-    if (!session) {
-      rememberReturnTo(`#/attempt/${attemptId}`);
-      navigate("#/login");
-      return;
-    }
-    // Gated on the error as well as on the loading flag, and for the reason
-    // spelled out over the catalogue's loader: a failed load leaves the attempt
-    // missing with loading back to false, so a loading-based guard re-fires the
-    // request forever. Here it really did. Against an API answering 500 this
-    // effect asked for the same attempt about seventeen hundred times a second,
-    // for as long as the page stayed open — measured, not estimated. The
-    // catalogue was written with the guard; this was not.
-    //
-    // Coming back is how a reader retries this one — the effect above clears
-    // the error the moment the route lands here again. What no longer happens
-    // is retrying nobody asked for.
-    if (Number.isInteger(attemptId) && attemptId > 0
-        && !attempts[attemptId] && !attemptLoading[attemptId] && !attemptErrors[attemptId]) {
-      void loadAttempt(attemptId);
-    }
-  }, [attemptErrors, attemptLoading, attempts, loadAttempt, route, session]);
-
-  useEffect(() => {
-    if (route.name !== "admin") return;
-    if (!session) {
-      rememberReturnTo("#/admin");
-      navigate("#/login");
-    } else if (adminData === null) {
-      void loadAdmin();
-    }
-  }, [adminData, loadAdmin, route.name, session]);
-
-  useEffect(() => {
-    if (route.name !== "profile") return;
-    if (!session) {
-      rememberReturnTo("#/profile");
-      navigate("#/login");
-    } else if (profile === null && !profileLoading && !profileError) {
-      void loadProfile();
-    }
-  }, [loadProfile, profile, profileError, profileLoading, route.name, session]);
-
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== "quizproject.apiUrl") return;
-      setApiUrl(readApiUrl());
-      setQuizzes(null);
-      setResults(null);
-      setAdminData(null);
-      setProfile(null);
-      setAdminUsersPage(0);
-      setAdminResultsPage(0);
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  const startQuiz = useCallback(async (quizId: number): Promise<void> => {
-    if (!session) {
-      rememberReturnTo("#/quizzes");
-      rememberPendingQuiz(quizId);
-      navigate("#/login");
-      return;
-    }
-    setActionBusy(`start-${quizId}`);
-    try {
-      const attempt = await api.startAttempt(quizId);
-      setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
-      setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
-      navigate(`#/attempt/${attempt.attemptId}`);
-    } catch (error) {
-      if (!handleAuthError(error, "#/quizzes")) toast(friendlyError(error), "error");
-    } finally {
-      setActionBusy("");
-    }
-  }, [api, handleAuthError, session, toast]);
-
-  const submitLogin = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const username = String(data.get("username") || "").trim();
-    setActionBusy("login");
-    setLoginError("");
-    try {
-      const token = await api.login(username, String(data.get("password") || ""));
-      const nextSession = writeSession(token, username);
-      setSession(nextSession);
-      setPasswordError("");
-      toast("Вхід успішний. Вітаємо!");
-
-      const pendingQuiz = consumePendingQuiz();
-      if (pendingQuiz) {
-        const authenticatedApi = new QuizApi({ baseUrl: apiUrl, getToken: () => nextSession.accessToken });
-        const attempt = await authenticatedApi.startAttempt(pendingQuiz);
-        setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
-        setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
-        consumeReturnTo();
-        navigate(`#/attempt/${attempt.attemptId}`);
-      } else {
-        navigate(consumeReturnTo());
-      }
-    } catch (error) {
-      setLoginError(error instanceof ApiError && [401, 403].includes(error.status)
-        ? "Невірний логін або пароль."
-        : friendlyError(error));
-    } finally {
-      setActionBusy("");
-    }
-  }, [api, apiUrl, toast]);
-
-  const submitRegistration = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const password = String(data.get("password") || "");
-    const confirmation = String(data.get("confirmPassword") || "");
-    setSignupError("");
-    if (password !== confirmation) {
-      setSignupError("Паролі не збігаються.");
-      return;
-    }
-    if (/\s/.test(password)) {
-      setSignupError("Пароль не повинен містити пробіли.");
-      return;
-    }
-    const account: RegisterRequest = {
-      username: String(data.get("username") || "").trim(),
-      firstName: String(data.get("firstName") || "").trim(),
-      lastName: String(data.get("lastName") || "").trim(),
-      password
-    };
-    setActionBusy("signup");
-    try {
-      const token = await api.register(account);
-      const nextSession = writeSession(token, account.username);
-      setSession(nextSession);
-      setPasswordError("");
-      toast("Обліковий запис створено. Вітаємо!");
-
-      const pendingQuiz = consumePendingQuiz();
-      if (pendingQuiz) {
-        const authenticatedApi = new QuizApi({ baseUrl: apiUrl, getToken: () => nextSession.accessToken });
-        const attempt = await authenticatedApi.startAttempt(pendingQuiz);
-        setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
-        setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
-        consumeReturnTo();
-        navigate(`#/attempt/${attempt.attemptId}`);
-      } else {
-        navigate(consumeReturnTo());
-      }
-    } catch (error) {
-      setSignupError(error instanceof ApiError && error.status === 409
-        ? "Цей логін уже зайнятий. Оберіть інший."
-        : friendlyError(error));
-    } finally {
-      setActionBusy("");
-    }
-  }, [api, apiUrl, toast]);
-
-  const changePassword = useCallback(async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const currentPassword = String(data.get("currentPassword") || "");
-    const newPassword = String(data.get("newPassword") || "");
-    const confirmation = String(data.get("confirmPassword") || "");
-    setPasswordError("");
-    if (newPassword !== confirmation) {
-      setPasswordError("Нові паролі не збігаються.");
-      return;
-    }
-    if (/\s/.test(newPassword)) {
-      setPasswordError("Новий пароль не повинен містити пробіли.");
-      return;
-    }
-    setActionBusy("password");
-    try {
-      await api.changePassword(currentPassword, newPassword);
-      clearSession();
-      setSession(null);
-      setProfile(null);
-      setResults(null);
-      setAdminData(null);
-      toast("Пароль змінено. Увійдіть із новим паролем.");
-      navigate("#/login");
-    } catch (error) {
-      if (handleAuthError(error, "#/profile")) return;
-      setPasswordError(error instanceof ApiError && error.status === 400
-        ? "Поточний пароль неправильний."
-        : error instanceof ApiError && error.status === 409
-          ? "Новий пароль має відрізнятися від поточного."
-          : friendlyError(error));
-    } finally {
-      setActionBusy("");
-    }
-  }, [api, handleAuthError, toast]);
-
-  const logout = useCallback((): void => {
-    void api.logout().catch(() => undefined);
-    clearSession();
-    // Dropping the cached data is the account effect's job, and only its job:
-    // this bug existed because signing out cleared some of it here while
-    // signing in as somebody else cleared almost none over there.
-    setSession(null);
-    setPasswordError("");
-    toast("Ви вийшли з облікового запису.");
-    navigate("#/");
-  }, [api, toast]);
-
-  const executeAdmin = useCallback(
-    async <T,>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
-      setActionBusy(`admin-${key}`);
-      try {
-        const result = await operation();
-        await loadAdmin();
-        toast(successMessage);
-        return result;
-      } catch (error) {
-        if (!handleAuthError(error, "#/admin")) toast(friendlyError(error), "error");
-        return null;
-      } finally {
-        setActionBusy("");
-      }
-    }, [handleAuthError, loadAdmin, toast]) satisfies ExecuteAdmin;
-
-  const toggleAnswer = useCallback((attemptId: number, answerId: number, checked: boolean): void => {
-    setSelections(current => {
-      const next = new Set(current[attemptId] ?? readAnswers(attemptId));
-      if (checked) next.add(answerId);
-      else next.delete(answerId);
-      return { ...current, [attemptId]: next };
-    });
-  }, []);
-
-  // Persistence mirrors the committed state rather than running inside the
-  // updater. A state updater must be pure: StrictMode invokes it twice, and
-  // under a concurrent re-render it can run against state that is never
-  // committed — writing answers the reader never actually selected.
-  useEffect(() => {
-    for (const [attemptId, answers] of Object.entries(selections)) {
-      writeAnswers(attemptId, answers);
-    }
-  }, [selections]);
-
-  // `confirm` is false when the deadline submits instead of the reader: there is
-  // nothing to agree to, and a dialog nobody is there to dismiss would hold the
-  // answers until the attempt expired — the very thing this avoids.
-  const completeAttempt = useCallback(async (attemptId: number, { confirm = true } = {}): Promise<void> => {
-    if (completionRequests.current.has(attemptId)) return;
-    const selected = selections[attemptId] || readAnswers(attemptId);
-    if (confirm
-        && !window.confirm(`Надіслати ${selected.size} вибраних відповідей? Завершення не можна скасувати.`)) {
-      return;
-    }
-    completionRequests.current.add(attemptId);
-    setActionBusy(`complete-${attemptId}`);
-    try {
-      const result = await api.completeAttempt(attemptId, [...selected]);
-      setCompletions(current => ({ ...current, [attemptId]: result }));
-      setResults(null);
-      setAdminData(null);
-      clearAnswers(attemptId);
-      // Drop it from state as well: the mirror effect writes every entry it
-      // finds, so leaving this one behind would restore what was just cleared.
-      setSelections(current => {
-        const next = { ...current };
-        delete next[attemptId];
-        return next;
-      });
-      toast("Тест завершено. Результат збережено.");
-    } catch (error) {
-      if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
-    } finally {
-      completionRequests.current.delete(attemptId);
-      setActionBusy("");
-    }
-  }, [api, handleAuthError, selections, toast]);
-
-  // The timer under the countdown promises the attempt finishes by itself, and
-  // it did not: at zero the form stayed open, the reader pressed the button, and
-  // the API refused a submission it stamps after the deadline — losing every
-  // answer to a conflict message.
-  //
-  // One timer computed from the absolute deadline, not a per-second countdown,
-  // so nothing accumulates drift; and it is recomputed on every answer, because
-  // choosing one rebuilds completeAttempt. A backgrounded tab can still have its
-  // timer throttled past the deadline, and then the API refuses the completion
-  // exactly as it did before — late is the old behaviour, not a new failure.
-  //
-  // Only the attempt on screen is watched. Walking away from one leaves it to
-  // expire server-side, which is what already happened.
-  useEffect(() => {
-    if (route.name !== "attempt") return undefined;
-    const attemptId = Number(route.params[0]);
-    const attempt = attempts[attemptId];
-    if (!attempt || attempt.completed || completions[attemptId]) return undefined;
-
-    const delay = autoSubmitDelay(attempt.expiresAt);
-    if (delay === null) return undefined;
-
-    const timer = window.setTimeout(() => {
-      void completeAttempt(attemptId, { confirm: false });
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [attempts, completeAttempt, completions, route]);
-
-  // The checkbox is controlled by this Set, so its identity has to survive a
-  // re-render that changed nothing about the attempt. Built inline, the
-  // readAnswers fallback produced a fresh Set on every App render — and the App
-  // re-renders whenever the silent token refresh calls setSession, which at the
-  // short JWT_TTL the E2E uses is every few seconds. A click landing in that
-  // window could be reverted before React committed it, which is what
-  // "Clicking the checkbox did not change its state" looks like from Playwright.
-  const attemptSelection = useMemo((): ReadonlySet<number> => {
-    if (route.name !== "attempt") return EMPTY_SELECTION;
-    const attemptId = Number(route.params[0]);
-    if (!Number.isInteger(attemptId) || attemptId <= 0) return EMPTY_SELECTION;
-    return selections[attemptId] ?? readAnswers(attemptId);
-  }, [route.name, route.params, selections]);
-
-  const testConnection = useCallback(async (value: string): Promise<boolean> => {
-    setConnection("checking");
-    setSettingsError("");
-    try {
-      const probe = new QuizApi({ baseUrl: value, readsServerClock: false });
-      await probe.checkConnection();
-      setConnection("ok");
-      return true;
-    } catch (error) {
-      setConnection("error");
-      setSettingsError(friendlyError(error));
-    }
-    return false;
-  }, []);
-
-  const saveApiUrl = useCallback(async (value: string): Promise<void> => {
-    try {
-      const normalized = normalizeBaseUrl(value);
-      writeApiUrl(normalized);
-      setApiUrl(normalized);
-      setQuizzes(null);
-      setResults(null);
-      setAdminData(null);
-      setAdminUsersPage(0);
-      setAdminResultsPage(0);
-      if (await testConnection(normalized)) toast("Адресу API збережено.");
-    } catch (error) {
-      setConnection("error");
-      setSettingsError(error instanceof Error ? error.message : String(error));
-    }
-  }, [testConnection, toast]);
+  const logout = useCallback(() => {
+    authActions.clearPasswordError();
+    auth.logout();
+  }, [auth.logout, authActions.clearPasswordError]);
 
   let page;
   if (route.name === "home") {
-    page = <HomePage session={session} quizzes={quizzes} summary={catalogueSummary} loading={quizzesLoading} error={quizError} busy={actionBusy} onRetry={() => void loadQuizzes()} onStart={quizId => void startQuiz(quizId)} />;
+    page = <HomePage
+      session={auth.session}
+      quizzes={catalogue.quizzes}
+      summary={catalogue.summary}
+      loading={catalogue.loading}
+      error={catalogue.error}
+      busy={actionBusy}
+      onRetry={() => void catalogue.load()}
+      onStart={quizId => void attempts.start(quizId)}
+    />;
   } else if (route.name === "quizzes") {
-    page = <QuizzesPage quizzes={quizzes} pageMeta={quizzesMeta} loading={quizzesLoading} error={quizError} busy={actionBusy} search={search} filter={filter} onSearch={setSearch} onFilter={setFilter} onPageChange={setQuizzesPage} onRetry={() => void loadQuizzes()} onStart={quizId => void startQuiz(quizId)} />;
+    page = <QuizzesPage
+      quizzes={catalogue.quizzes}
+      pageMeta={catalogue.pageMeta}
+      loading={catalogue.loading}
+      error={catalogue.error}
+      busy={actionBusy}
+      search={catalogue.search}
+      filter={catalogue.filter}
+      onSearch={catalogue.setSearch}
+      onFilter={catalogue.setFilter}
+      onPageChange={catalogue.setPage}
+      onRetry={() => void catalogue.load()}
+      onStart={quizId => void attempts.start(quizId)}
+    />;
   } else if (route.name === "login") {
-    page = <LoginPage error={loginError} busy={actionBusy === "login"} onSubmit={event => void submitLogin(event)} />;
+    page = <LoginPage
+      error={authActions.loginError}
+      busy={actionBusy === "login"}
+      onSubmit={event => void authActions.submitLogin(event)}
+    />;
   } else if (route.name === "signup") {
-    page = <SignupPage error={signupError} busy={actionBusy === "signup"} onSubmit={event => void submitRegistration(event)} />;
+    page = <SignupPage
+      error={authActions.signupError}
+      busy={actionBusy === "signup"}
+      onSubmit={event => void authActions.submitRegistration(event)}
+    />;
   } else if (route.name === "profile") {
-    page = <ProfilePage profile={profile} loading={profileLoading} error={profileError} passwordError={passwordError} busy={actionBusy === "password"} onRetry={() => void loadProfile()} onPasswordChange={event => void changePassword(event)} />;
+    page = <ProfilePage
+      profile={account.profile}
+      loading={account.profileLoading}
+      error={account.profileError}
+      passwordError={authActions.passwordError}
+      busy={actionBusy === "password"}
+      onRetry={() => void account.loadProfile()}
+      onPasswordChange={event => void authActions.changePassword(event)}
+    />;
   } else if (route.name === "settings") {
-    page = <SettingsPage apiUrl={apiUrl} connection={connection} error={settingsError} onSave={value => void saveApiUrl(value)} onTest={value => void testConnection(value)} />;
+    page = <SettingsPage
+      apiUrl={settings.apiUrl}
+      connection={settings.connection}
+      error={settings.error}
+      onSave={value => void settings.save(value)}
+      onTest={value => void settings.testConnection(value)}
+    />;
   } else if (route.name === "results") {
-    page = <ResultsPage results={results} loading={resultsLoading} error={resultError} onRetry={() => void loadResults()} />;
+    page = <ResultsPage
+      results={account.results}
+      loading={account.resultsLoading}
+      error={account.resultError}
+      onRetry={() => void account.loadResults()}
+    />;
   } else if (route.name === "attempt") {
     const attemptId = Number(route.params[0]);
     const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
-    page = <AttemptPage attempt={attempts[attemptId]} loading={Boolean(attemptLoading[attemptId])} error={invalid ? "Некоректний номер спроби." : attemptErrors[attemptId]} selected={attemptSelection} completion={completions[attemptId]} busy={actionBusy === `complete-${attemptId}`} onToggle={toggleAnswer} onComplete={id => void completeAttempt(id)} />;
+    page = <AttemptPage
+      attempt={attempts.attempts[attemptId]}
+      loading={Boolean(attempts.loading[attemptId])}
+      error={invalid ? "Некоректний номер спроби." : attempts.errors[attemptId]}
+      selected={attempts.selection}
+      completion={attempts.completions[attemptId]}
+      busy={actionBusy === `complete-${attemptId}`}
+      onToggle={attempts.toggle}
+      onComplete={id => void attempts.complete(id)}
+    />;
   } else if (route.name === "admin") {
-    page = <AdminPage data={adminData} loading={adminLoading} error={adminError} busy={actionBusy} api={api} resultRange={adminResultRange} onResultRangeChange={changeAdminResultRange} onUsersPageChange={setAdminUsersPage} onResultsPageChange={setAdminResultsPage} onRetry={() => void loadAdmin()} onExecute={executeAdmin} />;
+    page = <AdminPage
+      data={admin.data}
+      loading={admin.loading}
+      error={admin.error}
+      busy={actionBusy}
+      api={auth.api}
+      resultRange={admin.resultRange}
+      onResultRangeChange={admin.changeResultRange}
+      onUsersPageChange={admin.setUsersPage}
+      onResultsPageChange={admin.setResultsPage}
+      onRetry={() => void admin.load()}
+      onExecute={admin.execute}
+    />;
   } else {
     page = <NotFoundPage />;
   }
 
-  return <Layout route={route} session={session} onLogout={logout} toasts={toasts}>{page}</Layout>;
+  return <Layout route={route} session={auth.session} onLogout={logout} toasts={toasts}>{page}</Layout>;
 }

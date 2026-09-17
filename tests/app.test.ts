@@ -122,6 +122,50 @@ test("a session that expires keeps the reader's answers for their return", async
   assert.match(view.text(), /Продовжити навчання/);
 });
 
+test("a restored expired access token is refreshed before protected data loads", async () => {
+  const api = stubApi({
+    ...CATALOGUE,
+    "POST /api/v1/auth/refresh": loginResponse("olena"),
+    "GET /api/v1/attempts/4": attemptBody(4)
+  });
+
+  // readSession deliberately restores this session because its refresh token
+  // still lives. The attempt loader must not race that refresh with a bearer
+  // token the backend is guaranteed to reject.
+  seedSession("olena", { expiresInMs: -1_000 });
+  goTo("#/attempt/4");
+  const view = render(App);
+  await settle(5);
+
+  const protectedSequence = api.calls
+    .filter(call => ["POST /api/v1/auth/refresh", "GET /api/v1/attempts/4"].includes(call.key))
+    .map(call => call.key);
+  assert.deepEqual(protectedSequence.slice(0, 2), [
+    "POST /api/v1/auth/refresh",
+    "GET /api/v1/attempts/4"
+  ]);
+  assert.match(view.text(), /Тест #7/);
+});
+
+test("account data also waits for a restored session to refresh", async () => {
+  const api = stubApi({
+    ...CATALOGUE,
+    "POST /api/v1/auth/refresh": loginResponse("olena"),
+    "GET /api/v1/results/me": { body: [] }
+  });
+
+  seedSession("olena", { expiresInMs: -1_000 });
+  goTo("#/results");
+  const view = render(App);
+  await settle(5);
+
+  assert.deepEqual(api.calls
+    .filter(call => ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"].includes(call.key))
+    .map(call => call.key)
+    .slice(0, 2), ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"]);
+  assert.match(view.text(), /Історія ще порожня/);
+});
+
 test("signing out is not a handover either", async () => {
   const api = stubApi({
     ...CATALOGUE,
@@ -180,8 +224,9 @@ test("a handover drops the attempt the API would refuse to reload", async () => 
 //
 // Driven through the app's own timer and request rather than by poking state,
 // because what is under test is what setSession then triggers. It costs the
-// five seconds that timer floors at, which is why it is the only test here that
-// waits on a clock. Watched from the catalogue rather than the attempt page: a
+// two seconds the short-lived token leaves it, which is why it is the only test
+// here that waits on a clock. Watched from the catalogue rather than the
+// attempt page: a
 // wrongly-cleared attempt is immediately refetched, and the refetch would mask
 // exactly the clearing this is looking for.
 test("a refreshed token is not a different reader", async () => {
@@ -457,3 +502,4 @@ test("a bad attempt number is refused without asking the API about it", async ()
   assert.equal(api.calls.filter(call => call.path.startsWith("/api/v1/attempts")).length, 0,
     "the API was asked about an attempt that cannot exist");
 });
+

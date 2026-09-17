@@ -728,12 +728,6 @@ test("a refresh that could not be made keeps the session and tries again later",
   assert.match(view.text(), /olena/);
 });
 
-// The two tests above prove the refresh happens and that both its failures are
-// handled. Neither says anything about how often it happens, and that turned out
-// to be the part that broke: a margin wider than the token's own life drove the
-// delay to zero, and because installing the new session re-runs the scheduling
-// effect, zero repeated. The end-to-end workflow issues fifteen-second tokens,
-// so this is the configuration it actually ships under, not a contrived one.
 test("a short-lived token is renewed on its own schedule, not continuously", async () => {
   sessionStorage.setItem("quizproject.session", JSON.stringify({
     accessToken: fakeToken("olena", { ttlSeconds: 4 }), tokenType: "Bearer",
@@ -742,9 +736,8 @@ test("a short-lived token is renewed on its own schedule, not continuously", asy
     username: "olena", roles: ["ROLE_USER"]
   }));
 
-  // Every renewal is as short-lived as the first, which is what lets the loop
-  // sustain itself: a token minted with a comfortable lifetime would break it
-  // after one turn and hide the defect.
+  // Every renewal is as short-lived as the first. An immediate refresh loop
+  // therefore sustains itself instead of being hidden by a long replacement.
   const { stub } = await open("", {
     "POST /api/v1/auth/refresh": loginResponse("olena", { ttlSeconds: 4 })
   });
@@ -754,7 +747,7 @@ test("a short-lived token is renewed on its own schedule, not continuously", asy
   assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 0,
     `the refresh fired immediately and kept firing: ${stub.countOf("POST /api/v1/auth/refresh")} in 1.2s`);
 
-  // Half of the four seconds it had left, so it lands at two.
+  // Half of the four seconds it had left, so the refresh lands at two seconds.
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_400)); });
   await settle();
   assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1,
@@ -864,3 +857,4 @@ test("coming back to an attempt that failed asks for it again", async () => {
   assert.match(view.text(), /Що таке JVM/);
   assert.doesNotMatch(view.text(), /Тимчасовий збій/, "the error outlived the load that succeeded");
 });
+
