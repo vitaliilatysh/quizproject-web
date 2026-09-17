@@ -686,10 +686,10 @@ test("an address with nothing behind it is reported as no connection", async () 
 // must not.
 test("a token the API refuses to renew ends the session", async () => {
   seedSession("olena");
-  // Expiring inside the refresh margin, so the timer takes its 5s floor.
+  // Expiring inside the refresh margin, so the timer takes half of what is left.
   sessionStorage.setItem("quizproject.session", JSON.stringify({
     accessToken: fakeToken("olena"), tokenType: "Bearer",
-    expiresAt: Date.now() + 61_000,
+    expiresAt: Date.now() + 4_000,
     refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
     username: "olena", roles: ["ROLE_USER"]
   }));
@@ -708,7 +708,7 @@ test("a token the API refuses to renew ends the session", async () => {
 test("a refresh that could not be made keeps the session and tries again later", async () => {
   sessionStorage.setItem("quizproject.session", JSON.stringify({
     accessToken: fakeToken("olena"), tokenType: "Bearer",
-    expiresAt: Date.now() + 61_000,
+    expiresAt: Date.now() + 4_000,
     refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
     username: "olena", roles: ["ROLE_USER"]
   }));
@@ -726,6 +726,32 @@ test("a refresh that could not be made keeps the session and tries again later",
   assert.notEqual(sessionStorage.getItem("quizproject.session"), null,
     "an unreachable API signed the reader out");
   assert.match(view.text(), /olena/);
+});
+
+test("a short-lived token is renewed on its own schedule, not continuously", async () => {
+  sessionStorage.setItem("quizproject.session", JSON.stringify({
+    accessToken: fakeToken("olena", { ttlSeconds: 4 }), tokenType: "Bearer",
+    expiresAt: Date.now() + 4_000,
+    refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
+    username: "olena", roles: ["ROLE_USER"]
+  }));
+
+  // Every renewal is as short-lived as the first. An immediate refresh loop
+  // therefore sustains itself instead of being hidden by a long replacement.
+  const { stub } = await open("", {
+    "POST /api/v1/auth/refresh": loginResponse("olena", { ttlSeconds: 4 })
+  });
+
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_200)); });
+  await settle();
+  assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 0,
+    `the refresh fired immediately and kept firing: ${stub.countOf("POST /api/v1/auth/refresh")} in 1.2s`);
+
+  // Half of the four seconds it had left, so the refresh lands at two seconds.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_400)); });
+  await settle();
+  assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1,
+    "the refresh never ran, so this test proves nothing about its timing");
 });
 
 test("a failure is worded for the reader, with the code support will ask for", async () => {
@@ -831,3 +857,4 @@ test("coming back to an attempt that failed asks for it again", async () => {
   assert.match(view.text(), /Що таке JVM/);
   assert.doesNotMatch(view.text(), /Тимчасовий збій/, "the error outlived the load that succeeded");
 });
+
