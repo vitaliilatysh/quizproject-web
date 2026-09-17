@@ -224,8 +224,9 @@ test("a handover drops the attempt the API would refuse to reload", async () => 
 //
 // Driven through the app's own timer and request rather than by poking state,
 // because what is under test is what setSession then triggers. It costs the
-// five seconds that timer floors at, which is why it is the only test here that
-// waits on a clock. Watched from the catalogue rather than the attempt page: a
+// two seconds the short-lived token leaves it, which is why it is the only test
+// here that waits on a clock. Watched from the catalogue rather than the
+// attempt page: a
 // wrongly-cleared attempt is immediately refetched, and the refetch would mask
 // exactly the clearing this is looking for.
 test("a refreshed token is not a different reader", async () => {
@@ -235,8 +236,8 @@ test("a refreshed token is not a different reader", async () => {
     "POST /api/v1/auth/refresh": refreshed
   });
 
-  // Expiring inside the refresh margin, so the timer takes its 5s floor.
-  seedSession("olena", { expiresInMs: 61_000 });
+  // Expiring inside the refresh margin, so the timer takes half of what is left.
+  seedSession("olena", { expiresInMs: 4_000 });
   const before = JSON.parse(String(sessionStorage.getItem("quizproject.session"))).accessToken;
   sessionStorage.setItem(ANSWERS(4), JSON.stringify([101, 102]));
 
@@ -501,3 +502,4 @@ test("a bad attempt number is refused without asking the API about it", async ()
   assert.equal(api.calls.filter(call => call.path.startsWith("/api/v1/attempts")).length, 0,
     "the API was asked about an attempt that cannot exist");
 });
+
