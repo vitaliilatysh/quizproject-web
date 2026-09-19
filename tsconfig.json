@@ -35,6 +35,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
 
+    // scripts/coverage-lines.mts imports tests/support/jsx.mts by its real name
+    // so the gate cannot measure a differently-transformed file than the tests
+    // run. That script is executed by Node directly, which resolves .mts, and
+    // nothing is emitted from here, so the extension can stay.
+    "allowImportingTsExtensions": true,
+
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "esModuleInterop": true,
