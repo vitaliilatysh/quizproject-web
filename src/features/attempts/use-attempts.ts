@@ -56,9 +56,12 @@ export function useAttempts({
       const attempt = await api.attempt(attemptId);
       if (activeAccount.current !== requestedBy) return;
       setAttempts(current => ({ ...current, [attemptId]: attempt }));
-      setSelections(current => current[attemptId]
-        ? current
-        : { ...current, [attemptId]: readAnswers(attemptId) });
+      // Not guarded against overwriting a selection already in state: there is
+      // no way to arrive here with one. The effect below is the only caller and
+      // it refuses an attempt already loaded, rememberAttempt fills both maps
+      // together, and reset empties both. The guard that used to sit here could
+      // not run, which is how the line gate found it.
+      setSelections(current => ({ ...current, [attemptId]: readAnswers(attemptId) }));
     } catch (error) {
       if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
         setErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));

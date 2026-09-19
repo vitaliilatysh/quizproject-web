@@ -27,7 +27,7 @@ const LOADERS: ReadonlyArray<readonly [suffix: string, loader: Loader]> = [
   [".jsx", "jsx"]
 ];
 
-function loaderFor(url: string): Loader | null {
+export function loaderFor(url: string): Loader | null {
   // A query string survives into the resolved URL for some importers, so the
   // extension is read off the path rather than the whole thing.
   const path = url.split("?")[0] ?? url;
@@ -99,13 +99,15 @@ export async function load(
     // the request timeout branch and QuizApi.quiz(), neither of which had a
     // test at the time.
     //
-    // The caveat, and the reason the gate does not pass the flag: `line %`
-    // becomes conservative. Lines with no mapping — a file's comment header,
-    // chiefly — count against the total, so a heavily commented module reads
-    // low even at full coverage of its code, and a 100% threshold could never
-    // be met. `npm run coverage:check` runs without the flag, where the
-    // denominator is the executable lines and the threshold means what it
-    // says; `npm run coverage` runs with it, for finding what is missing.
+    // The caveat: a line of the original with no mapping into the generated
+    // code — a comment, a type annotation, a blank line — cannot be shown as
+    // executed, and Node's own `line %` counts it against the total anyway. So
+    // that number moves when prose moves, in both directions, and a 100%
+    // threshold on it fails for reasons that have nothing to do with tests.
+    // `npm run coverage:check` therefore gates lines with
+    // scripts/coverage-lines.mts, which counts only the mapped lines; Node
+    // still gates functions and branches, which are counted per range and do
+    // not have this problem.
     //
     // Inline rather than a file, because there is no build directory here: the
     // transformed source only ever exists in memory.
@@ -114,3 +116,16 @@ export async function load(
   });
   return { format: "module", shortCircuit: true, source: code };
 }
+
+/**
+ * The transform the tests run under, minus where the map goes.
+ *
+ * `npm run coverage:check` re-runs this over each source file to read the
+ * mappings out of it. Sharing the options is the point: a gate that measured a
+ * differently-transformed file would be measuring something nobody executes.
+ */
+export const TRANSFORM_OPTIONS = {
+  jsx: "automatic",
+  format: "esm",
+  target: "node22"
+} as const;
