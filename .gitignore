@@ -11,3 +11,4 @@ blob-report/
 .wrangler/
 outputs/
 work/
+.coverage-v8
