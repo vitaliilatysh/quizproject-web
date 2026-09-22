@@ -41,19 +41,28 @@ jobs:
       - name: Check types
         run: npm run typecheck
 
+      # One rule family, react-hooks, and no more. Types are the step above;
+      # SonarCloud has its own workflow. A hook called conditionally fails the
+      # build; exhaustive-deps is a warning, because oxlint reads it more
+      # strictly than React does and demands whole objects where this code
+      # depends on one stable callback of them. .oxlintrc.json says why for
+      # each rule it turns off.
+      - name: Lint
+        run: npm run lint
+
       # Runs the tests and fails on a threshold, which is what `api` does with
       # jacocoTestCoverageVerification. Lines and functions are held at 100%,
       # the same as the LINE rule over there; branches are held at the level
       # they have reached, so the number can only go up.
       #
-      # It runs without --enable-source-maps, and that is not an oversight.
-      # Under the flag a file's comment header counts against its line total —
-      # every module here reads several points low at full coverage of its
-      # code, and clock.ts reads 70% with every one of its functions covered.
-      # Without it the denominator is the executable lines, which is what
-      # JaCoCo's LINE counter measures and what a 100% threshold can mean.
-      # `npm run coverage` is the same run with the flag: worse totals, but
-      # correct attribution, which is what finding a gap needs.
+      # Lines are counted by scripts/coverage-lines.mts rather than by Node.
+      # V8 reports offsets into the esbuild output while Node's report is
+      # written against the file on disk, so an original line the source map
+      # never mentions cannot be shown as executed and counts against the total
+      # anyway — a number that moved when prose moved. The script counts only
+      # the lines the map puts generated code on. Functions and branches stay
+      # with Node, which counts those per range and does not have the problem.
+      # `npm run coverage` is the unthresholded run, for finding a gap.
       - name: Run unit tests and check coverage
         run: npm run coverage:check
 
