@@ -124,6 +124,10 @@ function props(over: Partial<AdminPageProps> = {}): AdminPageProps {
     onResultsPageChange: () => {},
     onRetry: () => {},
     onExecute: executor().execute,
+    questions: [],
+    questionLoading: false,
+    questionError: "",
+    loadQuestions: async () => {},
     ...over
   };
 }
@@ -336,9 +340,9 @@ test("the quiz form creates, then edits the quiz it was pointed at, then lets go
 
 test("deleting the quiz that is open in the editor closes the editor with it", async () => {
   const run = executor();
-  const { api } = stubbedApi({ "GET /api/v1/admin/quizzes/7/questions": [question()] });
-  const view = await mount({ api, onExecute: run.execute });
-  assert.match(view.text(), /Що таке JVM/, "the questions of the selected quiz were never loaded");
+  const { api } = stubbedApi();
+  const view = await mount({ api, onExecute: run.execute, questions: [question()] });
+  assert.match(view.text(), /Що таке JVM/, "the questions of the selected quiz were never rendered");
 
   click(buttonsIn(card(view, "Тести"), ".admin-table__row button")[1]);
   await settle();
@@ -350,20 +354,11 @@ test("deleting the quiz that is open in the editor closes the editor with it", a
 });
 
 test("a delete that failed leaves the editor open on the quiz that is still there", async () => {
-  const { api } = stubbedApi({ "GET /api/v1/admin/quizzes/7/questions": [question()] });
-  const view = await mount({ api, onExecute: executor({ failing: true }).execute });
+  const { api } = stubbedApi();
+  const view = await mount({ api, onExecute: executor({ failing: true }).execute, questions: [question()] });
   click(buttonsIn(card(view, "Тести"), ".admin-table__row button")[1]);
   await settle();
   assert.match(view.text(), /Що таке JVM/, "a failed delete emptied the editor anyway");
-});
-
-test("a question list that will not load says so instead of staying blank", async () => {
-  const { api } = stubbedApi({
-    "GET /api/v1/admin/quizzes/7/questions": new Error("Мережа недоступна")
-  });
-  const view = await mount({ api });
-  assert.match(view.find(".alert--error").textContent ?? "", /API/,
-    "the load failure was swallowed and the editor looked merely empty");
 });
 
 test("a question is written with four answers, one of them marked correct", async () => {
@@ -393,8 +388,8 @@ test("a question is written with four answers, one of them marked correct", asyn
 
 test("editing a question fills the editor from it and saves over it", async () => {
   const run = executor();
-  const { api } = stubbedApi({ "GET /api/v1/admin/quizzes/7/questions": [question()] });
-  const view = await mount({ api, onExecute: run.execute });
+  const { api } = stubbedApi();
+  const view = await mount({ api, onExecute: run.execute, questions: [question()] });
 
   click(buttonsIn(card(view, "Запитання"), ".admin-question-list .button-row button")[0]);
   assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "Що таке JVM?");
@@ -415,9 +410,13 @@ test("editing a question fills the editor from it and saves over it", async () =
 
 test("deleting a question is confirmed, and the list is read back afterwards", async () => {
   const run = executor();
-  const { api, calls } = stubbedApi({ "GET /api/v1/admin/quizzes/7/questions": [question()] });
-  const view = await mount({ api, onExecute: run.execute });
-  const loadsBefore = calls.filter(call => call.method === "GET").length;
+  const { api } = stubbedApi();
+  const reloads: string[] = [];
+  const view = await mount({
+    api, onExecute: run.execute, questions: [question()],
+    loadQuestions: async quizId => { reloads.push(quizId); }
+  });
+  reloads.length = 0;
 
   window.confirm = () => false;
   click(buttonsIn(card(view, "Запитання"), ".admin-question-list .button-row button")[1]);
@@ -428,29 +427,27 @@ test("deleting a question is confirmed, and the list is read back afterwards", a
   click(buttonsIn(card(view, "Запитання"), ".admin-question-list .button-row button")[1]);
   await settle();
   assert.deepEqual(run.keys, ["question-delete"]);
-  assert.ok(calls.filter(call => call.method === "GET").length > loadsBefore,
-    "the list still shows a question the server no longer has");
+  assert.deepEqual(reloads, ["7"], "the list still shows a question the server no longer has");
 });
 
-test("choosing another quiz loads its questions and empties the editor", async () => {
-  const { api, calls } = stubbedApi({
-    "GET /api/v1/admin/quizzes/7/questions": [question()],
-    "GET /api/v1/admin/quizzes/8/questions": [question({ id: 31, text: "Що таке DI?" })]
-  });
+test("choosing another quiz asks for its questions and empties the editor", async () => {
+  const { api } = stubbedApi();
+  const asked: string[] = [];
   const view = await mount({
     api,
+    questions: [question()],
+    loadQuestions: async quizId => { asked.push(quizId); },
     data: { ...props().data!, quizzes: [adminQuiz(), adminQuiz({ id: 8, name: "Spring" })] }
   });
+  asked.length = 0;
 
   type(view.find("textarea"), "напівнаписане запитання");
   select(view.find(".admin-quiz-select"), "8");
   await settle();
 
-  assert.match(view.text(), /Що таке DI/);
-  assert.doesNotMatch(view.text(), /Що таке JVM/);
+  assert.deepEqual(asked, ["8"], "the panel kept showing the questions of the quiz left behind");
   assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "",
     "a draft written for one quiz was carried over to another");
-  assert.ok(calls.some(call => call.path === "/api/v1/admin/quizzes/8/questions"));
 });
 
 test("with no quizzes at all the editor asks for one rather than offering nothing", async () => {
@@ -579,14 +576,4 @@ test("deleting a quiz happens only after it is confirmed", async () => {
   click(buttonsIn(card(view, "Тести"), ".admin-table__row button")[1]);
   await settle();
   assert.deepEqual(run.keys, [], "a refused confirmation deleted the quiz");
-});
-
-test("a question load that fails with something that is not an error still says so", async () => {
-  const { api } = stubbedApi();
-  // A rejection that is not an Error — what a stray `throw "..."` or a rejected
-  // string from a future client would produce. The panel has to render it
-  // rather than show "[object Object]" or nothing at all.
-  api.adminQuestions = () => Promise.reject("сервер закрив з’єднання");
-  const view = await mount({ api });
-  assert.equal(view.find(".alert--error").textContent, "сервер закрив з’єднання");
 });

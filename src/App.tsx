@@ -16,6 +16,7 @@ import {
 } from "./components.js";
 import { useAccountData } from "./features/account/use-account-data.js";
 import { useAdminData } from "./features/admin/use-admin-data.js";
+import { useAdminQuestions } from "./features/admin/use-admin-questions.js";
 import { useAttempts } from "./features/attempts/use-attempts.js";
 import { useAuthActions } from "./features/auth/use-auth-actions.js";
 import { useAuthSession } from "./features/auth/use-auth-session.js";
@@ -59,6 +60,12 @@ export default function App() {
     handleAuthError: auth.handleAuthError,
     setActionBusy,
     toast
+  });
+  const adminQuestions = useAdminQuestions({
+    api: auth.api,
+    session: auth.session,
+    activeAccount,
+    handleAuthError: auth.handleAuthError
   });
   const onAttemptCompletion = useCallback(() => {
     account.invalidateResults();
@@ -113,8 +120,9 @@ export default function App() {
     activeAccount.current = accountName;
     account.reset();
     admin.reset();
+    adminQuestions.reset();
     attempts.reset();
-  }, [account.reset, accountName, admin.reset, attempts.reset]);
+  }, [account.reset, accountName, admin.reset, adminQuestions.reset, attempts.reset]);
 
   const logout = useCallback(() => {
     authActions.clearPasswordError();
@@ -211,6 +219,10 @@ export default function App() {
       onResultsPageChange={admin.setResultsPage}
       onRetry={() => void admin.load()}
       onExecute={admin.execute}
+      questions={adminQuestions.questions}
+      questionLoading={adminQuestions.loading}
+      questionError={adminQuestions.error}
+      loadQuestions={adminQuestions.load}
     />;
   } else {
     page = <NotFoundPage />;

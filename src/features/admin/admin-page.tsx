@@ -47,16 +47,18 @@ export interface AdminPageProps {
   onResultsPageChange: (page: number) => void;
   onRetry: () => void;
   onExecute: ExecuteAdmin;
+  questions: AdminQuestion[];
+  questionLoading: boolean;
+  questionError: string;
+  loadQuestions: (quizId: string) => Promise<void>;
 }
 
 export function AdminPage({ data, loading, error, busy, api, resultRange, onResultRangeChange,
-  onUsersPageChange, onResultsPageChange, onRetry, onExecute }: Readonly<AdminPageProps>) {
+  onUsersPageChange, onResultsPageChange, onRetry, onExecute,
+  questions, questionLoading, questionError, loadQuestions }: Readonly<AdminPageProps>) {
   const [subjectName, setSubjectName] = useState("");
   const [quizDraft, setQuizDraft] = useState<QuizDraft>({ id: null, name: "", subjectId: "", levelId: "", timeToPassMinutes: 10 });
   const [selectedQuizId, setSelectedQuizId] = useState("");
-  const [questions, setQuestions] = useState<AdminQuestion[]>([]);
-  const [questionLoading, setQuestionLoading] = useState(false);
-  const [questionError, setQuestionError] = useState("");
   const [questionDraft, setQuestionDraft] = useState<QuestionDraft>(() => ({ id: null, text: "", answers: blankAnswers() }));
   const working = busy.startsWith("admin-");
 
@@ -70,25 +72,9 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     setSelectedQuizId(current => current || String(data.quizzes[0]?.id || ""));
   }, [data]);
 
-  const loadQuestions = async (quizId: string): Promise<void> => {
-    if (!quizId) {
-      setQuestions([]);
-      return;
-    }
-    setQuestionLoading(true);
-    setQuestionError("");
-    try {
-      setQuestions(await api.adminQuestions(quizId));
-    } catch (loadError) {
-      setQuestionError(loadError instanceof Error ? loadError.message : String(loadError));
-    } finally {
-      setQuestionLoading(false);
-    }
-  };
-
   useEffect(() => {
     void loadQuestions(selectedQuizId);
-  }, [selectedQuizId]);
+  }, [loadQuestions, selectedQuizId]);
 
   if (loading && !data) {
     return <section className="section-pad content-page"><p className="eyebrow">Адміністрування</p><h1>Готуємо панель…</h1><div className="result-skeleton" /></section>;
@@ -134,10 +120,7 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
   const deleteQuiz = async (quiz: AdminQuiz): Promise<void> => {
     if (!window.confirm(`Видалити тест «${quiz.name}» разом із запитаннями та спробами?`)) return;
     const result = await onExecute("quiz-delete", () => api.deleteQuiz(quiz.id), "Тест видалено.");
-    if (result !== null && String(quiz.id) === selectedQuizId) {
-      setSelectedQuizId("");
-      setQuestions([]);
-    }
+    if (result !== null && String(quiz.id) === selectedQuizId) setSelectedQuizId("");
   };
   const changeAnswer = <K extends "text" | "correct">(key: string, field: K, value: AnswerDraft[K]): void =>
     setQuestionDraft(current => ({
