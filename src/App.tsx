@@ -131,102 +131,124 @@ export default function App() {
 
   let page;
   if (route.name === "home") {
-    page = <HomePage
-      session={auth.session}
-      quizzes={catalogue.quizzes}
-      summary={catalogue.summary}
-      loading={catalogue.loading}
-      error={catalogue.error}
-      busy={actionBusy}
-      onRetry={() => void catalogue.load()}
-      onStart={quizId => void attempts.start(quizId)}
-    />;
+    page = (
+      <HomePage
+        session={auth.session}
+        quizzes={catalogue.quizzes}
+        summary={catalogue.summary}
+        loading={catalogue.loading}
+        error={catalogue.error}
+        busy={actionBusy}
+        onRetry={() => void catalogue.load()}
+        onStart={quizId => void attempts.start(quizId)}
+      />
+    );
   } else if (route.name === "quizzes") {
-    page = <QuizzesPage
-      quizzes={catalogue.quizzes}
-      pageMeta={catalogue.pageMeta}
-      loading={catalogue.loading}
-      error={catalogue.error}
-      busy={actionBusy}
-      search={catalogue.search}
-      filter={catalogue.filter}
-      onSearch={catalogue.setSearch}
-      onFilter={catalogue.setFilter}
-      onPageChange={catalogue.setPage}
-      onRetry={() => void catalogue.load()}
-      onStart={quizId => void attempts.start(quizId)}
-    />;
+    page = (
+      <QuizzesPage
+        quizzes={catalogue.quizzes}
+        pageMeta={catalogue.pageMeta}
+        loading={catalogue.loading}
+        error={catalogue.error}
+        busy={actionBusy}
+        search={catalogue.search}
+        filter={catalogue.filter}
+        onSearch={catalogue.setSearch}
+        onFilter={catalogue.setFilter}
+        onPageChange={catalogue.setPage}
+        onRetry={() => void catalogue.load()}
+        onStart={quizId => void attempts.start(quizId)}
+      />
+    );
   } else if (route.name === "login") {
-    page = <LoginPage
-      error={authActions.loginError}
-      busy={actionBusy === "login"}
-      onSubmit={event => void authActions.submitLogin(event)}
-    />;
+    page = (
+      <LoginPage
+        error={authActions.loginError}
+        busy={actionBusy === "login"}
+        onSubmit={event => void authActions.submitLogin(event)}
+      />
+    );
   } else if (route.name === "signup") {
-    page = <SignupPage
-      error={authActions.signupError}
-      busy={actionBusy === "signup"}
-      onSubmit={event => void authActions.submitRegistration(event)}
-    />;
+    page = (
+      <SignupPage
+        error={authActions.signupError}
+        busy={actionBusy === "signup"}
+        onSubmit={event => void authActions.submitRegistration(event)}
+      />
+    );
   } else if (route.name === "profile") {
-    page = <ProfilePage
-      profile={account.profile}
-      loading={account.profileLoading}
-      error={account.profileError}
-      passwordError={authActions.passwordError}
-      busy={actionBusy === "password"}
-      onRetry={() => void account.loadProfile()}
-      onPasswordChange={event => void authActions.changePassword(event)}
-    />;
+    page = (
+      <ProfilePage
+        profile={account.profile}
+        loading={account.profileLoading}
+        error={account.profileError}
+        passwordError={authActions.passwordError}
+        busy={actionBusy === "password"}
+        onRetry={() => void account.loadProfile()}
+        onPasswordChange={event => void authActions.changePassword(event)}
+      />
+    );
   } else if (route.name === "settings") {
-    page = <SettingsPage
-      apiUrl={settings.apiUrl}
-      connection={settings.connection}
-      error={settings.error}
-      onSave={value => void settings.save(value)}
-      onTest={value => void settings.testConnection(value)}
-    />;
+    page = (
+      <SettingsPage
+        apiUrl={settings.apiUrl}
+        connection={settings.connection}
+        error={settings.error}
+        onSave={value => void settings.save(value)}
+        onTest={value => void settings.testConnection(value)}
+      />
+    );
   } else if (route.name === "results") {
-    page = <ResultsPage
-      results={account.results}
-      loading={account.resultsLoading}
-      error={account.resultError}
-      onRetry={() => void account.loadResults()}
-    />;
+    page = (
+      <ResultsPage
+        results={account.results}
+        loading={account.resultsLoading}
+        error={account.resultError}
+        onRetry={() => void account.loadResults()}
+      />
+    );
   } else if (route.name === "attempt") {
     const attemptId = Number(route.params[0]);
     const invalid = !Number.isInteger(attemptId) || attemptId <= 0;
-    page = <AttemptPage
-      attempt={attempts.attempts[attemptId]}
-      loading={Boolean(attempts.loading[attemptId])}
-      error={invalid ? "Некоректний номер спроби." : attempts.errors[attemptId]}
-      selected={attempts.selection}
-      completion={attempts.completions[attemptId]}
-      busy={actionBusy === `complete-${attemptId}`}
-      onToggle={attempts.toggle}
-      onComplete={id => void attempts.complete(id)}
-    />;
+    page = (
+      <AttemptPage
+        attempt={attempts.attempts[attemptId]}
+        loading={Boolean(attempts.loading[attemptId])}
+        error={invalid ? "Некоректний номер спроби." : attempts.errors[attemptId]}
+        selected={attempts.selection}
+        completion={attempts.completions[attemptId]}
+        busy={actionBusy === `complete-${attemptId}`}
+        onToggle={attempts.toggle}
+        onComplete={id => void attempts.complete(id)}
+      />
+    );
   } else if (route.name === "admin") {
-    page = <AdminPage
-      data={admin.data}
-      loading={admin.loading}
-      error={admin.error}
-      busy={actionBusy}
-      api={auth.api}
-      resultRange={admin.resultRange}
-      onResultRangeChange={admin.changeResultRange}
-      onUsersPageChange={admin.setUsersPage}
-      onResultsPageChange={admin.setResultsPage}
-      onRetry={() => void admin.load()}
-      onExecute={admin.execute}
-      questions={adminQuestions.questions}
-      questionLoading={adminQuestions.loading}
-      questionError={adminQuestions.error}
-      loadQuestions={adminQuestions.load}
-    />;
+    page = (
+      <AdminPage
+        data={admin.data}
+        loading={admin.loading}
+        error={admin.error}
+        busy={actionBusy}
+        api={auth.api}
+        resultRange={admin.resultRange}
+        onResultRangeChange={admin.changeResultRange}
+        onUsersPageChange={admin.setUsersPage}
+        onResultsPageChange={admin.setResultsPage}
+        onRetry={() => void admin.load()}
+        onExecute={admin.execute}
+        questions={adminQuestions.questions}
+        questionLoading={adminQuestions.loading}
+        questionError={adminQuestions.error}
+        loadQuestions={adminQuestions.load}
+      />
+    );
   } else {
     page = <NotFoundPage />;
   }
 
-  return <Layout route={route} session={auth.session} onLogout={logout} toasts={toasts}>{page}</Layout>;
+  return (
+    <Layout route={route} session={auth.session} onLogout={logout} toasts={toasts}>
+      {page}
+    </Layout>
+  );
 }

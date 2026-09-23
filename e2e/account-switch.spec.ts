@@ -33,7 +33,9 @@ test("an attempt is not shown to the next reader in the same tab", async ({ page
   // catalogue, and the shared helpers, which expect the catalogue, fail. That
   // is the app behaving as designed; it is simply not what these tests are
   // about.
-  await page.evaluate(() => { globalThis.location.hash = "#/quizzes"; });
+  await page.evaluate(() => {
+    globalThis.location.hash = "#/quizzes";
+  });
   await expect(page).toHaveURL(/#\/quizzes$/);
 
   await page.getByRole("button", { name: "Вийти" }).click();
@@ -48,12 +50,15 @@ test("an attempt is not shown to the next reader in the same tab", async ({ page
   // The attempt belongs to the first account, so the API answers 404 and the
   // page has to say so. Before the fix nothing was requested at all and the
   // questions were rendered straight out of the previous reader's state.
-  await page.evaluate(hash => { globalThis.location.hash = hash; }, attemptUrl);
+  await page.evaluate(hash => {
+    globalThis.location.hash = hash;
+  }, attemptUrl);
   await expect(page.getByRole("heading", { name: "Спроба недоступна" })).toBeVisible();
   await expect(page.locator(".question-card")).toHaveCount(0);
 
   const savedAnswers = await page.evaluate(() =>
-    Object.keys(sessionStorage).filter(key => key.startsWith("quizproject.answers.")));
+    Object.keys(sessionStorage).filter(key => key.startsWith("quizproject.answers."))
+  );
   expect(savedAnswers).toEqual([]);
 });
 
@@ -73,7 +78,9 @@ test("signing in over an open session does not inherit its data", async ({ page 
   await register(page, second, "OverPassB1!");
   await expect(page.locator(".account-name")).toHaveText(second);
 
-  await page.evaluate(hash => { globalThis.location.hash = hash; }, attemptUrl);
+  await page.evaluate(hash => {
+    globalThis.location.hash = hash;
+  }, attemptUrl);
   await expect(page.getByRole("heading", { name: "Спроба недоступна" })).toBeVisible();
   await expect(page.locator(".question-card")).toHaveCount(0);
 });
@@ -103,7 +110,9 @@ test("a paused quiz keeps its answers when the same reader signs back in", async
   // catalogue, and the shared helpers, which expect the catalogue, fail. That
   // is the app behaving as designed; it is simply not what these tests are
   // about.
-  await page.evaluate(() => { globalThis.location.hash = "#/quizzes"; });
+  await page.evaluate(() => {
+    globalThis.location.hash = "#/quizzes";
+  });
   await expect(page).toHaveURL(/#\/quizzes$/);
 
   await page.getByRole("button", { name: "Вийти" }).click();
@@ -114,7 +123,9 @@ test("a paused quiz keeps its answers when the same reader signs back in", async
   await expect(page.locator(".account-name")).toHaveCount(0);
   await login(page, reader, password);
 
-  await page.evaluate(hash => { globalThis.location.hash = hash; }, attemptUrl);
+  await page.evaluate(hash => {
+    globalThis.location.hash = hash;
+  }, attemptUrl);
   await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 });

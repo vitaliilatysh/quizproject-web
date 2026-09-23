@@ -19,10 +19,12 @@ export default defineConfig({
     baseURL: webBaseUrl,
     storageState: {
       cookies: [],
-      origins: [{
-        origin: webBaseUrl,
-        localStorage: [{ name: "quizproject.apiUrl", value: apiBaseUrl }]
-      }]
+      origins: [
+        {
+          origin: webBaseUrl,
+          localStorage: [{ name: "quizproject.apiUrl", value: apiBaseUrl }]
+        }
+      ]
     },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",

@@ -19,10 +19,18 @@ function useStubStorage(entries: Record<string, string> = {}): void {
   const store = new Map<string, string>(Object.entries(entries));
   const storage: Storage = {
     getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => { store.set(key, String(value)); },
-    removeItem: (key: string) => { store.delete(key); },
-    clear: () => { store.clear(); },
-    get length() { return store.size; },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value));
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store.clear();
+    },
+    get length() {
+      return store.size;
+    },
     key: (index: number) => [...store.keys()][index] ?? null
   };
   globalThis.sessionStorage = storage;
@@ -32,7 +40,7 @@ test("clearStoredAnswers removes every attempt's answers and nothing else", asyn
   const store = {
     "quizproject.answers.1": "[10,11]",
     "quizproject.answers.42": "[7]",
-    "quizproject.session": "{\"accessToken\":\"x\"}",
+    "quizproject.session": '{"accessToken":"x"}',
     "quizproject.returnTo": "#/quizzes"
   };
   useStubStorage(store);
@@ -42,7 +50,7 @@ test("clearStoredAnswers removes every attempt's answers and nothing else", asyn
 
   assert.deepEqual([...readAnswers(1)], []);
   assert.deepEqual([...readAnswers(42)], []);
-  assert.equal(sessionStorage.getItem("quizproject.session"), "{\"accessToken\":\"x\"}");
+  assert.equal(sessionStorage.getItem("quizproject.session"), '{"accessToken":"x"}');
   assert.equal(sessionStorage.getItem("quizproject.returnTo"), "#/quizzes");
 });
 
@@ -65,14 +73,21 @@ test("a session that is absent, malformed or expired reads as no session", async
 
   useStubStorage({
     "quizproject.session": JSON.stringify({
-      accessToken: "x", tokenType: "Bearer", username: "olena", roles: [],
+      accessToken: "x",
+      tokenType: "Bearer",
+      username: "olena",
+      roles: [],
       expiresAt: Date.now() - 1,
-      refreshToken: "refresh", refreshExpiresAt: Date.now() - 1
+      refreshToken: "refresh",
+      refreshExpiresAt: Date.now() - 1
     })
   });
   assert.equal(readSession(), null, "an expired session is over");
-  assert.equal(sessionStorage.getItem("quizproject.session"), null,
-    "the expired entry was left behind for the next read to trip over");
+  assert.equal(
+    sessionStorage.getItem("quizproject.session"),
+    null,
+    "the expired entry was left behind for the next read to trip over"
+  );
 });
 
 /**
@@ -87,9 +102,13 @@ test("a session that is absent, malformed or expired reads as no session", async
 test("an expired access token keeps the session while the refresh token lives", async () => {
   const { readSession } = await import("../src/session.js");
   const stored = {
-    accessToken: "x", tokenType: "Bearer", username: "olena", roles: [],
+    accessToken: "x",
+    tokenType: "Bearer",
+    username: "olena",
+    roles: [],
     expiresAt: Date.now() - 5 * 60_000,
-    refreshToken: "opaque-refresh-token", refreshExpiresAt: Date.now() + 7 * 86_400_000
+    refreshToken: "opaque-refresh-token",
+    refreshExpiresAt: Date.now() + 7 * 86_400_000
   };
   useStubStorage({ "quizproject.session": JSON.stringify(stored) });
 
@@ -100,10 +119,13 @@ test("an expired access token keeps the session while the refresh token lives", 
 test("a stored session is returned whole", async () => {
   const { readSession } = await import("../src/session.js");
   const stored = {
-    accessToken: "header.payload.signature", tokenType: "Bearer",
+    accessToken: "header.payload.signature",
+    tokenType: "Bearer",
     expiresAt: Date.now() + 60_000,
-    refreshToken: "opaque-refresh-token", refreshExpiresAt: Date.now() + 120_000,
-    username: "olena", roles: ["ROLE_USER"]
+    refreshToken: "opaque-refresh-token",
+    refreshExpiresAt: Date.now() + 120_000,
+    username: "olena",
+    roles: ["ROLE_USER"]
   };
   useStubStorage({ "quizproject.session": JSON.stringify(stored) });
   assert.deepEqual(readSession(), stored);
@@ -115,8 +137,7 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
   const { writeSession } = await import("../src/session.js");
   useStubStorage();
 
-  const encode = (value: unknown): string =>
-    Buffer.from(JSON.stringify(value)).toString("base64url");
+  const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
   const exp = Math.floor(Date.now() / 1000) + 600;
   const jwt = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: ["ROLE_ADMIN"], exp })}.sig`;
 
@@ -148,7 +169,9 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
   const mixed = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: ["ROLE_USER", 7] })}.sig`;
   assert.deepEqual(
     writeSession(tokenResponse(mixed, 60), "olena").roles,
-    ["ROLE_USER"], "a non-string role was carried into the session");
+    ["ROLE_USER"],
+    "a non-string role was carried into the session"
+  );
 });
 
 test("the API address prefers what was saved, then the runtime config, then localhost", async () => {
@@ -156,10 +179,18 @@ test("the API address prefers what was saved, then the runtime config, then loca
   const store = new Map<string, string>();
   globalThis.localStorage = {
     getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => { store.set(key, value); },
-    removeItem: (key: string) => { store.delete(key); },
-    clear: () => { store.clear(); },
-    get length() { return store.size; },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store.clear();
+    },
+    get length() {
+      return store.size;
+    },
     key: (index: number) => [...store.keys()][index] ?? null
   } satisfies Storage;
 
@@ -167,12 +198,18 @@ test("the API address prefers what was saved, then the runtime config, then loca
   assert.equal(readApiUrl(), "http://localhost:8081", "nothing anywhere should still be usable in dev");
 
   globalThis.QUIZ_PROJECT_API_URL = "https://runtime.example.com";
-  assert.equal(readApiUrl(), "https://runtime.example.com",
-    "the address Kubernetes writes into runtime-config.js was ignored");
+  assert.equal(
+    readApiUrl(),
+    "https://runtime.example.com",
+    "the address Kubernetes writes into runtime-config.js was ignored"
+  );
 
   writeApiUrl("https://saved.example.com");
-  assert.equal(readApiUrl(), "https://saved.example.com",
-    "what the reader saved must outrank the deployment's default");
+  assert.equal(
+    readApiUrl(),
+    "https://saved.example.com",
+    "what the reader saved must outrank the deployment's default"
+  );
   delete (globalThis as { QUIZ_PROJECT_API_URL?: string }).QUIZ_PROJECT_API_URL;
 });
 
@@ -236,8 +273,7 @@ test("a login that advertises no lifetime is a session that is over on arrival",
   // what an absent field falls back to. Either way the expiry is now. It is the
   // refresh lifetime that decides, because a dead access token alone is a state
   // the refresh flow recovers from; nothing recovers from a dead refresh token.
-  const written = writeSession(
-    tokenResponse("opaque", 0, "opaque-refresh-token", 0), "olena");
+  const written = writeSession(tokenResponse("opaque", 0, "opaque-refresh-token", 0), "olena");
   assert.ok(written.expiresAt <= Date.now(), "a zero lifetime bought the token time it was not given");
   assert.ok(written.refreshExpiresAt <= Date.now(), "nor did the refresh token get time it was not given");
   assert.equal(written.username, "olena");

@@ -118,8 +118,15 @@ npm run coverage:check
 npm run build
 ```
 
-Команда `npm run check` послідовно запускає перевірку типів, тести з порогом покриття й
-production-збірку. Окремо: `npm run typecheck` — лише `tsc --noEmit`.
+Команда `npm run check` послідовно запускає перевірку типів, перевірку форматування, лінтер,
+тести з порогом покриття й production-збірку — у тому ж порядку, що й CI. Окремо:
+`npm run typecheck` — лише `tsc --noEmit`; `npm run lint` — oxlint; `npm run format` —
+Prettier, який виправляє на місці, тоді як `npm run format:check` лише повідомляє.
+
+Prettier тримає TypeScript і більше нічого: `.prettierignore` пояснює, чому README, workflow-и
+та стилі лишилися поза ним. Доданий він після того, як один рядок JSX у панелі адміністратора
+доріс до 1174 символів; побічний ефект — ворота покриття рядків стали чеснішими, бо
+`questionLoading` більше не ділить рядок із кодом, що виконується завжди.
 
 `npm run build` — це `vite build` плюс `scripts/prepare-hosting.mts`. Vite складає статику в
 `dist/client`, а скрипт перевіряє, що збірка справді та сама (`index.html` містить назву
@@ -243,7 +250,7 @@ job пропускається, бо такі прогони не отримую
 
 | Workflow | Коли | Що робить |
 | --- | --- | --- |
-| `ci.yml` — **CI** | PR, push у `main` | `npm run typecheck`, `npm run coverage:check`, `npm run build` — трьома окремими кроками, щоб список job-ів сам казав, який із них упав |
+| `ci.yml` — **CI** | PR, push у `main` | `npm run typecheck`, `npm run format:check`, `npm run lint`, `npm run coverage:check`, `npm run build` — окремими кроками, щоб список job-ів сам казав, який із них упав |
 | `sonarqube.yml` — **SonarQube analysis** | PR, push у `main` | типи, LCOV-звіт, аналіз SonarCloud і quality gate |
 | `e2e.yml` — **Full-stack E2E** | PR, push у `main` | Playwright проти backend, зібраного з джерел `quizproject@master`, з MySQL 8.4 і Redis 8.2 |
 | `e2e-published-image.yml` — **E2E against published API image** | щодня о 03:00 UTC і вручну | той самий набір проти опублікованого образу backend із перевіркою підпису cosign |

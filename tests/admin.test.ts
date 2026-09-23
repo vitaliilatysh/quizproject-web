@@ -12,14 +12,31 @@ import test, { afterEach, beforeEach } from "node:test";
 import { AdminPage, type AdminPageProps, type ExecuteAdmin } from "../src/components.js";
 import { QuizApi, type FetchLike } from "../src/api.js";
 import type {
-  AdminQuestion, AdminQuiz, AdminResult, AdminUser, Level, PageMeta, Subject
+  AdminQuestion,
+  AdminQuiz,
+  AdminResult,
+  AdminUser,
+  Level,
+  PageMeta,
+  Subject
 } from "../src/types.js";
-import { click, closeBrowser, openBrowser, render, select, settle, submit, type, type Rendered } from "./support/dom.js";
+import {
+  click,
+  closeBrowser,
+  openBrowser,
+  render,
+  select,
+  settle,
+  submit,
+  type,
+  type Rendered
+} from "./support/dom.js";
 
 /** One call the component made on its own, rather than through onExecute. */
 interface DirectCall {
   method: string;
   path: string;
+  body: unknown;
 }
 
 interface StubbedApi {
@@ -39,11 +56,16 @@ function stubbedApi(routes: Record<string, unknown> = {}): StubbedApi {
   const fetchImpl: FetchLike = (url, options) => {
     const path = new URL(url).pathname;
     const method = options.method ?? "GET";
-    calls.push({ method, path });
+    calls.push({
+      method,
+      path,
+      body: typeof options.body === "string" ? JSON.parse(options.body) : null
+    });
     const answer = routes[`${method} ${path}`];
     if (answer instanceof Error) throw answer;
     return new Response(JSON.stringify(answer ?? []), {
-      status: 200, headers: { "content-type": "application/json" }
+      status: 200,
+      headers: { "content-type": "application/json" }
     });
   };
   return {
@@ -62,7 +84,11 @@ interface Executor {
 function executor({ failing = false } = {}): Executor {
   const keys: string[] = [];
   const messages: string[] = [];
-  const execute = (async <T,>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
+  const execute = (async <T>(
+    key: string,
+    operation: () => Promise<T>,
+    successMessage: string
+  ): Promise<T | null> => {
     keys.push(key);
     messages.push(successMessage);
     // A failure is swallowed by App and reported as a toast; the caller sees
@@ -78,30 +104,55 @@ const subject = (over: Partial<Subject> = {}): Subject => ({ id: 1, name: "Пр�
 const level = (over: Partial<Level> = {}): Level => ({ id: 5, name: "medium", ...over });
 
 const adminQuiz = (over: Partial<AdminQuiz> = {}): AdminQuiz => ({
-  id: 7, name: "Java", subject: "Програмування", subjectId: 1, levelId: 5,
-  complexity: "medium", timeToPassMinutes: 30, totalQuestions: 12, ...over
+  id: 7,
+  name: "Java",
+  subject: "Програмування",
+  subjectId: 1,
+  levelId: 5,
+  complexity: "medium",
+  timeToPassMinutes: 30,
+  totalQuestions: 12,
+  ...over
 });
 
 const adminUser = (over: Partial<AdminUser> = {}): AdminUser => ({
-  id: 3, username: "olena", role: "user", status: "active", ...over
+  id: 3,
+  username: "olena",
+  role: "user",
+  status: "active",
+  ...over
 });
 
 const adminResult = (over: Partial<AdminResult> = {}): AdminResult => ({
-  attemptId: 11, username: "olena", quizId: 7, quizName: "Java", score: 80,
-  completedAt: "2026-03-01T09:00:00Z", ...over
+  attemptId: 11,
+  username: "olena",
+  quizId: 7,
+  quizName: "Java",
+  score: 80,
+  completedAt: "2026-03-01T09:00:00Z",
+  ...over
 });
 
 const question = (over: Partial<AdminQuestion> = {}): AdminQuestion => ({
-  id: 21, quizId: 7, text: "Що таке JVM?", answers: [
+  id: 21,
+  quizId: 7,
+  text: "Що таке JVM?",
+  answers: [
     { id: 101, text: "Віртуальна машина", correct: true },
     { id: 102, text: "Компілятор", correct: false },
     { id: 103, text: "Редактор", correct: false },
     { id: 104, text: "Профайлер", correct: false }
-  ], ...over
+  ],
+  ...over
 });
 
-const page = (over: Partial<PageMeta> = {}): PageMeta =>
-  ({ number: 0, size: 20, totalCount: 40, totalPages: 2, ...over });
+const page = (over: Partial<PageMeta> = {}): PageMeta => ({
+  number: 0,
+  size: 20,
+  totalCount: 40,
+  totalPages: 2,
+  ...over
+});
 
 function props(over: Partial<AdminPageProps> = {}): AdminPageProps {
   return {
@@ -141,14 +192,16 @@ function props(over: Partial<AdminPageProps> = {}): AdminPageProps {
  * first time one is added.
  */
 function card(view: Rendered<AdminPageProps>, title: string): HTMLElement {
-  const found = view.findAll("section.admin-card")
+  const found = view
+    .findAll("section.admin-card")
     .find(section => section.querySelector("h2")?.textContent === title);
   if (!found) throw new Error(`No panel section titled "${title}"`);
   return found;
 }
 
-const buttonsIn = (section: HTMLElement, selector: string): HTMLButtonElement[] =>
-  [...section.querySelectorAll<HTMLButtonElement>(selector)];
+const buttonsIn = (section: HTMLElement, selector: string): HTMLButtonElement[] => [
+  ...section.querySelectorAll<HTMLButtonElement>(selector)
+];
 
 function fieldIn(section: HTMLElement, selector: string): HTMLInputElement {
   const found = section.querySelector<HTMLInputElement>(selector);
@@ -172,8 +225,14 @@ let answered: string[] = [];
 beforeEach(() => {
   openBrowser();
   answered = [];
-  window.confirm = (message?: string) => { answered.push(String(message)); return true; };
-  window.prompt = (message?: string) => { answered.push(String(message)); return "Математика"; };
+  window.confirm = (message?: string) => {
+    answered.push(String(message));
+    return true;
+  };
+  window.prompt = (message?: string) => {
+    answered.push(String(message));
+    return "Математика";
+  };
 });
 
 afterEach(() => closeBrowser());
@@ -198,7 +257,13 @@ test("the panel says it is loading before it has anything to show", async () => 
 
 test("a panel that could not load offers the reason and a way to retry", async () => {
   let retried = 0;
-  const view = await mount({ data: null, error: "403 Forbidden", onRetry: () => { retried += 1; } });
+  const view = await mount({
+    data: null,
+    error: "403 Forbidden",
+    onRetry: () => {
+      retried += 1;
+    }
+  });
   assert.match(view.text(), /Панель недоступна/);
   assert.match(view.text(), /403 Forbidden/);
   click(view.find("button"));
@@ -234,7 +299,10 @@ test("the totals count the whole collection, not the page of it that is loaded",
   // Unpaginated, so the loaded rows are the whole collection and counting them
   // is correct rather than a fallback that happens to be close.
   const whole = await mount();
-  assert.deepEqual(whole.findAll(".admin-stats strong").map(node => node.textContent), ["1", "1", "1", "1"]);
+  assert.deepEqual(
+    whole.findAll(".admin-stats strong").map(node => node.textContent),
+    ["1", "1", "1", "1"]
+  );
 });
 
 test("a subject is created, and the field clears only when it worked", async () => {
@@ -299,7 +367,10 @@ test("deleting a subject happens only after it is confirmed", async () => {
   await settle();
   assert.deepEqual(run.keys, [], "a refused confirmation deleted the subject");
 
-  window.confirm = (message?: string) => { answered.push(String(message)); return true; };
+  window.confirm = (message?: string) => {
+    answered.push(String(message));
+    return true;
+  };
   remove();
   await settle();
   assert.deepEqual(run.keys, ["subject-delete"]);
@@ -349,8 +420,11 @@ test("deleting the quiz that is open in the editor closes the editor with it", a
 
   assert.deepEqual(run.keys, ["quiz-delete"]);
   assert.match(String(answered.at(-1)), /разом із запитаннями/);
-  assert.match(view.text(), /Спочатку створіть тест/,
-    "the editor still offers the questions of a quiz that no longer exists");
+  assert.match(
+    view.text(),
+    /Спочатку створіть тест/,
+    "the editor still offers the questions of a quiz that no longer exists"
+  );
 });
 
 test("a delete that failed leaves the editor open on the quiz that is still there", async () => {
@@ -372,18 +446,28 @@ test("a question is written with four answers, one of them marked correct", asyn
   texts.forEach((input, index) => type(input, ` Варіант ${index + 1} `));
 
   const correct = view.findAll<HTMLInputElement>(".admin-answer-grid input[type=checkbox]");
-  assert.ok(correct.every(box => !box.checked), "an answer was pre-marked as correct");
+  assert.ok(
+    correct.every(box => !box.checked),
+    "an answer was pre-marked as correct"
+  );
   click(correct[1]);
-  assert.deepEqual(correct.map(box => box.checked), [false, true, false, false]);
+  assert.deepEqual(
+    correct.map(box => box.checked),
+    [false, true, false, false]
+  );
 
   await submit(view.find("form.admin-question-form"));
   assert.deepEqual(run.keys, ["question-save"]);
   assert.ok(calls.some(call => call.method === "POST" && call.path === "/api/v1/admin/quizzes/7/questions"));
-  assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "",
-    "the editor kept the question it had just added");
+  assert.equal(
+    view.find<HTMLTextAreaElement>("textarea").value,
+    "",
+    "the editor kept the question it had just added"
+  );
   assert.ok(
     view.findAll<HTMLInputElement>(".admin-answer-grid input[type=checkbox]").every(box => !box.checked),
-    "the next question started with the previous one's answer already ticked");
+    "the next question started with the previous one's answer already ticked"
+  );
 });
 
 test("editing a question fills the editor from it and saves over it", async () => {
@@ -395,7 +479,9 @@ test("editing a question fills the editor from it and saves over it", async () =
   assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "Що таке JVM?");
   assert.deepEqual(
     view.findAll<HTMLInputElement>(".admin-answer-grid input[type=checkbox]").map(box => box.checked),
-    [true, false, false, false], "the answer that is correct came back unticked");
+    [true, false, false, false],
+    "the answer that is correct came back unticked"
+  );
 
   await submit(view.find("form.admin-question-form"));
   assert.deepEqual(run.keys, ["question-save"]);
@@ -408,13 +494,77 @@ test("editing a question fills the editor from it and saves over it", async () =
   assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "");
 });
 
+// The three states the question panel can be in, none of which had a test: the
+// gate could not see them while they shared a line with code that runs on every
+// render. The list is the state the other tests here exercise; these are the
+// two either side of it.
+test("the question panel says what it is doing while the list is not there", async () => {
+  const loading = await mount({ questionLoading: true, questions: [question()] });
+  assert.match(loading.text(), /Завантаження запитань/);
+  assert.equal(
+    loading.findAll(".admin-question-list article").length,
+    0,
+    "a list was rendered under the message saying it was still being fetched"
+  );
+
+  const failed = await mount({ questionError: "Сервер недоступний. (код підтримки: abc-123)" });
+  assert.match(failed.find(".alert--error").textContent ?? "", /код підтримки: abc-123/);
+});
+
+// Which stored row each submitted option is an edit of. The API pairs by id
+// when the request carries them and falls back to position when it does not —
+// and until this was sent, it always fell back, so the ids the results rows and
+// an attempt's snapshot are written against depended on the order of a list.
+// Nothing reorders that list in this form today, which is exactly why the
+// omission was invisible.
+test("saving an edited question names the rows it edits, and a new one names none", async () => {
+  const run = executor();
+  const { api, calls } = stubbedApi();
+  const view = await mount({ api, onExecute: run.execute, questions: [question()] });
+
+  click(buttonsIn(card(view, "Запитання"), ".admin-question-list .button-row button")[0]);
+  await submit(view.find("form.admin-question-form"));
+
+  const update = calls.find(call => call.method === "PUT" && call.path === "/api/v1/admin/questions/21");
+  assert.ok(update, "the edit was not sent to the row it was loaded from");
+  assert.deepEqual(
+    (update.body as { answers: { id?: number }[] }).answers.map(answer => answer.id),
+    [101, 102, 103, 104],
+    "the options were sent back with nothing saying which stored row each one is"
+  );
+
+  // A question that has never been saved has nothing to name, and the API
+  // refuses a request that names some rows and not others — so all four have to
+  // be absent here, not merely the ones that are obviously new.
+  type(view.find("textarea"), "Що таке JIT?");
+  view
+    .findAll<HTMLInputElement>(".admin-answer-grid > label > input")
+    .forEach((input, index) => type(input, `Варіант ${index + 1}`));
+  click(view.findAll<HTMLInputElement>(".admin-answer-grid input[type=checkbox]")[0]);
+  await submit(view.find("form.admin-question-form"));
+
+  const created = calls.find(
+    call => call.method === "POST" && call.path === "/api/v1/admin/quizzes/7/questions"
+  );
+  assert.ok(created, "the new question was not sent");
+  assert.deepEqual(
+    (created.body as { answers: Record<string, unknown>[] }).answers.map(answer => "id" in answer),
+    [false, false, false, false],
+    "a question being created named rows that do not exist yet"
+  );
+});
+
 test("deleting a question is confirmed, and the list is read back afterwards", async () => {
   const run = executor();
   const { api } = stubbedApi();
   const reloads: string[] = [];
   const view = await mount({
-    api, onExecute: run.execute, questions: [question()],
-    loadQuestions: async quizId => { reloads.push(quizId); }
+    api,
+    onExecute: run.execute,
+    questions: [question()],
+    loadQuestions: async quizId => {
+      reloads.push(quizId);
+    }
   });
   reloads.length = 0;
 
@@ -436,7 +586,9 @@ test("choosing another quiz asks for its questions and empties the editor", asyn
   const view = await mount({
     api,
     questions: [question()],
-    loadQuestions: async quizId => { asked.push(quizId); },
+    loadQuestions: async quizId => {
+      asked.push(quizId);
+    },
     data: { ...props().data!, quizzes: [adminQuiz(), adminQuiz({ id: 8, name: "Spring" })] }
   });
   asked.length = 0;
@@ -446,8 +598,11 @@ test("choosing another quiz asks for its questions and empties the editor", asyn
   await settle();
 
   assert.deepEqual(asked, ["8"], "the panel kept showing the questions of the quiz left behind");
-  assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "",
-    "a draft written for one quiz was carried over to another");
+  assert.equal(
+    view.find<HTMLTextAreaElement>("textarea").value,
+    "",
+    "a draft written for one quiz was carried over to another"
+  );
 });
 
 test("with no quizzes at all the editor asks for one rather than offering nothing", async () => {
@@ -461,11 +616,17 @@ test("blocking a user is confirmed; letting them back in is not", async () => {
   const run = executor();
   const view = await mount({
     onExecute: run.execute,
-    data: { ...props().data!, users: [adminUser(), adminUser({ id: 4, username: "petro", status: "BLOCKED" })] }
+    data: {
+      ...props().data!,
+      users: [adminUser(), adminUser({ id: 4, username: "petro", status: "BLOCKED" })]
+    }
   });
 
   const buttons = buttonsIn(card(view, "Користувачі"), ".admin-table__row > button");
-  assert.deepEqual(buttons.map(button => button.textContent), ["Заблокувати", "Активувати"]);
+  assert.deepEqual(
+    buttons.map(button => button.textContent),
+    ["Заблокувати", "Активувати"]
+  );
 
   window.confirm = () => false;
   click(buttons[0]);
@@ -478,7 +639,10 @@ test("blocking a user is confirmed; letting them back in is not", async () => {
   assert.deepEqual(run.keys, ["user-status"]);
   assert.match(String(run.messages[0]), /активовано/);
 
-  window.confirm = (message?: string) => { answered.push(String(message)); return true; };
+  window.confirm = (message?: string) => {
+    answered.push(String(message));
+    return true;
+  };
   click(buttons[0]);
   await settle();
   assert.match(String(run.messages[1]), /заблоковано/);
@@ -542,7 +706,8 @@ test("the quiz form reports every field it changed, not only its name", async ()
   const run = executor();
   const { api, calls } = stubbedApi();
   const view = await mount({
-    api, onExecute: run.execute,
+    api,
+    onExecute: run.execute,
     data: { ...props().data!, subjects: [subject(), subject({ id: 2, name: "Математика" })] }
   });
   const form = card(view, "Тести");

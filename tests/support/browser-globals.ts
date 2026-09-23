@@ -23,10 +23,27 @@ import { Window } from "happy-dom";
 // login form reads itself with `new FormData(event.currentTarget)`, so without
 // the window's version every sign-in in these tests throws inside React.
 const COPIED_GLOBALS = [
-  "Node", "Element", "HTMLElement", "HTMLInputElement", "HTMLFormElement",
-  "SVGElement", "Event", "InputEvent", "SubmitEvent", "CustomEvent", "MouseEvent",
-  "KeyboardEvent", "MutationObserver", "DOMParser", "FormData", "Blob", "File",
-  "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "Text"
+  "Node",
+  "Element",
+  "HTMLElement",
+  "HTMLInputElement",
+  "HTMLFormElement",
+  "SVGElement",
+  "Event",
+  "InputEvent",
+  "SubmitEvent",
+  "CustomEvent",
+  "MouseEvent",
+  "KeyboardEvent",
+  "MutationObserver",
+  "DOMParser",
+  "FormData",
+  "Blob",
+  "File",
+  "getComputedStyle",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+  "Text"
 ] as const;
 
 /**

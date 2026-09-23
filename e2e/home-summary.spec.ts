@@ -6,10 +6,12 @@ import { expect, test } from "@playwright/test";
 // everything, and that the numbers on screen still describe the catalogue
 // rather than the teaser.
 test("home fetches only a teaser and reads its totals from the summary", async ({ page }) => {
-  const catalogueRequest = page.waitForResponse(response =>
-    new URL(response.url()).pathname === "/api/v1/quizzes");
-  const summaryRequest = page.waitForResponse(response =>
-    new URL(response.url()).pathname === "/api/v1/quizzes/summary");
+  const catalogueRequest = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/quizzes"
+  );
+  const summaryRequest = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/quizzes/summary"
+  );
 
   await page.goto("/#/");
   await expect(page.getByRole("heading", { name: "Навчайся." })).toBeVisible();

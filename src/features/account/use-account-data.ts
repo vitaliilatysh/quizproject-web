@@ -34,6 +34,7 @@ export function useAccountData(
         if (activeAccount.current !== requestedBy) return;
         setResults(rows);
       } catch (error) {
+        if (activeAccount.current !== requestedBy) return;
         if (!handleAuthError(error, "#/results")) setResultError(friendlyError(error));
       } finally {
         resultsRequest.current = false;
@@ -53,6 +54,7 @@ export function useAccountData(
       if (activeAccount.current !== requestedBy) return;
       setProfile(loaded);
     } catch (error) {
+      if (activeAccount.current !== requestedBy) return;
       if (!handleAuthError(error, "#/profile")) setProfileError(friendlyError(error));
     } finally {
       profileRequest.current = false;
@@ -82,9 +84,16 @@ export function useAccountData(
 
   const invalidateResults = useCallback(() => setResults(null), []);
 
+  // Both errors, not just both collections. The load effects will not ask
+  // again while one is set — `results === null && !resultsLoading &&
+  // !resultError` — so an error left behind by the previous reader is not a
+  // stale message, it is a screen that never loads. use-attempts and
+  // use-admin-questions already clear theirs here; these two did not.
   const reset = useCallback(() => {
     setResults(null);
     setProfile(null);
+    setResultError("");
+    setProfileError("");
   }, []);
 
   return {

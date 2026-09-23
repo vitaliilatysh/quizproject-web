@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction
+} from "react";
 import type { QuizApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { navigate } from "../../app/navigation.js";
@@ -31,7 +40,15 @@ interface AttemptsOptions {
 }
 
 export function useAttempts({
-  api, session, accessReady, route, activeAccount, handleAuthError, setActionBusy, toast, onCompletion
+  api,
+  session,
+  accessReady,
+  route,
+  activeAccount,
+  handleAuthError,
+  setActionBusy,
+  toast,
+  onCompletion
 }: AttemptsOptions) {
   const [attempts, setAttempts] = useState<Record<number, Attempt>>({});
   const [loading, setLoading] = useState<Record<number, boolean>>({});
@@ -46,50 +63,57 @@ export function useAttempts({
     setSelections(current => ({ ...current, [attempt.attemptId]: readAnswers(attempt.attemptId) }));
   }, []);
 
-  const load = useCallback(async (attemptId: number): Promise<void> => {
-    if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || requests.current.has(attemptId)) return;
-    const requestedBy = session.username;
-    requests.current.add(attemptId);
-    setLoading(current => ({ ...current, [attemptId]: true }));
-    setErrors(current => ({ ...current, [attemptId]: "" }));
-    try {
-      const attempt = await api.attempt(attemptId);
-      if (activeAccount.current !== requestedBy) return;
-      setAttempts(current => ({ ...current, [attemptId]: attempt }));
-      // Not guarded against overwriting a selection already in state: there is
-      // no way to arrive here with one. The effect below is the only caller and
-      // it refuses an attempt already loaded, rememberAttempt fills both maps
-      // together, and reset empties both. The guard that used to sit here could
-      // not run, which is how the line gate found it.
-      setSelections(current => ({ ...current, [attemptId]: readAnswers(attemptId) }));
-    } catch (error) {
-      if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
-        setErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));
+  const load = useCallback(
+    async (attemptId: number): Promise<void> => {
+      if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || requests.current.has(attemptId))
+        return;
+      const requestedBy = session.username;
+      requests.current.add(attemptId);
+      setLoading(current => ({ ...current, [attemptId]: true }));
+      setErrors(current => ({ ...current, [attemptId]: "" }));
+      try {
+        const attempt = await api.attempt(attemptId);
+        if (activeAccount.current !== requestedBy) return;
+        setAttempts(current => ({ ...current, [attemptId]: attempt }));
+        // Not guarded against overwriting a selection already in state: there is
+        // no way to arrive here with one. The effect below is the only caller and
+        // it refuses an attempt already loaded, rememberAttempt fills both maps
+        // together, and reset empties both. The guard that used to sit here could
+        // not run, which is how the line gate found it.
+        setSelections(current => ({ ...current, [attemptId]: readAnswers(attemptId) }));
+      } catch (error) {
+        if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
+          setErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));
+        }
+      } finally {
+        requests.current.delete(attemptId);
+        setLoading(current => ({ ...current, [attemptId]: false }));
       }
-    } finally {
-      requests.current.delete(attemptId);
-      setLoading(current => ({ ...current, [attemptId]: false }));
-    }
-  }, [activeAccount, api, handleAuthError, session]);
+    },
+    [activeAccount, api, handleAuthError, session]
+  );
 
-  const start = useCallback(async (quizId: number): Promise<void> => {
-    if (!session) {
-      rememberReturnTo("#/quizzes");
-      rememberPendingQuiz(quizId);
-      navigate("#/login");
-      return;
-    }
-    setActionBusy(`start-${quizId}`);
-    try {
-      const attempt = await api.startAttempt(quizId);
-      rememberAttempt(attempt);
-      navigate(`#/attempt/${attempt.attemptId}`);
-    } catch (error) {
-      if (!handleAuthError(error, "#/quizzes")) toast(friendlyError(error), "error");
-    } finally {
-      setActionBusy("");
-    }
-  }, [api, handleAuthError, rememberAttempt, session, setActionBusy, toast]);
+  const start = useCallback(
+    async (quizId: number): Promise<void> => {
+      if (!session) {
+        rememberReturnTo("#/quizzes");
+        rememberPendingQuiz(quizId);
+        navigate("#/login");
+        return;
+      }
+      setActionBusy(`start-${quizId}`);
+      try {
+        const attempt = await api.startAttempt(quizId);
+        rememberAttempt(attempt);
+        navigate(`#/attempt/${attempt.attemptId}`);
+      } catch (error) {
+        if (!handleAuthError(error, "#/quizzes")) toast(friendlyError(error), "error");
+      } finally {
+        setActionBusy("");
+      }
+    },
+    [api, handleAuthError, rememberAttempt, session, setActionBusy, toast]
+  );
 
   const toggle = useCallback((attemptId: number, answerId: number, checked: boolean): void => {
     setSelections(current => {
@@ -104,39 +128,44 @@ export function useAttempts({
     for (const [attemptId, answers] of Object.entries(selections)) writeAnswers(attemptId, answers);
   }, [selections]);
 
-  const complete = useCallback(async (attemptId: number, { confirm = true } = {}): Promise<void> => {
-    if (completionRequests.current.has(attemptId)) return;
-    const selected = selections[attemptId] || readAnswers(attemptId);
-    if (confirm
-        && !window.confirm(`Надіслати ${selected.size} вибраних відповідей? Завершення не можна скасувати.`)) {
-      return;
-    }
-    completionRequests.current.add(attemptId);
-    setActionBusy(`complete-${attemptId}`);
-    try {
-      const result = await api.completeAttempt(attemptId, [...selected]);
-      setCompletions(current => ({ ...current, [attemptId]: result }));
-      onCompletion();
-      clearAnswers(attemptId);
-      setSelections(current => {
-        const next = { ...current };
-        delete next[attemptId];
-        return next;
-      });
-      toast("Тест завершено. Результат збережено.");
-    } catch (error) {
-      if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
-    } finally {
-      completionRequests.current.delete(attemptId);
-      setActionBusy("");
-    }
-  }, [api, handleAuthError, onCompletion, selections, setActionBusy, toast]);
+  const complete = useCallback(
+    async (attemptId: number, { confirm = true } = {}): Promise<void> => {
+      if (completionRequests.current.has(attemptId)) return;
+      const selected = selections[attemptId] || readAnswers(attemptId);
+      if (
+        confirm &&
+        !window.confirm(`Надіслати ${selected.size} вибраних відповідей? Завершення не можна скасувати.`)
+      ) {
+        return;
+      }
+      completionRequests.current.add(attemptId);
+      setActionBusy(`complete-${attemptId}`);
+      try {
+        const result = await api.completeAttempt(attemptId, [...selected]);
+        setCompletions(current => ({ ...current, [attemptId]: result }));
+        onCompletion();
+        clearAnswers(attemptId);
+        setSelections(current => {
+          const next = { ...current };
+          delete next[attemptId];
+          return next;
+        });
+        toast("Тест завершено. Результат збережено.");
+      } catch (error) {
+        if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
+      } finally {
+        completionRequests.current.delete(attemptId);
+        setActionBusy("");
+      }
+    },
+    [api, handleAuthError, onCompletion, selections, setActionBusy, toast]
+  );
 
   const routedAttemptId = route.name === "attempt" ? Number(route.params[0]) : null;
 
   useEffect(() => {
     if (routedAttemptId === null) return;
-    setErrors(current => current[routedAttemptId] ? { ...current, [routedAttemptId]: "" } : current);
+    setErrors(current => (current[routedAttemptId] ? { ...current, [routedAttemptId]: "" } : current));
   }, [routedAttemptId]);
 
   useEffect(() => {
@@ -147,8 +176,14 @@ export function useAttempts({
       navigate("#/login");
       return;
     }
-    if (accessReady && Number.isInteger(attemptId) && attemptId > 0
-        && !attempts[attemptId] && !loading[attemptId] && !errors[attemptId]) {
+    if (
+      accessReady &&
+      Number.isInteger(attemptId) &&
+      attemptId > 0 &&
+      !attempts[attemptId] &&
+      !loading[attemptId] &&
+      !errors[attemptId]
+    ) {
       void load(attemptId);
     }
   }, [accessReady, attempts, errors, load, loading, route, session]);
@@ -180,5 +215,17 @@ export function useAttempts({
     clearStoredAnswers();
   }, []);
 
-  return { attempts, loading, errors, completions, selection, load, start, toggle, complete, rememberAttempt, reset };
+  return {
+    attempts,
+    loading,
+    errors,
+    completions,
+    selection,
+    load,
+    start,
+    toggle,
+    complete,
+    rememberAttempt,
+    reset
+  };
 }

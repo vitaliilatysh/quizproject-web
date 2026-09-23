@@ -71,8 +71,14 @@ export function useQuizCatalogue(api: QuizApi, routeName: string) {
     setLoading(true);
   }, [appliedSearch, catalogueRoute, filter, page]);
 
+  // The error goes with the quizzes, because the load effect will not run
+  // while it is set: `quizzes === null && !error`. This hook is invalidated
+  // when the API address changes, which is precisely the moment the previous
+  // address's failure stops being true — and leaving it standing meant the
+  // catalogue never reloaded against the address the reader had just fixed.
   const invalidate = useCallback(() => {
     setQuizzes(null);
+    setError("");
   }, []);
 
   return {

@@ -47,8 +47,12 @@ function decodeJwtPayload(token: string): JwtPayload {
   try {
     const segment = token.split(".")[1] ?? "";
     const normalized = segment.replaceAll("-", "+").replaceAll("_", "/");
-    const json = decodeURIComponent(Array.from(atob(normalized), character =>
-      `%${character.codePointAt(0)!.toString(16).padStart(2, "0")}`).join(""));
+    const json = decodeURIComponent(
+      Array.from(
+        atob(normalized),
+        character => `%${character.codePointAt(0)!.toString(16).padStart(2, "0")}`
+      ).join("")
+    );
     return JSON.parse(json) as JwtPayload;
   } catch {
     return {};
@@ -64,11 +68,13 @@ function decodeJwtPayload(token: string): JwtPayload {
 function isSession(value: unknown): value is Session {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<Session>;
-  return typeof candidate.accessToken === "string"
-    && typeof candidate.expiresAt === "number"
-    && typeof candidate.refreshToken === "string"
-    && typeof candidate.refreshExpiresAt === "number"
-    && typeof candidate.username === "string";
+  return (
+    typeof candidate.accessToken === "string" &&
+    typeof candidate.expiresAt === "number" &&
+    typeof candidate.refreshToken === "string" &&
+    typeof candidate.refreshExpiresAt === "number" &&
+    typeof candidate.username === "string"
+  );
 }
 
 export function readSession(): Session | null {
@@ -79,10 +85,12 @@ export function readSession(): Session | null {
     // the refresh token expiring ends it. Rejecting on expiresAt threw away a
     // credential still good for a week and sent the reader back to the login
     // form on any reload after fifteen idle minutes.
-    if (!isSession(value)
-      || !value.accessToken
-      || !value.refreshToken
-      || value.refreshExpiresAt <= Date.now()) {
+    if (
+      !isSession(value) ||
+      !value.accessToken ||
+      !value.refreshToken ||
+      value.refreshExpiresAt <= Date.now()
+    ) {
       clearSession();
       return null;
     }
@@ -116,9 +124,7 @@ export function clearSession(): void {
 }
 
 export function readApiUrl(): string {
-  return localStorage.getItem(API_URL_KEY)
-    || globalThis.QUIZ_PROJECT_API_URL
-    || "http://localhost:8081";
+  return localStorage.getItem(API_URL_KEY) || globalThis.QUIZ_PROJECT_API_URL || "http://localhost:8081";
 }
 
 export function writeApiUrl(value: string): void {
@@ -148,7 +154,9 @@ export function consumePendingQuiz(): number | null {
 export function readAnswers(attemptId: number | string): Set<number> {
   try {
     const values: unknown = JSON.parse(sessionStorage.getItem(`${ANSWERS_PREFIX}${attemptId}`) || "[]");
-    return new Set(Array.isArray(values) ? values.filter(value => Number.isInteger(value)) as number[] : []);
+    return new Set(
+      Array.isArray(values) ? (values.filter(value => Number.isInteger(value)) as number[]) : []
+    );
   } catch {
     return new Set();
   }

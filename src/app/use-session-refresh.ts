@@ -18,8 +18,10 @@ export function useSessionRefresh(
     if (!session) return undefined;
     let cancelled = false;
     const remaining = session.expiresAt - Date.now();
-    let timer = window.setTimeout(attemptRefresh,
-      Math.max(0, remaining - Math.min(TOKEN_REFRESH_MARGIN_MS, remaining / 2)));
+    let timer = window.setTimeout(
+      attemptRefresh,
+      Math.max(0, remaining - Math.min(TOKEN_REFRESH_MARGIN_MS, remaining / 2))
+    );
 
     async function attemptRefresh(): Promise<void> {
       try {
@@ -42,4 +44,3 @@ export function useSessionRefresh(
     };
   }, [api, session, setSession]);
 }
-

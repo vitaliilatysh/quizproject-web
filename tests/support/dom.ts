@@ -123,8 +123,9 @@ export function render<P extends object>(component: ComponentType<P>, props: P =
     },
     query: <E extends Element = HTMLElement>(selector: string): E | null =>
       container.querySelector<E>(selector),
-    findAll: <E extends Element = HTMLElement>(selector: string): E[] =>
-      [...container.querySelectorAll<E>(selector)],
+    findAll: <E extends Element = HTMLElement>(selector: string): E[] => [
+      ...container.querySelectorAll<E>(selector)
+    ],
     at: <E extends Element = HTMLElement>(selector: string, index: number): E => {
       const found = container.querySelectorAll<E>(selector)[index];
       if (!found) throw new Error(`${selector} has no match at index ${index}`);
@@ -204,7 +205,9 @@ export function select(element: Element | null | undefined, value: string): void
  */
 export async function settle(times = 3): Promise<void> {
   for (let index = 0; index < times; index += 1) {
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
   }
 }
 

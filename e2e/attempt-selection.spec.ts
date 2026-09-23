@@ -28,18 +28,20 @@ test("a chosen answer survives a silent token refresh", async ({ page }, testInf
   await expect(firstAnswer).toBeChecked();
 
   // Wait for a refresh to land, which is what re-renders the whole App.
-  const refreshed = await page.waitForResponse(response =>
-    new URL(response.url()).pathname === "/api/v1/auth/refresh", { timeout: 30_000 });
+  const refreshed = await page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/auth/refresh",
+    { timeout: 30_000 }
+  );
   expect(refreshed.status()).toBe(200);
 
   await expect(firstAnswer).toBeChecked();
 
   // Persistence now mirrors committed state from an effect instead of running
   // inside the state updater, so the choice must also have reached storage.
-  const stored = await page.evaluate(() => {
+  const stored = (await page.evaluate(() => {
     const key = Object.keys(sessionStorage).find(name => name.startsWith("quizproject.answers."));
     return key ? JSON.parse(sessionStorage.getItem(key) ?? "null") : null;
-  }) as number[] | null;
+  })) as number[] | null;
   expect(Array.isArray(stored)).toBe(true);
   expect(stored?.length).toBe(1);
 });

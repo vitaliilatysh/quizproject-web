@@ -18,7 +18,11 @@ afterEach(() => closeBrowser());
 const OLENA = { username: "olena" } as Session;
 
 const question = (over: Partial<AdminQuestion> = {}): AdminQuestion => ({
-  id: 21, quizId: 7, text: "Що таке JVM?", answers: [], ...over
+  id: 21,
+  quizId: 7,
+  text: "Що таке JVM?",
+  answers: [],
+  ...over
 });
 
 type Hook = ReturnType<typeof useAdminQuestions>;
@@ -31,11 +35,14 @@ type Hook = ReturnType<typeof useAdminQuestions>;
  * reassigned on every render, so reading it after `settle()` reads the state
  * React has actually committed.
  */
-function mountHook(api: Partial<QuizApi>, options: {
-  session?: Session | null;
-  account?: string | null;
-  onAuthError?: (error: unknown, returnTo: string) => boolean;
-} = {}): () => Hook {
+function mountHook(
+  api: Partial<QuizApi>,
+  options: {
+    session?: Session | null;
+    account?: string | null;
+    onAuthError?: (error: unknown, returnTo: string) => boolean;
+  } = {}
+): () => Hook {
   let latest: Hook;
   const { session = OLENA, account = "olena", onAuthError = () => false } = options;
   function Probe() {
@@ -54,17 +61,31 @@ function mountHook(api: Partial<QuizApi>, options: {
 
 test("a loaded list replaces what was there", async () => {
   const hook = mountHook({ adminQuestions: async () => [question()] });
-  await act(async () => { await hook().load("7"); });
-  assert.deepEqual(hook().questions.map(q => q.text), ["Що таке JVM?"]);
+  await act(async () => {
+    await hook().load("7");
+  });
+  assert.deepEqual(
+    hook().questions.map(q => q.text),
+    ["Що таке JVM?"]
+  );
   assert.equal(hook().loading, false);
   assert.equal(hook().error, "");
 });
 
 test("selecting nothing clears the list without asking the API", async () => {
   let calls = 0;
-  const hook = mountHook({ adminQuestions: async () => { calls += 1; return [question()]; } });
-  await act(async () => { await hook().load("7"); });
-  await act(async () => { await hook().load(""); });
+  const hook = mountHook({
+    adminQuestions: async () => {
+      calls += 1;
+      return [question()];
+    }
+  });
+  await act(async () => {
+    await hook().load("7");
+  });
+  await act(async () => {
+    await hook().load("");
+  });
   assert.deepEqual(hook().questions, []);
   assert.equal(calls, 1, "an empty selection was sent to the server as a request");
 });
@@ -74,10 +95,21 @@ test("selecting nothing clears the list without asking the API", async () => {
 test("a 401 is handed to handleAuthError and never shown as an error message", async () => {
   const seen: string[] = [];
   const hook = mountHook(
-    { adminQuestions: async () => { throw new ApiError("Unauthorized", { status: 401, path: "/x" }); } },
-    { onAuthError: (_error, returnTo) => { seen.push(returnTo); return true; } }
+    {
+      adminQuestions: async () => {
+        throw new ApiError("Unauthorized", { status: 401, path: "/x" });
+      }
+    },
+    {
+      onAuthError: (_error, returnTo) => {
+        seen.push(returnTo);
+        return true;
+      }
+    }
   );
-  await act(async () => { await hook().load("7"); });
+  await act(async () => {
+    await hook().load("7");
+  });
   assert.deepEqual(seen, ["#/admin"], "a 401 loading questions left the session alive");
   assert.equal(hook().error, "", "the panel showed an error for a failure that ends the session");
 });
@@ -88,7 +120,9 @@ test("a failure carries the correlation id support will ask for", async () => {
       throw new ApiError("Сервер недоступний.", { status: 500, path: "/x", correlationId: "abc-123" });
     }
   });
-  await act(async () => { await hook().load("7"); });
+  await act(async () => {
+    await hook().load("7");
+  });
   assert.equal(hook().error, "Сервер недоступний. (код підтримки: abc-123)");
   assert.equal(hook().loading, false, "the spinner outlived the request that failed");
 });
@@ -97,7 +131,9 @@ test("a failure carries the correlation id support will ask for", async () => {
 // the panel used to print String(reason) and hope for the best.
 test("a rejection that is not an error is still worded for the reader", async () => {
   const hook = mountHook({ adminQuestions: () => Promise.reject("сервер закрив з’єднання") });
-  await act(async () => { await hook().load("7"); });
+  await act(async () => {
+    await hook().load("7");
+  });
   assert.equal(hook().error, "Сталася неочікувана помилка. Спробуйте ще раз.");
 });
 
@@ -113,8 +149,14 @@ test("a slow answer for a quiz left behind does not overwrite a newer one", asyn
 
   let slow!: Promise<void>;
   let fast!: Promise<void>;
-  await act(async () => { slow = hook().load("7"); await settle(); });
-  await act(async () => { fast = hook().load("8"); await settle(); });
+  await act(async () => {
+    slow = hook().load("7");
+    await settle();
+  });
+  await act(async () => {
+    fast = hook().load("8");
+    await settle();
+  });
 
   await act(async () => {
     pending.get("8")!([question({ id: 31, text: "Що таке DI?" })]);
@@ -123,25 +165,30 @@ test("a slow answer for a quiz left behind does not overwrite a newer one", asyn
     await slow;
   });
 
-  assert.deepEqual(hook().questions.map(q => q.text), ["Що таке DI?"],
-    "the answer for the quiz the reader navigated away from won");
+  assert.deepEqual(
+    hook().questions.map(q => q.text),
+    ["Що таке DI?"],
+    "the answer for the quiz the reader navigated away from won"
+  );
   assert.equal(hook().loading, false);
 });
 
 test("an answer that arrives after a different reader signed in is dropped", async () => {
-  const hook = mountHook(
-    { adminQuestions: async () => [question()] },
-    { account: "petro" }
-  );
-  await act(async () => { await hook().load("7"); });
-  assert.deepEqual(hook().questions, [],
-    "one administrator was shown the questions another had asked for");
+  const hook = mountHook({ adminQuestions: async () => [question()] }, { account: "petro" });
+  await act(async () => {
+    await hook().load("7");
+  });
+  assert.deepEqual(hook().questions, [], "one administrator was shown the questions another had asked for");
 });
 
 test("reset empties the list and forgets what was asked for", async () => {
   const hook = mountHook({ adminQuestions: async () => [question()] });
-  await act(async () => { await hook().load("7"); });
-  await act(async () => { hook().reset(); });
+  await act(async () => {
+    await hook().load("7");
+  });
+  await act(async () => {
+    hook().reset();
+  });
   assert.deepEqual(hook().questions, []);
   assert.equal(hook().error, "");
   assert.equal(hook().loading, false);
@@ -149,6 +196,11 @@ test("reset empties the list and forgets what was asked for", async () => {
 
 test("a signed-out reader is still a reader the answer is checked against", async () => {
   const hook = mountHook({ adminQuestions: async () => [question()] }, { session: null, account: null });
-  await act(async () => { await hook().load("7"); });
-  assert.deepEqual(hook().questions.map(q => q.id), [21]);
+  await act(async () => {
+    await hook().load("7");
+  });
+  assert.deepEqual(
+    hook().questions.map(q => q.id),
+    [21]
+  );
 });
