@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
 import {
-  AttemptPage, HomePage, Layout, LoginPage, NotFoundPage, ProfilePage,
-  QuizCollection, QuizzesPage, ResultsPage, SettingsPage, SignupPage,
-  type AttemptPageProps, type HomePageProps, type LayoutProps,
-  type ProfilePageProps, type QuizCollectionProps, type QuizzesPageProps
+  AttemptPage,
+  HomePage,
+  Layout,
+  LoginPage,
+  NotFoundPage,
+  ProfilePage,
+  QuizCollection,
+  QuizzesPage,
+  ResultsPage,
+  SettingsPage,
+  SignupPage,
+  type AttemptPageProps,
+  type HomePageProps,
+  type LayoutProps,
+  type ProfilePageProps,
+  type QuizCollectionProps,
+  type QuizzesPageProps
 } from "../src/components.js";
 import { resetServerClock } from "../src/clock.js";
 import type { Session } from "../src/session.js";
@@ -17,34 +30,62 @@ import { click, closeBrowser, openBrowser, render, submit as submitForm, type } 
 // from the one the app actually holds, and the point of typing the fixtures is
 // that they stand in for the real thing.
 const sessionFor = (username: string, roles: string[] = []): Session => ({
-  accessToken: "header.payload.signature", tokenType: "Bearer",
+  accessToken: "header.payload.signature",
+  tokenType: "Bearer",
   expiresAt: Date.now() + 900_000,
-  refreshToken: "opaque-refresh-token", refreshExpiresAt: Date.now() + 604_800_000,
-  username, roles
+  refreshToken: "opaque-refresh-token",
+  refreshExpiresAt: Date.now() + 604_800_000,
+  username,
+  roles
 });
 
 beforeEach(() => openBrowser());
-afterEach(() => { closeBrowser(); resetServerClock(); });
+afterEach(() => {
+  closeBrowser();
+  resetServerClock();
+});
 
 const quiz = (over: Partial<Quiz> = {}): Quiz => ({
-  id: 7, name: "Java", subject: "Програмування",
-  complexity: "medium", totalQuestions: 12, timeToPassMinutes: 30, ...over
+  id: 7,
+  name: "Java",
+  subject: "Програмування",
+  complexity: "medium",
+  totalQuestions: 12,
+  timeToPassMinutes: 30,
+  ...over
 });
 
 const profile = (over: Partial<Profile> = {}): Profile => ({
-  username: "olena", firstName: "Олена", lastName: "Ковальчук",
-  role: "user", status: "active",
-  registeredAt: "2026-01-15T10:00:00Z", lastLoginAt: "2026-03-01T09:07:00Z", ...over
+  username: "olena",
+  firstName: "Олена",
+  lastName: "Ковальчук",
+  role: "user",
+  status: "active",
+  registeredAt: "2026-01-15T10:00:00Z",
+  lastLoginAt: "2026-03-01T09:07:00Z",
+  ...over
 });
 
 const profileProps = (over: Partial<ProfilePageProps> = {}): ProfilePageProps => ({
-  profile: profile(), loading: false, error: "", passwordError: "", busy: false,
-  onRetry: () => {}, onPasswordChange: () => {}, ...over
+  profile: profile(),
+  loading: false,
+  error: "",
+  passwordError: "",
+  busy: false,
+  onRetry: () => {},
+  onPasswordChange: () => {},
+  ...over
 });
 
 const collection = (over: Partial<QuizCollectionProps> = {}): QuizCollectionProps => ({
-  quizzes: [quiz()], loading: false, error: "", limit: 0, busy: "",
-  onRetry: () => {}, onStart: () => {}, ...over
+  quizzes: [quiz()],
+  loading: false,
+  error: "",
+  limit: 0,
+  busy: "",
+  onRetry: () => {},
+  onStart: () => {},
+  ...over
 });
 
 // The one that shipped: "advanced" was in the filter's list of levels but in no
@@ -86,7 +127,11 @@ test("an untranslated difficulty is shown, a missing one is named as missing", (
   for (const missing of [null, undefined, ""]) {
     const degraded = { ...quiz(), complexity: missing } as unknown as Quiz;
     const view = render(QuizCollection, collection({ quizzes: [degraded] }));
-    assert.equal(view.find(".pill").textContent, "Не вказано", `${String(missing)} was not treated as missing`);
+    assert.equal(
+      view.find(".pill").textContent,
+      "Не вказано",
+      `${String(missing)} was not treated as missing`
+    );
     view.unmount();
   }
 });
@@ -98,7 +143,15 @@ test("the catalogue distinguishes loading, failure and emptiness", () => {
   loading.unmount();
 
   let retried = 0;
-  const failed = render(QuizCollection, collection({ error: "API не відповідає", onRetry: () => { retried += 1; } }));
+  const failed = render(
+    QuizCollection,
+    collection({
+      error: "API не відповідає",
+      onRetry: () => {
+        retried += 1;
+      }
+    })
+  );
   assert.match(failed.text(), /API не відповідає/);
   click(failed.find(".button--dark"));
   assert.equal(retried, 1, "the retry button does not retry");
@@ -125,10 +178,15 @@ test("the home page teases a limited number of quizzes, the catalogue does not",
 
 test("starting a quiz reports which quiz, and says so while it is working", () => {
   const started: number[] = [];
-  const view = render(QuizCollection, collection({
-    quizzes: [quiz({ id: 4 }), quiz({ id: 9, name: "SQL" })],
-    onStart: (id: number) => { started.push(id); }
-  }));
+  const view = render(
+    QuizCollection,
+    collection({
+      quizzes: [quiz({ id: 4 }), quiz({ id: 9, name: "SQL" })],
+      onStart: (id: number) => {
+        started.push(id);
+      }
+    })
+  );
 
   click(view.at(".quiz-card button", 1));
   assert.deepEqual(started, [9], "the wrong card's id was reported");
@@ -146,9 +204,16 @@ test("the catalogue counts every match, not the page in front of you", () => {
   const view = render(QuizzesPage, {
     quizzes: [quiz(), quiz({ id: 8 })],
     pageMeta: { number: 1, size: 2, totalCount: 47, totalPages: 24 },
-    loading: false, error: "", busy: "", search: "", filter: "all",
-    onSearch: () => {}, onFilter: () => {}, onPageChange: () => {},
-    onRetry: () => {}, onStart: () => {}
+    loading: false,
+    error: "",
+    busy: "",
+    search: "",
+    filter: "all",
+    onSearch: () => {},
+    onFilter: () => {},
+    onPageChange: () => {},
+    onRetry: () => {},
+    onStart: () => {}
   });
 
   assert.match(String(view.find(".catalog-count").textContent), /^47 /);
@@ -158,38 +223,66 @@ test("the catalogue counts every match, not the page in front of you", () => {
 test("paging stops at both ends and reports the page it is asking for", () => {
   const asked: number[] = [];
   const page = (number: number): QuizzesPageProps => ({
-    quizzes: [quiz()], pageMeta: { number, size: 10, totalCount: 30, totalPages: 3 },
-    loading: false, error: "", busy: "", search: "", filter: "all",
-    onSearch: () => {}, onFilter: () => {}, onPageChange: (n: number) => { asked.push(n); },
-    onRetry: () => {}, onStart: () => {}
+    quizzes: [quiz()],
+    pageMeta: { number, size: 10, totalCount: 30, totalPages: 3 },
+    loading: false,
+    error: "",
+    busy: "",
+    search: "",
+    filter: "all",
+    onSearch: () => {},
+    onFilter: () => {},
+    onPageChange: (n: number) => {
+      asked.push(n);
+    },
+    onRetry: () => {},
+    onStart: () => {}
   });
 
   const view = render(QuizzesPage, page(0));
-  assert.equal(view.at<HTMLButtonElement>(".pager button", 0).disabled, true,
-    "there is no page before the first");
+  assert.equal(
+    view.at<HTMLButtonElement>(".pager button", 0).disabled,
+    true,
+    "there is no page before the first"
+  );
   click(view.at(".pager button", 1));
   assert.deepEqual(asked, [1]);
 
   view.rerender(page(2));
-  assert.equal(view.at<HTMLButtonElement>(".pager button", 1).disabled, true,
-    "there is no page after the last");
+  assert.equal(
+    view.at<HTMLButtonElement>(".pager button", 1).disabled,
+    true,
+    "there is no page after the last"
+  );
   click(view.at(".pager button", 0));
   assert.deepEqual(asked, [1, 1]);
 });
 
 test("a single page of results is not worth a pager", () => {
   const view = render(QuizzesPage, {
-    quizzes: [quiz()], pageMeta: { number: 0, size: 10, totalCount: 4, totalPages: 1 },
-    loading: false, error: "", busy: "", search: "", filter: "all",
-    onSearch: () => {}, onFilter: () => {}, onPageChange: () => {},
-    onRetry: () => {}, onStart: () => {}
+    quizzes: [quiz()],
+    pageMeta: { number: 0, size: 10, totalCount: 4, totalPages: 1 },
+    loading: false,
+    error: "",
+    busy: "",
+    search: "",
+    filter: "all",
+    onSearch: () => {},
+    onFilter: () => {},
+    onPageChange: () => {},
+    onRetry: () => {},
+    onStart: () => {}
   });
   assert.equal(view.query(".pager"), null);
 });
 
 test("the header shows administration only to administrators", () => {
   const shell = (session: Session | null, route = { name: "home", params: [] as string[] }): LayoutProps => ({
-    route, session, onLogout: () => {}, toasts: [], children: null
+    route,
+    session,
+    onLogout: () => {},
+    toasts: [],
+    children: null
   });
 
   const anonymous = render(Layout, shell(null));
@@ -200,8 +293,11 @@ test("the header shows administration only to administrators", () => {
   const reader = render(Layout, shell(sessionFor("olena", ["ROLE_USER"])));
   assert.equal(reader.find(".account-name").textContent, "olena");
   assert.equal(reader.find(".avatar").textContent, "O");
-  assert.equal(reader.findAll("a").filter(a => a.textContent === "Адміністрування").length, 0,
-    "a reader was offered the administration screen");
+  assert.equal(
+    reader.findAll("a").filter(a => a.textContent === "Адміністрування").length,
+    0,
+    "a reader was offered the administration screen"
+  );
   reader.unmount();
 
   const admin = render(Layout, shell(sessionFor("root", ["ROLE_USER", "ROLE_ADMIN"])));
@@ -210,8 +306,11 @@ test("the header shows administration only to administrators", () => {
 
 test("an attempt keeps the catalogue tab lit, since that is where it came from", () => {
   const view = render(Layout, {
-    route: { name: "attempt", params: ["12"] }, session: sessionFor("olena"),
-    onLogout: () => {}, toasts: [], children: null
+    route: { name: "attempt", params: ["12"] },
+    session: sessionFor("olena"),
+    onLogout: () => {},
+    toasts: [],
+    children: null
   });
   const active = view.findAll(".main-nav a").filter(a => a.className.includes("is-active"));
   assert.equal(active.length, 1);
@@ -221,15 +320,23 @@ test("an attempt keeps the catalogue tab lit, since that is where it came from",
 test("signing out is offered only to someone signed in, and reports the press", () => {
   let signedOut = 0;
   const view = render<LayoutProps>(Layout, {
-    route: { name: "home", params: [] }, session: sessionFor("olena"),
-    onLogout: () => { signedOut += 1; }, toasts: [], children: null
+    route: { name: "home", params: [] },
+    session: sessionFor("olena"),
+    onLogout: () => {
+      signedOut += 1;
+    },
+    toasts: [],
+    children: null
   });
   click(view.findAll("button").find(button => button.textContent === "Вийти"));
   assert.equal(signedOut, 1);
 
   view.rerender({
-    route: { name: "home", params: [] }, session: null,
-    onLogout: () => {}, toasts: [], children: null
+    route: { name: "home", params: [] },
+    session: null,
+    onLogout: () => {},
+    toasts: [],
+    children: null
   });
   assert.equal(view.findAll("button").filter(b => b.textContent === "Вийти").length, 0);
 });
@@ -241,12 +348,13 @@ test("results are averaged over every attempt, and the best is the best", () => 
       { attemptId: 2, quizId: 3, quizName: "Java", score: 40, completedAt: "2026-03-02T10:00:00Z" },
       { attemptId: 3, quizId: 5, quizName: "SQL", score: 71, completedAt: "2026-03-03T10:00:00Z" }
     ],
-    loading: false, error: "", onRetry: () => {}
+    loading: false,
+    error: "",
+    onRetry: () => {}
   });
 
   assert.equal(view.at(".result-summary strong", 0).textContent, "3");
-  assert.equal(view.at(".result-summary strong", 1).textContent, "67%",
-    "the mean of 90, 40 and 71 is 67");
+  assert.equal(view.at(".result-summary strong", 1).textContent, "67%", "the mean of 90, 40 and 71 is 67");
   assert.equal(view.at(".result-summary strong", 2).textContent, "90%");
   assert.equal(view.findAll(".result-row").length, 3);
 });
@@ -261,7 +369,9 @@ test("a score is banded, and the bands do not overlap", () => {
   const at = (score: number): string => {
     const view = render(ResultsPage, {
       results: [{ attemptId: 1, quizId: 1, quizName: "Java", score, completedAt: "2026-03-01T10:00:00Z" }],
-      loading: false, error: "", onRetry: () => {}
+      loading: false,
+      error: "",
+      onRetry: () => {}
     });
     const badge = view.find(".score-badge").className;
     view.unmount();
@@ -276,23 +386,43 @@ test("a score is banded, and the bands do not overlap", () => {
 });
 
 const attempt = (over: Partial<Attempt> = {}): Attempt => ({
-  attemptId: 3, quizId: 7, completed: false, score: null,
-  startedAt: new Date().toISOString(), completedAt: null,
+  attemptId: 3,
+  quizId: 7,
+  completed: false,
+  score: null,
+  startedAt: new Date().toISOString(),
+  completedAt: null,
   expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-  questions: [{
-    id: 11, text: "Що таке JVM?",
-    answers: [{ id: 101, text: "Віртуальна машина" }, { id: 102, text: "Компілятор" }]
-  }],
+  questions: [
+    {
+      id: 11,
+      text: "Що таке JVM?",
+      answers: [
+        { id: 101, text: "Віртуальна машина" },
+        { id: 102, text: "Компілятор" }
+      ]
+    }
+  ],
   ...over
 });
 
 const completionOf = (score: number): AttemptCompletion => ({
-  attemptId: 3, quizId: 7, score, completedAt: new Date().toISOString()
+  attemptId: 3,
+  quizId: 7,
+  score,
+  completedAt: new Date().toISOString()
 });
 
 const attemptProps = (over: Partial<AttemptPageProps> = {}): AttemptPageProps => ({
-  attempt: attempt(), loading: false, error: "", selected: new Set<number>(),
-  completion: undefined, busy: false, onToggle: () => {}, onComplete: () => {}, ...over
+  attempt: attempt(),
+  loading: false,
+  error: "",
+  selected: new Set<number>(),
+  completion: undefined,
+  busy: false,
+  onToggle: () => {},
+  onComplete: () => {},
+  ...over
 });
 
 test("an answer is checked when the page is told it is, and not otherwise", () => {
@@ -303,18 +433,23 @@ test("an answer is checked when the page is told it is, and not otherwise", () =
 
 test("ticking an answer reports the attempt, the answer and the direction", () => {
   const toggles: Array<[number, number, boolean]> = [];
-  const view = render(AttemptPage, attemptProps({
-    onToggle: (attemptId, answerId, checked) => toggles.push([attemptId, answerId, checked])
-  }));
+  const view = render(
+    AttemptPage,
+    attemptProps({
+      onToggle: (attemptId, answerId, checked) => toggles.push([attemptId, answerId, checked])
+    })
+  );
 
   click(view.findAll("input[type=checkbox]")[0]);
   assert.deepEqual(toggles, [[3, 101, true]]);
 
   // Unticking has to report false, or a second press would look like a first.
-  view.rerender(attemptProps({
-    selected: new Set([101]),
-    onToggle: (attemptId, answerId, checked) => toggles.push([attemptId, answerId, checked])
-  }));
+  view.rerender(
+    attemptProps({
+      selected: new Set([101]),
+      onToggle: (attemptId, answerId, checked) => toggles.push([attemptId, answerId, checked])
+    })
+  );
   click(view.findAll("input[type=checkbox]")[0]);
   assert.deepEqual(toggles[1], [3, 101, false]);
 });
@@ -322,8 +457,11 @@ test("ticking an answer reports the attempt, the answer and the direction", () =
 test("a finished attempt shows its score instead of its questions", () => {
   const view = render(AttemptPage, attemptProps({ completion: completionOf(83) }));
   assert.equal(view.find(".completion__score strong").textContent, "83");
-  assert.equal(view.findAll("input[type=checkbox]").length, 0,
-    "a completed attempt still offered its answer boxes");
+  assert.equal(
+    view.findAll("input[type=checkbox]").length,
+    0,
+    "a completed attempt still offered its answer boxes"
+  );
 });
 
 test("completion feedback changes at the 60 and 80 percent boundaries", () => {
@@ -341,13 +479,24 @@ test("completion feedback changes at the 60 and 80 percent boundaries", () => {
 });
 
 test("an attempt the API already marked complete needs no completion payload", () => {
-  const view = render(AttemptPage, attemptProps({ attempt: attempt({ completed: true, score: 55 }), completion: undefined }));
+  const view = render(
+    AttemptPage,
+    attemptProps({ attempt: attempt({ completed: true, score: 55 }), completion: undefined })
+  );
   assert.equal(view.find(".completion__score strong").textContent, "55");
 });
 
 test("submitting is announced and blocked while it is in flight", () => {
   const completed: number[] = [];
-  const view = render(AttemptPage, attemptProps({ busy: true, onComplete: (id: number) => { completed.push(id); } }));
+  const view = render(
+    AttemptPage,
+    attemptProps({
+      busy: true,
+      onComplete: (id: number) => {
+        completed.push(id);
+      }
+    })
+  );
   const submit = view.find<HTMLButtonElement>(".attempt-submit button");
   assert.match(submit.textContent, /Перевіряємо/);
   assert.equal(submit.disabled, true, "the attempt could be submitted twice");
@@ -362,8 +511,14 @@ test("an unreachable attempt offers a way out rather than a blank page", () => {
 
 test("the home page sends a stranger to sign in and a reader to their results", () => {
   const props = (session: Session | null): HomePageProps => ({
-    session, quizzes: [quiz()], summary: { totalQuizzes: 12, totalSubjects: 4 },
-    loading: false, error: "", busy: "", onRetry: () => {}, onStart: () => {}
+    session,
+    quizzes: [quiz()],
+    summary: { totalQuizzes: 12, totalSubjects: 4 },
+    loading: false,
+    error: "",
+    busy: "",
+    onRetry: () => {},
+    onStart: () => {}
   });
 
   const stranger = render(HomePage, props(null));
@@ -386,7 +541,11 @@ test("the home page's totals come from the catalogue, not from what it teased", 
     session: null,
     quizzes: [quiz({ id: 1 }), quiz({ id: 2 }), quiz({ id: 3 })],
     summary: { totalQuizzes: 137, totalSubjects: 9 },
-    loading: false, error: "", busy: "", onRetry: () => {}, onStart: () => {}
+    loading: false,
+    error: "",
+    busy: "",
+    onRetry: () => {},
+    onStart: () => {}
   });
 
   assert.equal(view.at(".hero__stats strong", 0).textContent, "137");
@@ -395,11 +554,20 @@ test("the home page's totals come from the catalogue, not from what it teased", 
 
 test("totals that have not arrived are left blank rather than shown as zero", () => {
   const view = render(HomePage, {
-    session: null, quizzes: null, summary: null,
-    loading: true, error: "", busy: "", onRetry: () => {}, onStart: () => {}
+    session: null,
+    quizzes: null,
+    summary: null,
+    loading: true,
+    error: "",
+    busy: "",
+    onRetry: () => {},
+    onStart: () => {}
   });
-  assert.equal(view.at(".hero__stats strong", 0).textContent, "—",
-    "an unknown catalogue size was reported as a number");
+  assert.equal(
+    view.at(".hero__stats strong", 0).textContent,
+    "—",
+    "an unknown catalogue size was reported as a number"
+  );
   assert.equal(view.at(".hero__stats strong", 1).textContent, "—");
 });
 
@@ -409,12 +577,19 @@ test("totals that have not arrived are left blank rather than shown as zero", ()
 
 test("the registration form asks for everything the API requires, and no more", async () => {
   let submitted = 0;
-  const view = render(SignupPage, { error: "", busy: false, onSubmit: () => { submitted += 1; } });
+  const view = render(SignupPage, {
+    error: "",
+    busy: false,
+    onSubmit: () => {
+      submitted += 1;
+    }
+  });
 
   // The constraints are the backend's, transcribed: a username of 5–15, a
   // password of at least 8, names of at most 20. A field that asks for less
   // than the API accepts turns a valid account into a rejected one at submit.
-  const fields = view.findAll<HTMLInputElement>("input")
+  const fields = view
+    .findAll<HTMLInputElement>("input")
     .map(input => [input.name, input.minLength, input.maxLength, input.required] as const);
   assert.deepEqual(fields, [
     ["firstName", 1, 20, true],
@@ -430,8 +605,11 @@ test("the registration form asks for everything the API requires, and no more", 
 
   await submitForm(view.find("form"));
   assert.equal(submitted, 1);
-  assert.equal(view.find<HTMLAnchorElement>(".form-footnote a").getAttribute("href"), "#/login",
-    "someone who already has an account had nowhere to go");
+  assert.equal(
+    view.find<HTMLAnchorElement>(".form-footnote a").getAttribute("href"),
+    "#/login",
+    "someone who already has an account had nowhere to go"
+  );
 });
 
 test("a registration in flight says so and cannot be sent twice", () => {
@@ -448,17 +626,26 @@ test("a registration in flight says so and cannot be sent twice", () => {
 });
 
 test("the profile names the reader's role and status in their own language", () => {
-  const admin = render(ProfilePage, profileProps({
-    profile: profile({ role: "admin", status: "active" })
-  }));
+  const admin = render(
+    ProfilePage,
+    profileProps({
+      profile: profile({ role: "admin", status: "active" })
+    })
+  );
   assert.match(admin.text(), /Адміністратор/);
   assert.match(admin.text(), /Активний/);
-  assert.match(admin.find(".profile-identity span").textContent ?? "", /^O$/,
-    "the avatar initial is not the first letter of the username");
+  assert.match(
+    admin.find(".profile-identity span").textContent ?? "",
+    /^O$/,
+    "the avatar initial is not the first letter of the username"
+  );
 
-  const student = render(ProfilePage, profileProps({
-    profile: profile({ role: "user", status: "blocked" })
-  }));
+  const student = render(
+    ProfilePage,
+    profileProps({
+      profile: profile({ role: "user", status: "blocked" })
+    })
+  );
   assert.match(student.text(), /Студент/);
   // A status the interface has no word for is shown as the backend spells it,
   // rather than silently reported as active.
@@ -475,9 +662,16 @@ test("the profile waits, fails and recovers without ever showing a blank card", 
   assert.ok(loading.query(".result-skeleton"));
 
   let retried = 0;
-  const failed = render(ProfilePage, profileProps({
-    profile: null, error: "401 Unauthorized", onRetry: () => { retried += 1; }
-  }));
+  const failed = render(
+    ProfilePage,
+    profileProps({
+      profile: null,
+      error: "401 Unauthorized",
+      onRetry: () => {
+        retried += 1;
+      }
+    })
+  );
   assert.match(failed.text(), /401 Unauthorized/);
   click(failed.find("button"));
   assert.equal(retried, 1);
@@ -490,11 +684,19 @@ test("the profile waits, fails and recovers without ever showing a blank card", 
 
 test("changing a password is a form of three, and its failure is shown above it", async () => {
   let submitted = 0;
-  const view = render(ProfilePage, profileProps({ onPasswordChange: () => { submitted += 1; } }));
+  const view = render(
+    ProfilePage,
+    profileProps({
+      onPasswordChange: () => {
+        submitted += 1;
+      }
+    })
+  );
 
   assert.deepEqual(
     view.findAll<HTMLInputElement>(".profile-card--password input").map(input => input.name),
-    ["currentPassword", "newPassword", "confirmPassword"]);
+    ["currentPassword", "newPassword", "confirmPassword"]
+  );
   await submitForm(view.find(".profile-card--password form"));
   assert.equal(submitted, 1);
 
@@ -502,15 +704,21 @@ test("changing a password is a form of three, and its failure is shown above it"
   assert.equal(failed.find("[role=alert]").textContent, "Поточний пароль неправильний.");
 
   const working = render(ProfilePage, profileProps({ busy: true }));
-  assert.match(working.find<HTMLButtonElement>(".profile-card--password button").textContent ?? "", /Оновлюємо/);
+  assert.match(
+    working.find<HTMLButtonElement>(".profile-card--password button").textContent ?? "",
+    /Оновлюємо/
+  );
 });
 
 test("the settings screen saves the address typed into it, or only tests it", async () => {
   const saved: string[] = [];
   const tested: string[] = [];
   const view = render(SettingsPage, {
-    apiUrl: "http://localhost:8081", connection: "", error: "",
-    onSave: value => saved.push(value), onTest: value => tested.push(value)
+    apiUrl: "http://localhost:8081",
+    connection: "",
+    error: "",
+    onSave: value => saved.push(value),
+    onTest: value => tested.push(value)
   });
 
   const field = view.find<HTMLInputElement>("input[name=apiUrl]");
@@ -529,12 +737,20 @@ test("the settings screen saves the address typed into it, or only tests it", as
 
 test("an address changed elsewhere replaces what the settings field is showing", () => {
   const view = render(SettingsPage, {
-    apiUrl: "http://localhost:8081", connection: "", error: "", onSave: () => {}, onTest: () => {}
+    apiUrl: "http://localhost:8081",
+    connection: "",
+    error: "",
+    onSave: () => {},
+    onTest: () => {}
   });
   type(view.find("input[name=apiUrl]"), "https://typed.example.com");
 
   view.rerender({
-    apiUrl: "https://loaded.example.com", connection: "", error: "", onSave: () => {}, onTest: () => {}
+    apiUrl: "https://loaded.example.com",
+    connection: "",
+    error: "",
+    onSave: () => {},
+    onTest: () => {}
   });
   assert.equal(view.find<HTMLInputElement>("input[name=apiUrl]").value, "https://loaded.example.com");
 });
@@ -548,17 +764,26 @@ test("the connection is reported in words, not only as a colour", () => {
   ];
   for (const [state, text] of states) {
     const view = render(SettingsPage, {
-      apiUrl: "http://localhost:8081", connection: state, error: "", onSave: () => {}, onTest: () => {}
+      apiUrl: "http://localhost:8081",
+      connection: state,
+      error: "",
+      onSave: () => {},
+      onTest: () => {}
     });
     const indicator = view.find(".connection-state");
     assert.equal(indicator.textContent, text);
-    assert.ok(indicator.className.includes(`connection-state--${state}`),
-      `"${state}" was not reflected in the class the stylesheet paints`);
+    assert.ok(
+      indicator.className.includes(`connection-state--${state}`),
+      `"${state}" was not reflected in the class the stylesheet paints`
+    );
   }
 
   const failed = render(SettingsPage, {
-    apiUrl: "http://x.example", connection: "error", error: "Не вдалося з’єднатися.",
-    onSave: () => {}, onTest: () => {}
+    apiUrl: "http://x.example",
+    connection: "error",
+    error: "Не вдалося з’єднатися.",
+    onSave: () => {},
+    onTest: () => {}
   });
   assert.equal(failed.find("[role=alert]").textContent, "Не вдалося з’єднатися.");
 });
@@ -583,17 +808,28 @@ test("the catalogue reports what was searched for and which difficulty was picke
   const searches: string[] = [];
   const filters: string[] = [];
   const view = render(QuizzesPage, {
-    quizzes: [quiz()], pageMeta: null, loading: false, error: "", busy: "",
-    search: "", filter: "all",
-    onSearch: value => searches.push(value), onFilter: value => filters.push(value),
-    onPageChange: () => {}, onRetry: () => {}, onStart: () => {}
+    quizzes: [quiz()],
+    pageMeta: null,
+    loading: false,
+    error: "",
+    busy: "",
+    search: "",
+    filter: "all",
+    onSearch: value => searches.push(value),
+    onFilter: value => filters.push(value),
+    onPageChange: () => {},
+    onRetry: () => {},
+    onStart: () => {}
   });
 
   type(view.find("input[type=search]"), "java");
   assert.deepEqual(searches, ["java"]);
 
   const buttons = view.findAll<HTMLButtonElement>(".filter-button");
-  assert.deepEqual(buttons.map(button => button.textContent), ["Усі", "Початкові", "Середні", "Просунуті"]);
+  assert.deepEqual(
+    buttons.map(button => button.textContent),
+    ["Усі", "Початкові", "Середні", "Просунуті"]
+  );
   assert.ok(buttons[0]?.className.includes("is-active"), "the filter in force is not the one lit");
   buttons.forEach(button => click(button));
   assert.deepEqual(filters, ["all", "easy", "medium", "hard"]);
@@ -602,8 +838,12 @@ test("the catalogue reports what was searched for and which difficulty was picke
 test("results that could not be loaded offer the reason and a retry", () => {
   let retried = 0;
   const view = render(ResultsPage, {
-    results: null, loading: false, error: "500 Internal Server Error",
-    onRetry: () => { retried += 1; }
+    results: null,
+    loading: false,
+    error: "500 Internal Server Error",
+    onRetry: () => {
+      retried += 1;
+    }
   });
   assert.match(view.text(), /500 Internal Server Error/);
   click(view.find("button"));
@@ -613,7 +853,9 @@ test("results that could not be loaded offer the reason and a retry", () => {
 test("a result whose quiz has no name still gets an initial rather than a blank", () => {
   const view = render(ResultsPage, {
     results: [{ attemptId: 5, quizId: 7, quizName: "", score: 70, completedAt: "2026-03-01T09:00:00Z" }],
-    loading: false, error: "", onRetry: () => {}
+    loading: false,
+    error: "",
+    onRetry: () => {}
   });
   assert.equal(view.find(".result-index").textContent, "Q");
 });
@@ -622,9 +864,13 @@ test("a completed attempt with no score anywhere reads as zero, not as blank", (
   // Both the completion payload and the attempt can be missing a score: the
   // API returns the attempt without one until it has been marked complete, and
   // a reader who reloads the page has no completion payload at all.
-  const view = render(AttemptPage, attemptProps({
-    attempt: attempt({ completed: true, score: null }), completion: undefined
-  }));
+  const view = render(
+    AttemptPage,
+    attemptProps({
+      attempt: attempt({ completed: true, score: null }),
+      completion: undefined
+    })
+  );
   assert.equal(view.find(".completion__score strong").textContent, "0");
   assert.match(view.text(), /ще раз/, "a zero was congratulated rather than encouraged");
 });
@@ -650,8 +896,11 @@ test("an attempt that arrived without questions renders as empty, not as a crash
 test("the question map jumps to the question it names", () => {
   const view = render(AttemptPage, attemptProps());
   const jumps = view.findAll<HTMLButtonElement>(".question-map button");
-  assert.equal(jumps.length, view.findAll(".question-card").length,
-    "the map and the questions disagree about how many there are");
+  assert.equal(
+    jumps.length,
+    view.findAll(".question-card").length,
+    "the map and the questions disagree about how many there are"
+  );
 
   // The card is the scroll target, so it has to be findable by the id the map
   // navigates to — a mismatch here is a button that does nothing.

@@ -47,8 +47,7 @@ interface V8Script {
   functions: { ranges: V8Range[] }[];
 }
 
-const BASE64 =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /**
  * Decodes one line of a source map's `mappings` field.
@@ -57,7 +56,10 @@ const BASE64 =
  * fields are positional and relative, so every segment has to be walked in full
  * to keep the running totals honest.
  */
-function decodeLine(line: string, state: { originalLine: number }): { generatedColumn: number; originalLine: number }[] {
+function decodeLine(
+  line: string,
+  state: { originalLine: number }
+): { generatedColumn: number; originalLine: number }[] {
   const segments: { generatedColumn: number; originalLine: number }[] = [];
   let generatedColumn = 0;
   for (const segment of line.split(",")) {
@@ -175,7 +177,12 @@ for (const url of [...rangesByUrl.keys()].sort()) {
   const source = await readFile(fileURLToPath(url), "utf8");
   // sourcemap: true rather than "inline" only moves where the map is returned.
   // The generated code ahead of it — every offset V8 reported — is identical.
-  const { code, map } = transformSync(source, { ...TRANSFORM_OPTIONS, loader, sourcemap: true, sourcefile: url });
+  const { code, map } = transformSync(source, {
+    ...TRANSFORM_OPTIONS,
+    loader,
+    sourcemap: true,
+    sourcefile: url
+  });
   const offsets = lineOffsets(code);
   const positionsByLine = decodeMappings((JSON.parse(map) as { mappings: string }).mappings);
 

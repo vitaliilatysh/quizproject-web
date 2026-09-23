@@ -18,14 +18,20 @@ export function Pager({ meta, onChange, busy, label }: Readonly<PagerProps>) {
         type="button"
         disabled={busy || meta.number <= 0}
         onClick={() => onChange(meta.number - 1)}
-      >Назад</button>
-      <span className="pager__status">{label} {first}–{last} з {meta.totalCount}</span>
+      >
+        Назад
+      </button>
+      <span className="pager__status">
+        {label} {first}–{last} з {meta.totalCount}
+      </span>
       <button
         className="button button--ghost button--small"
         type="button"
         disabled={busy || meta.number >= meta.totalPages - 1}
         onClick={() => onChange(meta.number + 1)}
-      >Далі</button>
+      >
+        Далі
+      </button>
     </div>
   );
 }

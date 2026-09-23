@@ -12,7 +12,9 @@ await mkdir(new URL("server/", dist), { recursive: true });
 await mkdir(new URL(".openai/", dist), { recursive: true });
 await copyFile(new URL("../.openai/hosting.json", import.meta.url), new URL(".openai/hosting.json", dist));
 
-await writeFile(new URL("server/index.js", dist), `export default {
+await writeFile(
+  new URL("server/index.js", dist),
+  `export default {
   async fetch(request, env) {
     if (!env?.ASSETS?.fetch) {
       return new Response("Quiz Project Web assets are unavailable.", {
@@ -31,6 +33,7 @@ await writeFile(new URL("server/index.js", dist), `export default {
     headers.set("content-type", "text/html; charset=utf-8");
     return new Response(body, { status: response.status, headers });
   }
-};\n`);
+};\n`
+);
 
 console.log("Prepared Quiz Project Web for hosting.");

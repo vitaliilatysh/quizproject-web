@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction
+} from "react";
 import { ApiError, type QuizApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { navigate } from "../../app/navigation.js";
@@ -21,7 +29,14 @@ interface AdminDataOptions {
 }
 
 export function useAdminData({
-  api, session, accessReady, routeName, activeAccount, handleAuthError, setActionBusy, toast
+  api,
+  session,
+  accessReady,
+  routeName,
+  activeAccount,
+  handleAuthError,
+  setActionBusy,
+  toast
 }: AdminDataOptions) {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,14 +82,25 @@ export function useAdminData({
       });
     } catch (reason) {
       if (handleAuthError(reason, "#/admin")) return;
-      setError(reason instanceof ApiError && reason.status === 403
-        ? "Для цієї сторінки потрібна роль адміністратора."
-        : friendlyError(reason));
+      setError(
+        reason instanceof ApiError && reason.status === 403
+          ? "Для цієї сторінки потрібна роль адміністратора."
+          : friendlyError(reason)
+      );
     } finally {
       requestInFlight.current = false;
       setLoading(false);
     }
-  }, [activeAccount, api, handleAuthError, resultRange.from, resultRange.to, resultsPage, session, usersPage]);
+  }, [
+    activeAccount,
+    api,
+    handleAuthError,
+    resultRange.from,
+    resultRange.to,
+    resultsPage,
+    session,
+    usersPage
+  ]);
 
   useEffect(() => {
     setData(null);
@@ -92,7 +118,7 @@ export function useAdminData({
   }, [accessReady, data, load, routeName, session]);
 
   const execute = useCallback(
-    async <T,>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
+    async <T>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
       setActionBusy(`admin-${key}`);
       try {
         const result = await operation();
@@ -105,7 +131,9 @@ export function useAdminData({
       } finally {
         setActionBusy("");
       }
-    }, [handleAuthError, load, setActionBusy, toast]) satisfies ExecuteAdmin;
+    },
+    [handleAuthError, load, setActionBusy, toast]
+  ) satisfies ExecuteAdmin;
 
   const invalidate = useCallback(() => setData(null), []);
 

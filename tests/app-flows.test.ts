@@ -13,7 +13,15 @@ import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { fakeToken, loginResponse, stubApi, type StubbedApi } from "./support/api-stub.js";
 import {
-  act, click, closeBrowser, openBrowser, render, settle, submit, type, type Rendered
+  act,
+  click,
+  closeBrowser,
+  openBrowser,
+  render,
+  settle,
+  submit,
+  type,
+  type Rendered
 } from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
@@ -36,15 +44,18 @@ function goTo(hash: string): void {
 }
 
 function seedSession(username: string, roles: string[] = ["ROLE_USER"]): void {
-  sessionStorage.setItem("quizproject.session", JSON.stringify({
-    accessToken: fakeToken(username, { roles }),
-    tokenType: "Bearer",
-    expiresAt: Date.now() + 900_000,
-    refreshToken: `refresh-${username}`,
-    refreshExpiresAt: Date.now() + 604_800_000,
-    username,
-    roles
-  }));
+  sessionStorage.setItem(
+    "quizproject.session",
+    JSON.stringify({
+      accessToken: fakeToken(username, { roles }),
+      tokenType: "Bearer",
+      expiresAt: Date.now() + 900_000,
+      refreshToken: `refresh-${username}`,
+      refreshExpiresAt: Date.now() + 604_800_000,
+      username,
+      roles
+    })
+  );
 }
 
 // Every screen loads the catalogue on the way past, so every stub needs it.
@@ -53,7 +64,10 @@ const CATALOGUE = {
   "GET /api/v1/quizzes/summary": { body: { totalQuizzes: 12, totalSubjects: 4 } }
 };
 
-async function open(hash: string, routes: Record<string, unknown> = {}): Promise<{
+async function open(
+  hash: string,
+  routes: Record<string, unknown> = {}
+): Promise<{
   view: AppView;
   stub: StubbedApi;
 }> {
@@ -79,13 +93,19 @@ test("a registration is checked in the browser before it costs a request", async
   const { view, stub } = await open("#/signup");
 
   fill(view, {
-    firstName: "Олена", lastName: "Ковальчук", username: "olena",
-    password: "Password1!", confirmPassword: "Password2!"
+    firstName: "Олена",
+    lastName: "Ковальчук",
+    username: "olena",
+    password: "Password1!",
+    confirmPassword: "Password2!"
   });
   await submit(view.find("form"));
   assert.equal(alertText(view), "Паролі не збігаються.");
-  assert.equal(stub.countOf("POST /api/v1/auth/register"), 0,
-    "a mismatched pair of passwords was sent to the API to be rejected there");
+  assert.equal(
+    stub.countOf("POST /api/v1/auth/register"),
+    0,
+    "a mismatched pair of passwords was sent to the API to be rejected there"
+  );
 
   // A space in a password is accepted by the field and refused by the API's
   // own pattern, so it is caught here rather than returned as a 400.
@@ -101,16 +121,25 @@ test("a registration sends the account as the API declares it, trimmed", async (
   });
 
   fill(view, {
-    firstName: "  Олена  ", lastName: "  Ковальчук  ", username: "  olena  ",
-    password: "Password1!", confirmPassword: "Password1!"
+    firstName: "  Олена  ",
+    lastName: "  Ковальчук  ",
+    username: "  olena  ",
+    password: "Password1!",
+    confirmPassword: "Password1!"
   });
   await submit(view.find("form"));
 
   assert.deepEqual(stub.lastOf("POST /api/v1/auth/register")?.body, {
-    username: "olena", firstName: "Олена", lastName: "Ковальчук", password: "Password1!"
+    username: "olena",
+    firstName: "Олена",
+    lastName: "Ковальчук",
+    password: "Password1!"
   });
-  assert.equal(String(window.location.hash || "#/"), "#/quizzes",
-    "a new account was left on the registration form");
+  assert.equal(
+    String(window.location.hash || "#/"),
+    "#/quizzes",
+    "a new account was left on the registration form"
+  );
   assert.match(view.text(), /Вітаємо/);
 });
 
@@ -120,8 +149,11 @@ test("a login already taken is named as taken, not as a server failure", async (
   });
 
   fill(view, {
-    firstName: "Олена", lastName: "Ковальчук", username: "olena",
-    password: "Password1!", confirmPassword: "Password1!"
+    firstName: "Олена",
+    lastName: "Ковальчук",
+    username: "olena",
+    password: "Password1!",
+    confirmPassword: "Password1!"
   });
   await submit(view.find("form"));
   assert.equal(alertText(view), "Цей логін уже зайнятий. Оберіть інший.");
@@ -132,8 +164,11 @@ test("a login already taken is named as taken, not as a server failure", async (
     "POST /api/v1/auth/register": { status: 500, body: { message: "База даних недоступна." } }
   });
   fill(broken, {
-    firstName: "Олена", lastName: "Ковальчук", username: "olena",
-    password: "Password1!", confirmPassword: "Password1!"
+    firstName: "Олена",
+    lastName: "Ковальчук",
+    username: "olena",
+    password: "Password1!",
+    confirmPassword: "Password1!"
   });
   await submit(broken.find("form"));
   assert.equal(alertText(broken), "База даних недоступна.");
@@ -154,7 +189,8 @@ test("a rejected sign-in blames the credentials, and only the credentials", asyn
   // carried into the message rather than logged where nobody will look.
   const { view } = await open("#/login", {
     "POST /api/v1/auth/login": {
-      status: 500, body: { message: "Внутрішня помилка." }
+      status: 500,
+      body: { message: "Внутрішня помилка." }
     }
   });
   type(view.find("input[name=username]"), "olena");
@@ -166,13 +202,25 @@ test("a rejected sign-in blames the credentials, and only the credentials", asyn
 test("a quiz chosen while signed out is started the moment the reader signs in", async () => {
   const { view, stub } = await open("", {
     "GET /api/v1/quizzes": {
-      body: [{ id: 7, name: "Java", subject: "Програмування", complexity: "medium", totalQuestions: 3, timeToPassMinutes: 30 }]
+      body: [
+        {
+          id: 7,
+          name: "Java",
+          subject: "Програмування",
+          complexity: "medium",
+          totalQuestions: 3,
+          timeToPassMinutes: 30
+        }
+      ]
     },
     "POST /api/v1/auth/login": loginResponse("olena"),
     "POST /api/v1/quizzes/7/attempts": {
       body: {
-        attemptId: 4, quizId: 7, completed: false,
-        expiresAt: new Date(Date.now() + 1_800_000).toISOString(), questions: []
+        attemptId: 4,
+        quizId: 7,
+        completed: false,
+        expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
+        questions: []
       }
     }
   });
@@ -185,8 +233,11 @@ test("a quiz chosen while signed out is started the moment the reader signs in",
   type(view.find("input[name=password]"), "Password1!");
   await submit(view.find("form"));
 
-  assert.equal(stub.countOf("POST /api/v1/quizzes/7/attempts"), 1,
-    "the quiz the reader picked before signing in was forgotten");
+  assert.equal(
+    stub.countOf("POST /api/v1/quizzes/7/attempts"),
+    1,
+    "the quiz the reader picked before signing in was forgotten"
+  );
   assert.equal(window.location.hash, "#/attempt/4");
 });
 
@@ -195,9 +246,13 @@ test("changing a password is checked here, then signs the reader out", async () 
   const { view, stub } = await open("#/profile", {
     "GET /api/v1/users/me": {
       body: {
-        username: "olena", firstName: "Олена", lastName: "Ковальчук",
-        role: "user", status: "active",
-        registeredAt: "2026-01-15T10:00:00Z", lastLoginAt: "2026-03-01T09:00:00Z"
+        username: "olena",
+        firstName: "Олена",
+        lastName: "Ковальчук",
+        role: "user",
+        status: "active",
+        registeredAt: "2026-01-15T10:00:00Z",
+        lastLoginAt: "2026-03-01T09:00:00Z"
       }
     },
     "PUT /api/v1/users/me/password": { body: {} }
@@ -216,8 +271,10 @@ test("changing a password is checked here, then signs the reader out", async () 
 
   fill(view, { newPassword: "Password2!", confirmPassword: "Password2!" });
   await submit(passwordForm());
-  assert.deepEqual(stub.lastOf("PUT /api/v1/users/me/password")?.body,
-    { currentPassword: "Password1!", newPassword: "Password2!" });
+  assert.deepEqual(stub.lastOf("PUT /api/v1/users/me/password")?.body, {
+    currentPassword: "Password1!",
+    newPassword: "Password2!"
+  });
 
   // The old token is no longer usable, so keeping the reader signed in with it
   // would be keeping them signed in with nothing.
@@ -236,8 +293,13 @@ test("a refused password change says which of the two passwords was wrong", asyn
     const { view } = await open("#/profile", {
       "GET /api/v1/users/me": {
         body: {
-          username: "olena", firstName: "Олена", lastName: "Ковальчук", role: "user",
-          status: "active", registeredAt: "2026-01-15T10:00:00Z", lastLoginAt: null
+          username: "olena",
+          firstName: "Олена",
+          lastName: "Ковальчук",
+          role: "user",
+          status: "active",
+          registeredAt: "2026-01-15T10:00:00Z",
+          lastLoginAt: null
         }
       },
       "PUT /api/v1/users/me/password": { status, body: {} }
@@ -246,8 +308,11 @@ test("a refused password change says which of the two passwords was wrong", asyn
     fill(view, { currentPassword: "Password1!", newPassword: "Password2!", confirmPassword: "Password2!" });
     await submit(view.find(".profile-card--password form"));
     assert.equal(alertText(view), message);
-    assert.notEqual(sessionStorage.getItem("quizproject.session"), null,
-      `a ${status} signed the reader out of a session that is still valid`);
+    assert.notEqual(
+      sessionStorage.getItem("quizproject.session"),
+      null,
+      `a ${status} signed the reader out of a session that is still valid`
+    );
   }
 });
 
@@ -282,8 +347,11 @@ test("an expired session on a protected page returns the reader to it after sign
   // worth checking rather than merely the redirect away.
   let expired = true;
   const { view } = await open("#/results", {
-    "GET /api/v1/results/me": () => expired ? { status: 401, body: {} } : { body: [] },
-    "POST /api/v1/auth/login": () => { expired = false; return loginResponse("olena"); }
+    "GET /api/v1/results/me": () => (expired ? { status: 401, body: {} } : { body: [] }),
+    "POST /api/v1/auth/login": () => {
+      expired = false;
+      return loginResponse("olena");
+    }
   });
 
   // A 401 mid-session is the token expiring, not the reader doing anything
@@ -295,7 +363,11 @@ test("an expired session on a protected page returns the reader to it after sign
   type(view.find("input[name=username]"), "olena");
   type(view.find("input[name=password]"), "Password1!");
   await submit(view.find("form"));
-  assert.equal(window.location.hash, "#/results", "the reader was not returned to the page that turned them away");
+  assert.equal(
+    window.location.hash,
+    "#/results",
+    "the reader was not returned to the page that turned them away"
+  );
 });
 
 const ADMIN_ROUTES = {
@@ -341,7 +413,11 @@ test("an administrative change reloads the panel and says so", async () => {
   await submit(view.find("form.admin-inline-form"));
 
   assert.equal(stub.countOf("POST /api/v1/admin/subjects"), 1);
-  assert.equal(stub.countOf("GET /api/v1/admin/subjects"), 2, "the panel still shows what it showed before the change");
+  assert.equal(
+    stub.countOf("GET /api/v1/admin/subjects"),
+    2,
+    "the panel still shows what it showed before the change"
+  );
   assert.match(view.text(), /Предмет додано/);
 });
 
@@ -379,8 +455,10 @@ test("paging the panel asks for the page, not for the whole collection again", a
   await settle();
 
   const last = stub.lastOf("GET /api/v1/admin/results");
-  assert.ok(String(last?.query.get("from")).startsWith("2026-0"),
-    `the date range never reached the request: ${String(last?.query.get("from"))}`);
+  assert.ok(
+    String(last?.query.get("from")).startsWith("2026-0"),
+    `the date range never reached the request: ${String(last?.query.get("from"))}`
+  );
   assert.equal(last?.query.get("page"), "0", "a narrower range kept a page number that may no longer exist");
 });
 
@@ -410,8 +488,11 @@ test("an address that cannot be an API address is refused before it is saved", a
   await submit(view.find("form"));
 
   assert.match(view.text(), /HTTP/);
-  assert.equal(localStorage.getItem("quizproject.apiUrl"), null,
-    "an address the client cannot use was written down anyway");
+  assert.equal(
+    localStorage.getItem("quizproject.apiUrl"),
+    null,
+    "an address the client cannot use was written down anyway"
+  );
 });
 
 test("a saved address is written down, confirmed, and used from then on", async () => {
@@ -441,7 +522,18 @@ test("a fixed address reloads the catalogue that failed on the old one", async (
       attempt += 1;
       return attempt === 1
         ? { status: 502, body: { message: "Сервер недоступний." } }
-        : { body: [{ id: 1, name: "Java SE", subject: "IT", complexity: "easy", timeToPassMinutes: 10, totalQuestions: 4 }] };
+        : {
+            body: [
+              {
+                id: 1,
+                name: "Java SE",
+                subject: "IT",
+                complexity: "easy",
+                timeToPassMinutes: 10,
+                totalQuestions: 4
+              }
+            ]
+          };
     }
   });
 
@@ -454,8 +546,11 @@ test("a fixed address reloads the catalogue that failed on the old one", async (
   goTo("#/");
   await settle();
 
-  assert.equal(stub.countOf("GET /api/v1/quizzes"), 2,
-    "the catalogue was never asked for again against the address the reader had just fixed");
+  assert.equal(
+    stub.countOf("GET /api/v1/quizzes"),
+    2,
+    "the catalogue was never asked for again against the address the reader had just fixed"
+  );
   assert.doesNotMatch(view.text(), /Сервер недоступний/, "the old address's failure outlived the address");
   assert.match(view.text(), /Java SE/);
 });
@@ -500,7 +595,11 @@ test("each page names itself in the tab, and an unknown one is still named", asy
     await settle();
     assert.equal(document.title, title, `${hash} was titled "${document.title}"`);
   }
-  assert.match(view.text(), /Цієї сторінки немає/, "an unknown route rendered something other than the 404 page");
+  assert.match(
+    view.text(),
+    /Цієї сторінки немає/,
+    "an unknown route rendered something other than the 404 page"
+  );
 });
 
 test("the home page still works when the totals endpoint does not", async () => {
@@ -526,7 +625,9 @@ test("a toast says its piece and then goes away on its own", async () => {
 
   // 4200ms is the app's own lifetime for one. Waited out rather than mocked,
   // because a fake clock here would test the mock rather than the timeout.
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 4400)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 4400));
+  });
   assert.equal(view.findAll(".toast").length, 0, "the toast is still on screen");
 });
 
@@ -574,9 +675,12 @@ test("a failed load is not retried until somebody asks for it", async () => {
     // has not come back yet.
     await settle();
     await settle();
-    assert.equal(stub.countOf(key), 1, `${hash} asked for ${key} ${stub.countOf(key)} times after one failure`);
-    assert.match(view.text(), /База даних недоступна|потрібна роль/,
-      `${hash} failed without saying why`);
+    assert.equal(
+      stub.countOf(key),
+      1,
+      `${hash} asked for ${key} ${stub.countOf(key)} times after one failure`
+    );
+    assert.match(view.text(), /База даних недоступна|потрібна роль/, `${hash} failed without saying why`);
 
     const retry = view.query(".empty-state button");
     assert.equal(Boolean(retry), retriable, `${hash} disagrees about offering a retry`);
@@ -591,7 +695,9 @@ test("a failed load is not retried until somebody asks for it", async () => {
 
 const ATTEMPT_BODY = (attemptId: number) => () => ({
   body: {
-    attemptId, quizId: 7, completed: false,
+    attemptId,
+    quizId: 7,
+    completed: false,
     expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
     questions: [{ id: 11, text: "Що таке JVM?", answers: [{ id: 101, text: "Віртуальна машина" }] }]
   }
@@ -610,8 +716,11 @@ test("a guarded page visited by a stranger remembers where they were going", asy
     openBrowser({ url: "http://localhost:4173/" });
     await open(hash, {});
     assert.equal(window.location.hash, "#/login", `${hash} was rendered to somebody with no session`);
-    assert.equal(sessionStorage.getItem("quizproject.returnTo"), remembered,
-      `${hash} sent the reader to sign in and then forgot why`);
+    assert.equal(
+      sessionStorage.getItem("quizproject.returnTo"),
+      remembered,
+      `${hash} sent the reader to sign in and then forgot why`
+    );
   }
 });
 
@@ -619,7 +728,16 @@ test("starting a quiz opens the attempt, and a refusal is said out loud", async 
   seedSession("olena");
   const catalogue = {
     "GET /api/v1/quizzes": {
-      body: [{ id: 7, name: "Java", subject: "Програмування", complexity: "medium", totalQuestions: 1, timeToPassMinutes: 30 }]
+      body: [
+        {
+          id: 7,
+          name: "Java",
+          subject: "Програмування",
+          complexity: "medium",
+          totalQuestions: 1,
+          timeToPassMinutes: 30
+        }
+      ]
     }
   };
 
@@ -651,7 +769,16 @@ test("starting a quiz opens the attempt, and a refusal is said out loud", async 
 test("a registration also starts the quiz the reader picked before they had an account", async () => {
   const { view, stub } = await open("", {
     "GET /api/v1/quizzes": {
-      body: [{ id: 7, name: "Java", subject: "Програмування", complexity: "medium", totalQuestions: 1, timeToPassMinutes: 30 }]
+      body: [
+        {
+          id: 7,
+          name: "Java",
+          subject: "Програмування",
+          complexity: "medium",
+          totalQuestions: 1,
+          timeToPassMinutes: 30
+        }
+      ]
     },
     "POST /api/v1/auth/register": loginResponse("olena"),
     "POST /api/v1/quizzes/7/attempts": ATTEMPT_BODY(4)
@@ -663,8 +790,11 @@ test("a registration also starts the quiz the reader picked before they had an a
   await settle();
 
   fill(view, {
-    firstName: "Олена", lastName: "Ковальчук", username: "olena",
-    password: "Password1!", confirmPassword: "Password1!"
+    firstName: "Олена",
+    lastName: "Ковальчук",
+    username: "olena",
+    password: "Password1!",
+    confirmPassword: "Password1!"
   });
   await submit(view.find("form"));
 
@@ -718,15 +848,23 @@ test("an address with nothing behind it is reported as no connection", async () 
 test("a token the API refuses to renew ends the session", async () => {
   seedSession("olena");
   // Expiring inside the refresh margin, so the timer takes half of what is left.
-  sessionStorage.setItem("quizproject.session", JSON.stringify({
-    accessToken: fakeToken("olena"), tokenType: "Bearer",
-    expiresAt: Date.now() + 4_000,
-    refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
-    username: "olena", roles: ["ROLE_USER"]
-  }));
+  sessionStorage.setItem(
+    "quizproject.session",
+    JSON.stringify({
+      accessToken: fakeToken("olena"),
+      tokenType: "Bearer",
+      expiresAt: Date.now() + 4_000,
+      refreshToken: "refresh-olena",
+      refreshExpiresAt: Date.now() + 604_800_000,
+      username: "olena",
+      roles: ["ROLE_USER"]
+    })
+  );
 
   const { view, stub } = await open("", { "POST /api/v1/auth/refresh": { status: 401, body: {} } });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5600)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 5600));
+  });
   await settle();
 
   assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1, "the refresh never ran");
@@ -737,35 +875,52 @@ test("a token the API refuses to renew ends the session", async () => {
 });
 
 test("a refresh that could not be made keeps the session and tries again later", async () => {
-  sessionStorage.setItem("quizproject.session", JSON.stringify({
-    accessToken: fakeToken("olena"), tokenType: "Bearer",
-    expiresAt: Date.now() + 4_000,
-    refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
-    username: "olena", roles: ["ROLE_USER"]
-  }));
+  sessionStorage.setItem(
+    "quizproject.session",
+    JSON.stringify({
+      accessToken: fakeToken("olena"),
+      tokenType: "Bearer",
+      expiresAt: Date.now() + 4_000,
+      refreshToken: "refresh-olena",
+      refreshExpiresAt: Date.now() + 604_800_000,
+      username: "olena",
+      roles: ["ROLE_USER"]
+    })
+  );
 
   const { view, stub } = await open("", {
     "POST /api/v1/auth/refresh": { status: 503, body: { message: "Сервіс недоступний." } }
   });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5600)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 5600));
+  });
   await settle();
 
   assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1);
   assert.deepEqual(stub.lastOf("POST /api/v1/auth/refresh")?.body, { refreshToken: "refresh-olena" });
   // A 503 says nothing about the token. Signing the reader out over it would
   // lose an attempt in progress to a server hiccup.
-  assert.notEqual(sessionStorage.getItem("quizproject.session"), null,
-    "an unreachable API signed the reader out");
+  assert.notEqual(
+    sessionStorage.getItem("quizproject.session"),
+    null,
+    "an unreachable API signed the reader out"
+  );
   assert.match(view.text(), /olena/);
 });
 
 test("a short-lived token is renewed on its own schedule, not continuously", async () => {
-  sessionStorage.setItem("quizproject.session", JSON.stringify({
-    accessToken: fakeToken("olena", { ttlSeconds: 4 }), tokenType: "Bearer",
-    expiresAt: Date.now() + 4_000,
-    refreshToken: "refresh-olena", refreshExpiresAt: Date.now() + 604_800_000,
-    username: "olena", roles: ["ROLE_USER"]
-  }));
+  sessionStorage.setItem(
+    "quizproject.session",
+    JSON.stringify({
+      accessToken: fakeToken("olena", { ttlSeconds: 4 }),
+      tokenType: "Bearer",
+      expiresAt: Date.now() + 4_000,
+      refreshToken: "refresh-olena",
+      refreshExpiresAt: Date.now() + 604_800_000,
+      username: "olena",
+      roles: ["ROLE_USER"]
+    })
+  );
 
   // Every renewal is as short-lived as the first. An immediate refresh loop
   // therefore sustains itself instead of being hidden by a long replacement.
@@ -773,16 +928,26 @@ test("a short-lived token is renewed on its own schedule, not continuously", asy
     "POST /api/v1/auth/refresh": loginResponse("olena", { ttlSeconds: 4 })
   });
 
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_200)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+  });
   await settle();
-  assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 0,
-    `the refresh fired immediately and kept firing: ${stub.countOf("POST /api/v1/auth/refresh")} in 1.2s`);
+  assert.equal(
+    stub.countOf("POST /api/v1/auth/refresh"),
+    0,
+    `the refresh fired immediately and kept firing: ${stub.countOf("POST /api/v1/auth/refresh")} in 1.2s`
+  );
 
   // Half of the four seconds it had left, so the refresh lands at two seconds.
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_400)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 1_400));
+  });
   await settle();
-  assert.equal(stub.countOf("POST /api/v1/auth/refresh"), 1,
-    "the refresh never ran, so this test proves nothing about its timing");
+  assert.equal(
+    stub.countOf("POST /api/v1/auth/refresh"),
+    1,
+    "the refresh never ran, so this test proves nothing about its timing"
+  );
 });
 
 test("a failure is worded for the reader, with the code support will ask for", async () => {
@@ -796,16 +961,22 @@ test("a failure is worded for the reader, with the code support will ask for", a
   // into a console nobody has open.
   assert.equal(
     friendlyError(new ApiError("Внутрішня помилка.", { status: 500, correlationId: "abc-123" })),
-    "Внутрішня помилка. (код підтримки: abc-123)");
+    "Внутрішня помилка. (код підтримки: abc-123)"
+  );
   assert.equal(
     friendlyError(new ApiError("Внутрішня помилка.", { status: 500 })),
-    "Внутрішня помилка.", "a message was decorated with a code that does not exist");
+    "Внутрішня помилка.",
+    "a message was decorated with a code that does not exist"
+  );
 
   // A rejection that is not an Error has no message to show, and showing
   // "undefined" would be worse than saying nothing useful.
   for (const thrown of [undefined, null, "рядок", 42, { message: "не помилка" }]) {
-    assert.equal(friendlyError(thrown), "Сталася неочікувана помилка. Спробуйте ще раз.",
-      `${String(thrown)} was rendered as though it were an error object`);
+    assert.equal(
+      friendlyError(thrown),
+      "Сталася неочікувана помилка. Спробуйте ще раз.",
+      `${String(thrown)} was rendered as though it were an error object`
+    );
   }
 });
 
@@ -824,7 +995,16 @@ test("a quiz can be started from the catalogue as well as from the home page", a
   seedSession("olena");
   const { view, stub } = await open("#/quizzes", {
     "GET /api/v1/quizzes": {
-      body: [{ id: 7, name: "Java", subject: "Програмування", complexity: "medium", totalQuestions: 1, timeToPassMinutes: 30 }]
+      body: [
+        {
+          id: 7,
+          name: "Java",
+          subject: "Програмування",
+          complexity: "medium",
+          totalQuestions: 1,
+          timeToPassMinutes: 30
+        }
+      ]
     },
     "POST /api/v1/quizzes/7/attempts": ATTEMPT_BODY(4)
   });
@@ -842,8 +1022,13 @@ test("a password change refused as unauthorised ends the session rather than bla
   const { view } = await open("#/profile", {
     "GET /api/v1/users/me": {
       body: {
-        username: "olena", firstName: "Олена", lastName: "Ковальчук", role: "user",
-        status: "active", registeredAt: "2026-01-15T10:00:00Z", lastLoginAt: null
+        username: "olena",
+        firstName: "Олена",
+        lastName: "Ковальчук",
+        role: "user",
+        status: "active",
+        registeredAt: "2026-01-15T10:00:00Z",
+        lastLoginAt: null
       }
     },
     "PUT /api/v1/users/me/password": { status: 401, body: {} }
@@ -868,9 +1053,8 @@ test("coming back to an attempt that failed asks for it again", async () => {
   seedSession("olena");
   let failing = true;
   const { view, stub } = await open("#/attempt/4", {
-    "GET /api/v1/attempts/4": () => failing
-      ? { status: 503, body: { message: "Тимчасовий збій." } }
-      : ATTEMPT_BODY(4)()
+    "GET /api/v1/attempts/4": () =>
+      failing ? { status: 503, body: { message: "Тимчасовий збій." } } : ATTEMPT_BODY(4)()
   });
 
   await settle();
@@ -883,9 +1067,11 @@ test("coming back to an attempt that failed asks for it again", async () => {
   goTo("#/attempt/4");
   await settle();
 
-  assert.equal(stub.countOf("GET /api/v1/attempts/4"), 2,
-    "returning to the attempt showed the old error and asked for nothing");
+  assert.equal(
+    stub.countOf("GET /api/v1/attempts/4"),
+    2,
+    "returning to the attempt showed the old error and asked for nothing"
+  );
   assert.match(view.text(), /Що таке JVM/);
   assert.doesNotMatch(view.text(), /Тимчасовий збій/, "the error outlived the load that succeeded");
 });
-

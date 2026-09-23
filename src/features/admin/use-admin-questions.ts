@@ -35,31 +35,34 @@ export function useAdminQuestions({ api, session, activeAccount, handleAuthError
   // for a quiz nobody is looking at any more is the one to drop instead.
   const requested = useRef("");
 
-  const load = useCallback(async (quizId: string): Promise<void> => {
-    requested.current = quizId;
-    if (!quizId) {
-      setQuestions([]);
+  const load = useCallback(
+    async (quizId: string): Promise<void> => {
+      requested.current = quizId;
+      if (!quizId) {
+        setQuestions([]);
+        setError("");
+        setLoading(false);
+        return;
+      }
+      const requestedBy = session?.username ?? null;
+      setLoading(true);
       setError("");
-      setLoading(false);
-      return;
-    }
-    const requestedBy = session?.username ?? null;
-    setLoading(true);
-    setError("");
-    try {
-      const loaded = await api.adminQuestions(quizId);
-      if (requested.current !== quizId || activeAccount.current !== requestedBy) return;
-      setQuestions(loaded);
-    } catch (reason) {
-      if (requested.current !== quizId) return;
-      if (handleAuthError(reason, "#/admin")) return;
-      setError(friendlyError(reason));
-    } finally {
-      // Only the answer still being waited on may take the spinner down; a
-      // superseded one would clear it while its replacement is still in flight.
-      if (requested.current === quizId) setLoading(false);
-    }
-  }, [activeAccount, api, handleAuthError, session]);
+      try {
+        const loaded = await api.adminQuestions(quizId);
+        if (requested.current !== quizId || activeAccount.current !== requestedBy) return;
+        setQuestions(loaded);
+      } catch (reason) {
+        if (requested.current !== quizId) return;
+        if (handleAuthError(reason, "#/admin")) return;
+        setError(friendlyError(reason));
+      } finally {
+        // Only the answer still being waited on may take the spinner down; a
+        // superseded one would clear it while its replacement is still in flight.
+        if (requested.current === quizId) setLoading(false);
+      }
+    },
+    [activeAccount, api, handleAuthError, session]
+  );
 
   const reset = useCallback(() => {
     requested.current = "";

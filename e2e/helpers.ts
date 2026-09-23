@@ -12,9 +12,9 @@ export async function submitAndExpectApiResponse(
   expectedStatus: number
 ): Promise<Response> {
   const [response] = await Promise.all([
-    page.waitForResponse(candidate =>
-      new URL(candidate.url()).pathname === path
-      && candidate.request().method() === "POST"),
+    page.waitForResponse(
+      candidate => new URL(candidate.url()).pathname === path && candidate.request().method() === "POST"
+    ),
     button.click()
   ]);
   if (response.status() !== expectedStatus) {

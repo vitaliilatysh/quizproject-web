@@ -54,8 +54,7 @@ test("a search matching nothing empties the catalogue instead of hanging", async
 
   const searched = page.waitForResponse(response => {
     const url = new URL(response.url());
-    return url.pathname === "/api/v1/quizzes"
-      && url.searchParams.get("search") === "zzz-no-such-quiz";
+    return url.pathname === "/api/v1/quizzes" && url.searchParams.get("search") === "zzz-no-such-quiz";
   });
   await page.getByPlaceholder("Пошук за назвою або предметом").fill("zzz-no-such-quiz");
   expect((await searched).status()).toBe(200);

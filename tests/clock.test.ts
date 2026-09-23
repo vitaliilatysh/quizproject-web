@@ -111,8 +111,10 @@ test("the countdown and the automatic submission read the same clock", () => {
   // Within a second, because `now` above was floored to one so the header
   // would survive its own rounding; without the correction this delay is a
   // whole minute short, which no tolerance this tight would hide.
-  assert.ok(Math.abs(Number(autoSubmitDelay(expiresAt)) - (10 * 60_000 - AUTO_SUBMIT_LEAD_MS)) < 1000,
-    `delay was ${autoSubmitDelay(expiresAt)}`);
+  assert.ok(
+    Math.abs(Number(autoSubmitDelay(expiresAt)) - (10 * 60_000 - AUTO_SUBMIT_LEAD_MS)) < 1000,
+    `delay was ${autoSubmitDelay(expiresAt)}`
+  );
 
   // Same instant read off the uncorrected device clock, for contrast: this is
   // what both did before, and it is a minute of the reader's time.

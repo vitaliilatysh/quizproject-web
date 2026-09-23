@@ -20,9 +20,7 @@ export interface StubResponse {
   body?: unknown;
 }
 
-export type StubHandler =
-  | StubResponse
-  | ((call: StubCall) => StubResponse | Promise<StubResponse>);
+export type StubHandler = StubResponse | ((call: StubCall) => StubResponse | Promise<StubResponse>);
 
 export interface StubbedApi {
   calls: StubCall[];
@@ -54,9 +52,7 @@ export function stubApi(routes: Record<string, StubHandler>): StubbedApi {
       throw new Error(`No stub for ${key}. Stubbed: ${Object.keys(routes).join(", ") || "nothing"}`);
     }
 
-    const result = typeof handler === "function"
-      ? await handler(calls.at(-1) as StubCall)
-      : handler;
+    const result = typeof handler === "function" ? await handler(calls.at(-1) as StubCall) : handler;
     const { status = 200, body = {} } = result ?? {};
     return new Response(JSON.stringify(body), {
       status,
@@ -80,7 +76,10 @@ export interface FakeTokenOptions {
   ttlSeconds?: number;
 }
 
-export function fakeToken(username: string, { roles = ["ROLE_USER"], ttlSeconds = 900 }: FakeTokenOptions = {}): string {
+export function fakeToken(
+  username: string,
+  { roles = ["ROLE_USER"], ttlSeconds = 900 }: FakeTokenOptions = {}
+): string {
   const payload = {
     sub: username,
     roles,

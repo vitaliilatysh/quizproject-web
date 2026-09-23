@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AUTO_SUBMIT_LEAD_MS, autoSubmitDelay, complexityLabels, difficultyLabel, difficultyTone, formatCountdown, formatDate, parseRoute, quizCountLabel, safeHash } from "../src/utils.js";
+import {
+  AUTO_SUBMIT_LEAD_MS,
+  autoSubmitDelay,
+  complexityLabels,
+  difficultyLabel,
+  difficultyTone,
+  formatCountdown,
+  formatDate,
+  parseRoute,
+  quizCountLabel,
+  safeHash
+} from "../src/utils.js";
 
 // The levels the production migration seeds. Every one of them reaches the
 // interface, so everything the interface does with difficulty has to account
@@ -67,8 +78,10 @@ test("every stored level is translated and coloured, not only filtered", () => {
   // than that one value, because the next level added will drift the same way.
   for (const level of STORED_LEVELS) {
     assert.notEqual(difficultyLabel(level), level, `level "${level}" is shown untranslated`);
-    assert.ok(["green", "blue", "coral"].includes(difficultyTone(level)),
-      `level "${level}" has no colour of its own`);
+    assert.ok(
+      ["green", "blue", "coral"].includes(difficultyTone(level)),
+      `level "${level}" has no colour of its own`
+    );
   }
 
   assert.equal(difficultyLabel("advanced"), "Просунутий");

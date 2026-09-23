@@ -1,0 +1,19 @@
+# Prettier owns the TypeScript in this repository and nothing else.
+#
+# Not because the other formats cannot be formatted, but because there is
+# nothing to gain there and something to lose: reflowing README prose obscures
+# the diffs that matter in it, the workflow files are read as much for their
+# comments as their steps, and the stylesheet is hand-ordered. The finding this
+# was added for was a 1174-character line of JSX — that is what it is here to
+# stop coming back.
+*.md
+*.yml
+*.yaml
+*.css
+*.html
+dist
+coverage
+node_modules
+playwright-report
+test-results
+package-lock.json

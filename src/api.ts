@@ -166,9 +166,10 @@ async function readResponse(response: Response, path: string): Promise<unknown> 
   if (response.ok) return payload;
 
   const problem: ErrorPayload = isRecord(payload) ? payload : {};
-  const message = typeof problem.message === "string" && problem.message
-    ? problem.message
-    : `Сервер повернув помилку ${response.status}.`;
+  const message =
+    typeof problem.message === "string" && problem.message
+      ? problem.message
+      : `Сервер повернув помилку ${response.status}.`;
   throw new ApiError(message, {
     status: response.status,
     code: typeof problem.error === "string" ? problem.error : "API_ERROR",
@@ -212,7 +213,7 @@ export class QuizApi {
    * the assertion is only worth anything if it matches the server.
    */
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    return await this.send(path, options, false) as T;
+    return (await this.send(path, options, false)) as T;
   }
 
   /**
@@ -224,7 +225,7 @@ export class QuizApi {
    * same thing without one.
    */
   async requestPaged<T>(path: string, options: RequestOptions = {}): Promise<Paged<T>> {
-    return await this.send(path, options, true) as Paged<T>;
+    return (await this.send(path, options, true)) as Paged<T>;
   }
 
   private async send(path: string, options: RequestOptions, withPageMeta: boolean): Promise<unknown> {
@@ -343,7 +344,12 @@ export class QuizApi {
    * which keeps the grouping in the interface that shows it rather than in the
    * API contract.
    */
-  quizzes({ search, complexity, page, size }: {
+  quizzes({
+    search,
+    complexity,
+    page,
+    size
+  }: {
     search?: string | undefined;
     complexity?: readonly string[] | undefined;
   } & PagingOptions = {}): Promise<Paged<Quiz>> {
@@ -411,19 +417,24 @@ export class QuizApi {
 
   createSubject(name: string): Promise<Subject> {
     return this.request<Subject>("/api/v1/admin/subjects", {
-      method: "POST", authenticated: true, body: { name }
+      method: "POST",
+      authenticated: true,
+      body: { name }
     });
   }
 
   updateSubject(id: number | string, name: string): Promise<Subject> {
     return this.request<Subject>(`/api/v1/admin/subjects/${Number(id)}`, {
-      method: "PUT", authenticated: true, body: { name }
+      method: "PUT",
+      authenticated: true,
+      body: { name }
     });
   }
 
   deleteSubject(id: number | string): Promise<void> {
     return this.request<void>(`/api/v1/admin/subjects/${Number(id)}`, {
-      method: "DELETE", authenticated: true
+      method: "DELETE",
+      authenticated: true
     });
   }
 
@@ -437,19 +448,24 @@ export class QuizApi {
 
   createQuiz(quiz: QuizRequest): Promise<AdminQuiz> {
     return this.request<AdminQuiz>("/api/v1/admin/quizzes", {
-      method: "POST", authenticated: true, body: quiz
+      method: "POST",
+      authenticated: true,
+      body: quiz
     });
   }
 
   updateQuiz(id: number | string, quiz: QuizRequest): Promise<AdminQuiz> {
     return this.request<AdminQuiz>(`/api/v1/admin/quizzes/${Number(id)}`, {
-      method: "PUT", authenticated: true, body: quiz
+      method: "PUT",
+      authenticated: true,
+      body: quiz
     });
   }
 
   deleteQuiz(id: number | string): Promise<void> {
     return this.request<void>(`/api/v1/admin/quizzes/${Number(id)}`, {
-      method: "DELETE", authenticated: true
+      method: "DELETE",
+      authenticated: true
     });
   }
 
@@ -461,19 +477,24 @@ export class QuizApi {
 
   createQuestion(quizId: number | string, question: QuestionRequest): Promise<AdminQuestion> {
     return this.request<AdminQuestion>(`/api/v1/admin/quizzes/${Number(quizId)}/questions`, {
-      method: "POST", authenticated: true, body: question
+      method: "POST",
+      authenticated: true,
+      body: question
     });
   }
 
   updateQuestion(id: number | string, question: QuestionRequest): Promise<AdminQuestion> {
     return this.request<AdminQuestion>(`/api/v1/admin/questions/${Number(id)}`, {
-      method: "PUT", authenticated: true, body: question
+      method: "PUT",
+      authenticated: true,
+      body: question
     });
   }
 
   deleteQuestion(id: number | string): Promise<void> {
     return this.request<void>(`/api/v1/admin/questions/${Number(id)}`, {
-      method: "DELETE", authenticated: true
+      method: "DELETE",
+      authenticated: true
     });
   }
 
@@ -486,11 +507,18 @@ export class QuizApi {
 
   updateUserStatus(id: number | string, status: string): Promise<AdminUser> {
     return this.request<AdminUser>(`/api/v1/admin/users/${Number(id)}/status`, {
-      method: "PATCH", authenticated: true, body: { status }
+      method: "PATCH",
+      authenticated: true,
+      body: { status }
     });
   }
 
-  adminResults({ from, to, page, size }: {
+  adminResults({
+    from,
+    to,
+    page,
+    size
+  }: {
     from?: string | undefined;
     to?: string | undefined;
   } & PagingOptions = {}): Promise<Paged<AdminResult>> {

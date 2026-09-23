@@ -15,10 +15,12 @@ const PAGE_HEADERS = ["x-page-number", "x-page-size", "x-total-count", "x-total-
 test("admin collections are requested with paging and answer with page metadata", async ({ page }) => {
   test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, "E2E administrator credentials are required");
 
-  const usersResponse = page.waitForResponse(response =>
-    new URL(response.url()).pathname === "/api/v1/admin/users");
-  const resultsResponse = page.waitForResponse(response =>
-    new URL(response.url()).pathname === "/api/v1/admin/results");
+  const usersResponse = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/admin/users"
+  );
+  const resultsResponse = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/admin/results"
+  );
 
   await login(page, ADMIN_USERNAME, ADMIN_PASSWORD);
   await page.getByRole("link", { name: "Адміністрування" }).click();
@@ -26,7 +28,10 @@ test("admin collections are requested with paging and answer with page metadata"
 
   // `as const` so the pairs stay tuples: without it the array widens to
   // (string | Promise<Response>)[][] and `pending` loses its response type.
-  const pending_responses = [["users", usersResponse], ["results", resultsResponse]] as const;
+  const pending_responses = [
+    ["users", usersResponse],
+    ["results", resultsResponse]
+  ] as const;
   for (const [name, pending] of pending_responses) {
     const response = await pending;
     expect(response.status(), `${name} request failed`).toBe(200);

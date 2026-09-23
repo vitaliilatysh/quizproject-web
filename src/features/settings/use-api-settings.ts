@@ -40,18 +40,21 @@ export function useApiSettings(toast: ToastMessage, onApiChanged: (external: boo
     return false;
   }, []);
 
-  const save = useCallback(async (value: string): Promise<void> => {
-    try {
-      const normalized = normalizeBaseUrl(value);
-      writeApiUrl(normalized);
-      setApiUrl(normalized);
-      onApiChanged(false);
-      if (await testConnection(normalized)) toast("Адресу API збережено.");
-    } catch (reason) {
-      setConnection("error");
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }, [onApiChanged, testConnection, toast]);
+  const save = useCallback(
+    async (value: string): Promise<void> => {
+      try {
+        const normalized = normalizeBaseUrl(value);
+        writeApiUrl(normalized);
+        setApiUrl(normalized);
+        onApiChanged(false);
+        if (await testConnection(normalized)) toast("Адресу API збережено.");
+      } catch (reason) {
+        setConnection("error");
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    },
+    [onApiChanged, testConnection, toast]
+  );
 
   return { apiUrl, connection, error, testConnection, save };
 }

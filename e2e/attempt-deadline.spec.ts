@@ -23,14 +23,18 @@ async function createQuiz(
   minutes: number,
   questionText: string
 ): Promise<SeededQuiz> {
-  const subject = await request.post(`${API}/api/v1/admin/subjects`, { headers, data: { name } })
+  const subject = await request
+    .post(`${API}/api/v1/admin/subjects`, { headers, data: { name } })
     .then(response => response.json() as Promise<{ id: number }>);
-  const levels = await request.get(`${API}/api/v1/admin/levels`, { headers })
+  const levels = await request
+    .get(`${API}/api/v1/admin/levels`, { headers })
     .then(response => response.json() as Promise<Array<{ id: number }>>);
-  const quiz = await request.post(`${API}/api/v1/admin/quizzes`, {
-    headers,
-    data: { name, subjectId: subject.id, levelId: levels[0]?.id, timeToPassMinutes: minutes }
-  }).then(response => response.json() as Promise<{ id: number }>);
+  const quiz = await request
+    .post(`${API}/api/v1/admin/quizzes`, {
+      headers,
+      data: { name, subjectId: subject.id, levelId: levels[0]?.id, timeToPassMinutes: minutes }
+    })
+    .then(response => response.json() as Promise<{ id: number }>);
   await request.post(`${API}/api/v1/admin/quizzes/${quiz.id}/questions`, {
     headers,
     data: {
@@ -47,9 +51,11 @@ async function createQuiz(
 }
 
 async function administrate(request: APIRequestContext): Promise<AuthHeaders> {
-  const token = await request.post(`${API}/api/v1/auth/login`, {
-    data: { username: ADMIN_USERNAME, password: ADMIN_PASSWORD }
-  }).then(response => response.json() as Promise<{ accessToken: string }>)
+  const token = await request
+    .post(`${API}/api/v1/auth/login`, {
+      data: { username: ADMIN_USERNAME, password: ADMIN_PASSWORD }
+    })
+    .then(response => response.json() as Promise<{ accessToken: string }>)
     .then(body => body.accessToken);
   return { Authorization: `Bearer ${token}` };
 }
@@ -70,8 +76,13 @@ test("an attempt submits itself when its time runs out", async ({ page, request 
   const headers = await administrate(request);
   const name = `Deadline ${uniqueUsername(testInfo, "dl")}`;
 
-  const { subject, quiz } = await createQuiz(request, headers, name, 1,
-    "Чи надсилається спроба сама, коли час вичерпано?");
+  const { subject, quiz } = await createQuiz(
+    request,
+    headers,
+    name,
+    1,
+    "Чи надсилається спроба сама, коли час вичерпано?"
+  );
 
   try {
     await register(page, uniqueUsername(testInfo, "dl"), "DeadlinePass1!");
@@ -120,8 +131,13 @@ test("the countdown follows the server's clock, not the device's", async ({ page
 
   const headers = await administrate(request);
   const name = `Skew ${uniqueUsername(testInfo, "sk")}`;
-  const { subject, quiz } = await createQuiz(request, headers, name, LIMIT_MINUTES,
-    "Чи показує таймер час сервера?");
+  const { subject, quiz } = await createQuiz(
+    request,
+    headers,
+    name,
+    LIMIT_MINUTES,
+    "Чи показує таймер час сервера?"
+  );
 
   try {
     // Before the first navigation, so every script the page runs sees it.

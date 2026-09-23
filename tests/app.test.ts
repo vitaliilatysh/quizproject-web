@@ -28,15 +28,18 @@ function seedSession(
   username: string,
   { roles = ["ROLE_USER"], expiresInMs = 900_000 }: { roles?: string[]; expiresInMs?: number } = {}
 ): void {
-  sessionStorage.setItem("quizproject.session", JSON.stringify({
-    accessToken: fakeToken(username, { roles }),
-    tokenType: "Bearer",
-    expiresAt: Date.now() + expiresInMs,
-    refreshToken: `refresh-${username}`,
-    refreshExpiresAt: Date.now() + 604_800_000,
-    username,
-    roles
-  }));
+  sessionStorage.setItem(
+    "quizproject.session",
+    JSON.stringify({
+      accessToken: fakeToken(username, { roles }),
+      tokenType: "Bearer",
+      expiresAt: Date.now() + expiresInMs,
+      refreshToken: `refresh-${username}`,
+      refreshExpiresAt: Date.now() + 604_800_000,
+      username,
+      roles
+    })
+  );
 }
 
 async function signIn(
@@ -57,16 +60,26 @@ async function signIn(
 // declaration time would instead start the clock before the app has even
 // rendered — spending the window on setup and leaving the deadline test to race
 // its own preamble on a slow machine.
-const attemptBody = (attemptId: number, { minutes = 30 }: { minutes?: number } = {}) => () => ({
-  body: {
-    attemptId, quizId: 7, completed: false,
-    expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
-    questions: [{
-      id: 11, text: "Що таке JVM?",
-      answers: [{ id: 101, text: "Віртуальна машина" }, { id: 102, text: "Компілятор" }]
-    }]
-  }
-});
+const attemptBody =
+  (attemptId: number, { minutes = 30 }: { minutes?: number } = {}) =>
+  () => ({
+    body: {
+      attemptId,
+      quizId: 7,
+      completed: false,
+      expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+      questions: [
+        {
+          id: 11,
+          text: "Що таке JVM?",
+          answers: [
+            { id: 101, text: "Віртуальна машина" },
+            { id: 102, text: "Компілятор" }
+          ]
+        }
+      ]
+    }
+  });
 
 const CATALOGUE = {
   "GET /api/v1/quizzes": { body: [] },
@@ -89,13 +102,16 @@ test("signing in as somebody else drops the previous reader's answers", async ()
   await settle();
 
   // Olena's own session is still the one in the tab, so her draft stands.
-  assert.notEqual(sessionStorage.getItem(ANSWERS(4)), null, "the draft was cleared before anyone else signed in");
+  assert.notEqual(
+    sessionStorage.getItem(ANSWERS(4)),
+    null,
+    "the draft was cleared before anyone else signed in"
+  );
 
   goTo("#/login");
   await signIn(view, "borys");
 
-  assert.equal(sessionStorage.getItem(ANSWERS(4)), null,
-    "Borys can still see the answers Olena selected");
+  assert.equal(sessionStorage.getItem(ANSWERS(4)), null, "Borys can still see the answers Olena selected");
 });
 
 test("a session that expires keeps the reader's answers for their return", async () => {
@@ -117,8 +133,11 @@ test("a session that expires keeps the reader's answers for their return", async
   // because she is the one coming back to it.
   assert.equal(sessionStorage.getItem("quizproject.session"), null, "the expired session was kept");
   assert.equal(window.location.hash, "#/login");
-  assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101, 102]),
-    "an interrupted reader lost the answers they had already chosen");
+  assert.equal(
+    sessionStorage.getItem(ANSWERS(4)),
+    JSON.stringify([101, 102]),
+    "an interrupted reader lost the answers they had already chosen"
+  );
   assert.match(view.text(), /Продовжити навчання/);
 });
 
@@ -140,10 +159,7 @@ test("a restored expired access token is refreshed before protected data loads",
   const protectedSequence = api.calls
     .filter(call => ["POST /api/v1/auth/refresh", "GET /api/v1/attempts/4"].includes(call.key))
     .map(call => call.key);
-  assert.deepEqual(protectedSequence.slice(0, 2), [
-    "POST /api/v1/auth/refresh",
-    "GET /api/v1/attempts/4"
-  ]);
+  assert.deepEqual(protectedSequence.slice(0, 2), ["POST /api/v1/auth/refresh", "GET /api/v1/attempts/4"]);
   assert.match(view.text(), /Тест #7/);
 });
 
@@ -159,10 +175,13 @@ test("account data also waits for a restored session to refresh", async () => {
   const view = render(App);
   await settle(5);
 
-  assert.deepEqual(api.calls
-    .filter(call => ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"].includes(call.key))
-    .map(call => call.key)
-    .slice(0, 2), ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"]);
+  assert.deepEqual(
+    api.calls
+      .filter(call => ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"].includes(call.key))
+      .map(call => call.key)
+      .slice(0, 2),
+    ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"]
+  );
   assert.match(view.text(), /Історія ще порожня/);
 });
 
@@ -183,8 +202,11 @@ test("signing out is not a handover either", async () => {
 
   assert.equal(sessionStorage.getItem("quizproject.session"), null);
   assert.match(api.lastOf("POST /api/v1/auth/logout")?.authorization ?? "", /^Bearer /);
-  assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101]),
-    "signing out threw away a draft the same reader can still come back to");
+  assert.equal(
+    sessionStorage.getItem(ANSWERS(4)),
+    JSON.stringify([101]),
+    "signing out threw away a draft the same reader can still come back to"
+  );
 });
 
 test("a handover drops the attempt the API would refuse to reload", async () => {
@@ -210,8 +232,11 @@ test("a handover drops the attempt the API would refuse to reload", async () => 
   // request — the route effect skips loading whatever is already in hand.
   goTo("#/attempt/4");
   await settle();
-  assert.equal(api.countOf("GET /api/v1/attempts/4"), 2,
-    "the second reader was shown the first reader's attempt from cache");
+  assert.equal(
+    api.countOf("GET /api/v1/attempts/4"),
+    2,
+    "the second reader was shown the first reader's attempt from cache"
+  );
 });
 
 // The token this app holds is refreshed silently, and the reader is very likely
@@ -246,11 +271,16 @@ test("a refreshed token is not a different reader", async () => {
   goTo("#/quizzes");
   await settle();
 
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 5600)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 5600));
+  });
   await settle();
 
-  assert.equal(api.countOf("POST /api/v1/auth/refresh"), 1,
-    "the refresh never ran, so this test proves nothing about it");
+  assert.equal(
+    api.countOf("POST /api/v1/auth/refresh"),
+    1,
+    "the refresh never ran, so this test proves nothing about it"
+  );
   assert.deepEqual(api.lastOf("POST /api/v1/auth/refresh")?.body, { refreshToken: "refresh-olena" });
   assert.equal(api.lastOf("POST /api/v1/auth/refresh")?.authorization, null);
 
@@ -263,8 +293,11 @@ test("a refreshed token is not a different reader", async () => {
   assert.equal(after.accessToken, (refreshed.body as { accessToken: string }).accessToken);
   assert.equal(after.refreshToken, (refreshed.body as { refreshToken: string }).refreshToken);
   assert.equal(after.username, "olena", "the refresh did not leave a usable session behind");
-  assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101, 102]),
-    "a silent token refresh threw away the reader's draft");
+  assert.equal(
+    sessionStorage.getItem(ANSWERS(4)),
+    JSON.stringify([101, 102]),
+    "a silent token refresh threw away the reader's draft"
+  );
   assert.match(view.text(), /olena/, "the refresh signed the reader out");
 });
 
@@ -319,8 +352,11 @@ test("a reader who navigates away and back finds the page as they left it", asyn
   goTo("#/attempt/4");
   await settle();
   assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, false);
-  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 1).checked, true,
-    "the answer chosen before leaving was lost");
+  assert.equal(
+    view.at<HTMLInputElement>("input[type=checkbox]", 1).checked,
+    true,
+    "the answer chosen before leaving was lost"
+  );
 });
 
 test("a ticked answer is written down, and unticking takes it back", async () => {
@@ -363,8 +399,11 @@ test("a reader who reopens a paused attempt finds their answers still ticked", a
   await settle();
 
   assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, false);
-  assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 1).checked, true,
-    "a saved answer was not restored");
+  assert.equal(
+    view.at<HTMLInputElement>("input[type=checkbox]", 1).checked,
+    true,
+    "a saved answer was not restored"
+  );
 });
 
 test("submitting asks first, and does not submit when the answer is no", async () => {
@@ -382,14 +421,20 @@ test("submitting asks first, and does not submit when the answer is no", async (
   click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
 
   const asked: string[] = [];
-  window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
+  window.confirm = (message?: string) => {
+    asked.push(message ?? "");
+    return false;
+  };
   click(view.find(".attempt-submit button"));
   await settle();
 
   assert.equal(asked.length, 1);
   assert.match(String(asked[0]), /1 вибраних відповідей/, "the reader was not told what they were sending");
-  assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 0,
-    "the attempt was submitted after the reader said no");
+  assert.equal(
+    api.countOf("POST /api/v1/attempts/4/complete"),
+    0,
+    "the attempt was submitted after the reader said no"
+  );
 
   window.confirm = () => true;
   click(view.find(".attempt-submit button"));
@@ -416,7 +461,10 @@ test("the deadline submits by itself, and does not stop to ask", async () => {
   // there escapes the test that caused it and lands on whichever one is running
   // when it surfaces.
   let asked = 0;
-  window.confirm = () => { asked += 1; return true; };
+  window.confirm = () => {
+    asked += 1;
+    return true;
+  };
 
   const view = render(App);
   await settle();
@@ -429,14 +477,22 @@ test("the deadline submits by itself, and does not stop to ask", async () => {
   // three-second head start: the timer is due 1.8s after the fetch, and only a
   // settle and a click stand between the two. Waiting past it rather than up to
   // it, so a slow machine is late rather than wrong.
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 2400)); });
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 2400));
+  });
   await settle();
 
   assert.equal(asked, 0, "the deadline stopped to ask a question nobody was there to answer");
-  assert.equal(api.countOf("POST /api/v1/attempts/4/complete"), 1,
-    "the deadline passed and the attempt stayed open");
-  assert.deepEqual(api.lastOf("POST /api/v1/attempts/4/complete")?.body, { answerIds: [101] },
-    "the answer chosen before the deadline did not go with it");
+  assert.equal(
+    api.countOf("POST /api/v1/attempts/4/complete"),
+    1,
+    "the deadline passed and the attempt stayed open"
+  );
+  assert.deepEqual(
+    api.lastOf("POST /api/v1/attempts/4/complete")?.body,
+    { answerIds: [101] },
+    "the answer chosen before the deadline did not go with it"
+  );
   assert.match(view.text(), /Ваш результат/);
 });
 
@@ -469,8 +525,11 @@ test("signing in returns the reader to the page that turned them away", async ()
   await signIn(view, "olena");
 
   assert.equal(window.location.hash, "#/results");
-  assert.equal(sessionStorage.getItem("quizproject.returnTo"), null,
-    "the remembered page was not consumed, so the next sign-in would go there too");
+  assert.equal(
+    sessionStorage.getItem("quizproject.returnTo"),
+    null,
+    "the remembered page was not consumed, so the next sign-in would go there too"
+  );
 });
 
 test("the administration screen is offered to an administrator and refused to a reader", async () => {
@@ -499,10 +558,12 @@ test("a bad attempt number is refused without asking the API about it", async ()
   await settle();
 
   assert.match(view.text(), /Некоректний номер спроби/);
-  assert.equal(api.calls.filter(call => call.path.startsWith("/api/v1/attempts")).length, 0,
-    "the API was asked about an attempt that cannot exist");
+  assert.equal(
+    api.calls.filter(call => call.path.startsWith("/api/v1/attempts")).length,
+    0,
+    "the API was asked about an attempt that cannot exist"
+  );
 });
-
 
 // A failure belongs to the reader who provoked it, and the handover has to take
 // it with them. use-account-data cleared the two collections and left the two
@@ -519,7 +580,11 @@ test("a handover drops the failure the previous reader was looking at", async ()
       results += 1;
       return results === 1
         ? { status: 503, body: { message: "Сервіс недоступний." } }
-        : { body: [{ attemptId: 5, quizId: 1, quizName: "Java", score: 80, completedAt: "2026-01-01T00:00:00Z" }] };
+        : {
+            body: [
+              { attemptId: 5, quizId: 1, quizName: "Java", score: 80, completedAt: "2026-01-01T00:00:00Z" }
+            ]
+          };
     }
   });
 
@@ -536,9 +601,15 @@ test("a handover drops the failure the previous reader was looking at", async ()
   goTo("#/results");
   await settle();
 
-  assert.doesNotMatch(view.text(), /Сервіс недоступний/,
-    "borys was shown the failure of a request olena made");
-  assert.equal(api.countOf("GET /api/v1/results/me"), 2,
-    "borys's own results were never asked for, because olena's error was still standing");
+  assert.doesNotMatch(
+    view.text(),
+    /Сервіс недоступний/,
+    "borys was shown the failure of a request olena made"
+  );
+  assert.equal(
+    api.countOf("GET /api/v1/results/me"),
+    2,
+    "borys's own results were never asked for, because olena's error was still standing"
+  );
   assert.match(view.text(), /Java/);
 });

@@ -41,6 +41,15 @@ jobs:
       - name: Check types
         run: npm run typecheck
 
+      # Formatting, decided once and checked rather than argued about. It is
+      # here because a line of JSX in this repository had reached 1174
+      # characters — the whole of one admin section, its markup, its handlers
+      # and its Ukrainian text, on one line — and nothing in the pipeline had an
+      # opinion about that. Prettier owns the TypeScript and nothing else;
+      # .prettierignore says why.
+      - name: Check formatting
+        run: npm run format:check
+
       # One rule family, react-hooks, and no more. Types are the step above;
       # SonarCloud has its own workflow. A hook called conditionally fails the
       # build; exhaustive-deps is a warning, because oxlint reads it more
