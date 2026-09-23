@@ -73,7 +73,16 @@ function isSession(value: unknown): value is Session {
     typeof candidate.expiresAt === "number" &&
     typeof candidate.refreshToken === "string" &&
     typeof candidate.refreshExpiresAt === "number" &&
-    typeof candidate.username === "string"
+    typeof candidate.username === "string" &&
+    // The field this check exists for, and the one it used to skip. `roles`
+    // decides what the navigation offers, and a string passes every test a
+    // `string[]` would be given by the code that reads it: "ROLE_ADMIN"
+    // .includes("ROLE_ADMIN") is true. A hand-typed entry therefore lit the
+    // administration link. The panel behind it still answered 403 — the API is
+    // what enforces the role — but a validator that skips the one field the
+    // interface turns on is not doing the job it was written for.
+    Array.isArray(candidate.roles) &&
+    candidate.roles.every(role => typeof role === "string")
   );
 }
 

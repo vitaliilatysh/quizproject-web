@@ -279,3 +279,31 @@ test("a login that advertises no lifetime is a session that is over on arrival",
   assert.equal(written.username, "olena");
   assert.equal(readSession(), null, "an already-expired session was handed back as current");
 });
+
+// The field isSession was written for and used to skip. `roles` decides what the
+// navigation offers, and a string passes the only test the reader of it makes:
+// "ROLE_ADMIN".includes("ROLE_ADMIN") is true.
+test("a session whose roles are not a list of strings is not a session", async () => {
+  const { readSession } = await import("../src/session.js");
+  const base = {
+    accessToken: "header.payload.signature",
+    tokenType: "Bearer",
+    expiresAt: Date.now() + 900_000,
+    refreshToken: "refresh-olena",
+    refreshExpiresAt: Date.now() + 604_800_000,
+    username: "olena"
+  };
+
+  for (const roles of ["ROLE_ADMIN", undefined, null, 7, [1, 2], ["ROLE_USER", 7]]) {
+    useStubStorage({ "quizproject.session": JSON.stringify({ ...base, roles }) });
+    assert.equal(readSession(), null, `roles=${JSON.stringify(roles)} was accepted`);
+    assert.equal(
+      sessionStorage.getItem("quizproject.session"),
+      null,
+      `roles=${JSON.stringify(roles)} was refused but left in storage`
+    );
+  }
+
+  useStubStorage({ "quizproject.session": JSON.stringify({ ...base, roles: ["ROLE_ADMIN"] }) });
+  assert.deepEqual(readSession()?.roles, ["ROLE_ADMIN"], "a real list of roles was refused");
+});
