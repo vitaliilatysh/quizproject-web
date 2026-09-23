@@ -503,3 +503,42 @@ test("a bad attempt number is refused without asking the API about it", async ()
     "the API was asked about an attempt that cannot exist");
 });
 
+
+// A failure belongs to the reader who provoked it, and the handover has to take
+// it with them. use-account-data cleared the two collections and left the two
+// error strings standing — and the load effects will not ask again while one is
+// set, so the next reader inherited both the message and the empty screen.
+test("a handover drops the failure the previous reader was looking at", async () => {
+  let results = 0;
+  const api = stubApi({
+    ...CATALOGUE,
+    "POST /api/v1/auth/logout": { body: {} },
+    "POST /api/v1/auth/login": (call: { body: unknown }) =>
+      loginResponse(String((call.body as { username: string }).username)),
+    "GET /api/v1/results/me": () => {
+      results += 1;
+      return results === 1
+        ? { status: 503, body: { message: "Сервіс недоступний." } }
+        : { body: [{ attemptId: 5, quizId: 1, quizName: "Java", score: 80, completedAt: "2026-01-01T00:00:00Z" }] };
+    }
+  });
+
+  seedSession("olena");
+  const view = render(App);
+  await settle();
+  goTo("#/results");
+  await settle();
+  assert.match(view.text(), /Сервіс недоступний/, "olena saw no failure to begin with");
+
+  click(view.findAll("button").find(button => button.textContent === "Вийти"));
+  await settle();
+  await signIn(view, "borys");
+  goTo("#/results");
+  await settle();
+
+  assert.doesNotMatch(view.text(), /Сервіс недоступний/,
+    "borys was shown the failure of a request olena made");
+  assert.equal(api.countOf("GET /api/v1/results/me"), 2,
+    "borys's own results were never asked for, because olena's error was still standing");
+  assert.match(view.text(), /Java/);
+});

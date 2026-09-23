@@ -193,8 +193,16 @@ export interface QuizRequest {
   timeToPassMinutes: number;
 }
 
-/** AdminModels.AnswerRequest */
+/**
+ * AdminModels.AnswerRequest
+ *
+ * `id` names the stored row this is an edit of, and is what frees the API from
+ * reading the order of the list as an identity. Optional because creating a
+ * question has nothing to name yet — and because the API refuses a request that
+ * names some rows and not others, so a partial list is worse than none.
+ */
 export interface AnswerRequest {
+  id?: number;
   text: string;
   correct: boolean;
 }

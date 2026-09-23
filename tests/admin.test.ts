@@ -20,6 +20,7 @@ import { click, closeBrowser, openBrowser, render, select, settle, submit, type,
 interface DirectCall {
   method: string;
   path: string;
+  body: unknown;
 }
 
 interface StubbedApi {
@@ -39,7 +40,11 @@ function stubbedApi(routes: Record<string, unknown> = {}): StubbedApi {
   const fetchImpl: FetchLike = (url, options) => {
     const path = new URL(url).pathname;
     const method = options.method ?? "GET";
-    calls.push({ method, path });
+    calls.push({
+      method,
+      path,
+      body: typeof options.body === "string" ? JSON.parse(options.body) : null
+    });
     const answer = routes[`${method} ${path}`];
     if (answer instanceof Error) throw answer;
     return new Response(JSON.stringify(answer ?? []), {
@@ -406,6 +411,44 @@ test("editing a question fills the editor from it and saves over it", async () =
   click(buttonsIn(card(view, "Запитання"), ".admin-question-list .button-row button")[0]);
   click(buttonsIn(card(view, "Запитання"), ".admin-question-form .button-row button")[1]);
   assert.equal(view.find<HTMLTextAreaElement>("textarea").value, "");
+});
+
+// Which stored row each submitted option is an edit of. The API pairs by id
+// when the request carries them and falls back to position when it does not —
+// and until this was sent, it always fell back, so the ids the results rows and
+// an attempt's snapshot are written against depended on the order of a list.
+// Nothing reorders that list in this form today, which is exactly why the
+// omission was invisible.
+test("saving an edited question names the rows it edits, and a new one names none", async () => {
+  const run = executor();
+  const { api, calls } = stubbedApi();
+  const view = await mount({ api, onExecute: run.execute, questions: [question()] });
+
+  click(buttonsIn(card(view, "Запитання"), ".admin-question-list .button-row button")[0]);
+  await submit(view.find("form.admin-question-form"));
+
+  const update = calls.find(call => call.method === "PUT" && call.path === "/api/v1/admin/questions/21");
+  assert.ok(update, "the edit was not sent to the row it was loaded from");
+  assert.deepEqual(
+    (update.body as { answers: { id?: number }[] }).answers.map(answer => answer.id),
+    [101, 102, 103, 104],
+    "the options were sent back with nothing saying which stored row each one is");
+
+  // A question that has never been saved has nothing to name, and the API
+  // refuses a request that names some rows and not others — so all four have to
+  // be absent here, not merely the ones that are obviously new.
+  type(view.find("textarea"), "Що таке JIT?");
+  view.findAll<HTMLInputElement>(".admin-answer-grid > label > input")
+    .forEach((input, index) => type(input, `Варіант ${index + 1}`));
+  click(view.findAll<HTMLInputElement>(".admin-answer-grid input[type=checkbox]")[0]);
+  await submit(view.find("form.admin-question-form"));
+
+  const created = calls.find(call => call.method === "POST" && call.path === "/api/v1/admin/quizzes/7/questions");
+  assert.ok(created, "the new question was not sent");
+  assert.deepEqual(
+    (created.body as { answers: Record<string, unknown>[] }).answers.map(answer => "id" in answer),
+    [false, false, false, false],
+    "a question being created named rows that do not exist yet");
 });
 
 test("deleting a question is confirmed, and the list is read back afterwards", async () => {

@@ -5,7 +5,11 @@ import type { AdminQuestion, AdminQuiz, AdminUser, QuestionRequest, QuizRequest,
 import { difficultyLabel, formatDate } from "../../utils.js";
 import type { AdminData, ExecuteAdmin, ResultRange } from "./contracts.js";
 
-interface AnswerDraft { key: string; text: string; correct: boolean; }
+// `key` is React's list identity and survives editing the text; `id` is the
+// stored row the API is to write this back to, and is null for an option that
+// has never been saved. They are separate because a draft needs a key before it
+// has an id, and the key must not change when the id arrives.
+interface AnswerDraft { key: string; id: number | null; text: string; correct: boolean; }
 interface QuizDraft {
   id: number | null;
   name: string;
@@ -16,7 +20,7 @@ interface QuizDraft {
 interface QuestionDraft { id: number | null; text: string; answers: AnswerDraft[]; }
 let nextAnswerKey = 0;
 const blankAnswers = (): AnswerDraft[] => Array.from({ length: 4 }, () => ({
-  key: `draft-${++nextAnswerKey}`, text: "", correct: false
+  key: `draft-${++nextAnswerKey}`, id: null, text: "", correct: false
 }));
 
 interface AdminSectionProps {
@@ -129,9 +133,18 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
     }));
   const submitQuestion = async (event: SubmitEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    // Every option names its row, or none does: the API refuses a mixture, and
+    // rightly — a request that names some rows and not others has not said what
+    // it wants. A question being edited has an id for all four; a new one has
+    // none. `id` is spread in rather than set to undefined because
+    // exactOptionalPropertyTypes tells those two apart.
     const payload: QuestionRequest = {
       text: questionDraft.text.trim(),
-      answers: questionDraft.answers.map(answer => ({ text: answer.text.trim(), correct: answer.correct }))
+      answers: questionDraft.answers.map(answer => ({
+        ...(answer.id === null ? {} : { id: answer.id }),
+        text: answer.text.trim(),
+        correct: answer.correct
+      }))
     };
     const draftId = questionDraft.id;
     const operation = draftId !== null
@@ -146,7 +159,8 @@ export function AdminPage({ data, loading, error, busy, api, resultRange, onResu
   const editQuestion = (question: AdminQuestion): void => setQuestionDraft({
     id: question.id,
     text: question.text,
-    answers: question.answers.map(answer => ({ key: `answer-${answer.id}`, text: answer.text, correct: answer.correct }))
+    answers: question.answers.map(answer =>
+      ({ key: `answer-${answer.id}`, id: answer.id, text: answer.text, correct: answer.correct }))
   });
   const deleteQuestion = async (question: AdminQuestion): Promise<void> => {
     if (!window.confirm(`Видалити запитання «${question.text}»?`)) return;

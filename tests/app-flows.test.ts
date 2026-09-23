@@ -429,6 +429,37 @@ test("a saved address is written down, confirmed, and used from then on", async 
   assert.equal(stub.lastOf("GET /api/v1/quizzes/summary")?.path, "/api/v1/quizzes/summary");
 });
 
+// The reason the settings screen exists: the address is wrong and the reader
+// fixes it. Invalidating the catalogue dropped its quizzes and kept its error,
+// and the load effect will not run while that error is set — so the app went on
+// showing the old address's failure against the new address, and asked the new
+// one for nothing until the reader found the retry button.
+test("a fixed address reloads the catalogue that failed on the old one", async () => {
+  let attempt = 0;
+  const { view, stub } = await open("", {
+    "GET /api/v1/quizzes": () => {
+      attempt += 1;
+      return attempt === 1
+        ? { status: 502, body: { message: "Сервер недоступний." } }
+        : { body: [{ id: 1, name: "Java SE", subject: "IT", complexity: "easy", timeToPassMinutes: 10, totalQuestions: 4 }] };
+    }
+  });
+
+  assert.match(view.text(), /Сервер недоступний/, "the broken address reported nothing");
+
+  goTo("#/settings");
+  await settle();
+  type(view.find("input[name=apiUrl]"), "https://api.example.com");
+  await submit(view.find("form"));
+  goTo("#/");
+  await settle();
+
+  assert.equal(stub.countOf("GET /api/v1/quizzes"), 2,
+    "the catalogue was never asked for again against the address the reader had just fixed");
+  assert.doesNotMatch(view.text(), /Сервер недоступний/, "the old address's failure outlived the address");
+  assert.match(view.text(), /Java SE/);
+});
+
 test("an address changed in another tab is picked up in this one", async () => {
   const { view } = await open("", {});
   localStorage.setItem("quizproject.apiUrl", "https://other.example.com");
