@@ -42,7 +42,7 @@ export function Layout({ route, session, onLogout, toasts, children }: Readonly<
           <a className={activeRoute("results", route)} href="#/results">
             Мої результати
           </a>
-          {session?.roles?.includes("ROLE_ADMIN") && (
+          {session?.roles.includes("ROLE_ADMIN") && (
             <a className={activeRoute("admin", route)} href="#/admin">
               Адміністрування
             </a>
