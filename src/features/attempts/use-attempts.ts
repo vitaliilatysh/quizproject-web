@@ -82,6 +82,9 @@ export function useAttempts({
         // not run, which is how the line gate found it.
         setSelections(current => ({ ...current, [attemptId]: readAnswers(attemptId) }));
       } catch (error) {
+        // The same check the success path makes. Without it the failure of a
+        // request the previous reader started is written into this one's screen.
+        if (activeAccount.current !== requestedBy) return;
         if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
           setErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));
         }
@@ -206,7 +209,17 @@ export function useAttempts({
     return selections[attemptId] ?? readAnswers(attemptId);
   }, [route.name, route.params, selections]);
 
+  // The two in-flight guards are refs, so they are not state this clears by
+  // setting state — and they were the two things it left behind. A handover
+  // while a request is out kept the outgoing reader's attempt id in `requests`,
+  // and the incoming reader's load for the same attempt returned at the guard
+  // without asking for anything. Nothing retried it either: the effect's
+  // condition had already been satisfied and its dependencies do not change
+  // again, and an attempt page offers no retry button — only the way back to
+  // the catalogue. The reader sat on a spinner until they reloaded the tab.
   const reset = useCallback(() => {
+    requests.current.clear();
+    completionRequests.current.clear();
     setAttempts({});
     setErrors({});
     setLoading({});

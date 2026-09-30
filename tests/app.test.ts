@@ -613,3 +613,58 @@ test("a handover drops the failure the previous reader was looking at", async ()
   );
   assert.match(view.text(), /Java/);
 });
+
+// The in-flight guards are refs, so reset() does not clear them by clearing
+// state — and it used to leave them holding the outgoing reader's attempt id.
+// The incoming reader's load then returned at the guard without asking for
+// anything, and nothing retried: the effect's condition was already satisfied,
+// its dependencies do not change again, and an attempt page offers no retry
+// button. The reader sat on a spinner until they reloaded the tab.
+test("a handover does not leave the next reader waiting on a request that is not theirs", async () => {
+  let refuseOlenasRequest!: (reason: unknown) => void;
+  const olenasRequest = new Promise<never>((_resolve, reject) => {
+    refuseOlenasRequest = reject;
+  });
+  let asked = 0;
+
+  const api = stubApi({
+    ...CATALOGUE,
+    "POST /api/v1/auth/login": loginResponse("borys"),
+    "POST /api/v1/auth/logout": { body: {} },
+    "GET /api/v1/attempts/4": () => {
+      asked += 1;
+      return asked === 1 ? olenasRequest : attemptBody(4)();
+    }
+  });
+
+  seedSession("olena");
+  goTo("#/attempt/4");
+  const view = render(App);
+  await settle();
+
+  // Olena's request is still out. Borys takes the tab over.
+  click(view.findAll("button").find(button => button.textContent === "Вийти"));
+  await settle();
+  goTo("#/login");
+  await settle();
+  await signIn(view, "borys");
+  goTo("#/attempt/4");
+  await settle();
+
+  assert.equal(
+    api.countOf("GET /api/v1/attempts/4"),
+    2,
+    "borys's attempt was never requested, because olena's was still counted as in flight"
+  );
+  assert.match(view.text(), /Що таке JVM/, "borys was left on the spinner olena's request owns");
+
+  // Only now does the API refuse what Olena asked for.
+  await act(async () => {
+    refuseOlenasRequest(new TypeError("network down"));
+    await settle();
+  });
+  await settle();
+
+  assert.match(view.text(), /Що таке JVM/, "olena's failure replaced the attempt borys was reading");
+  assert.doesNotMatch(view.text(), /з’єднатися з API/, "olena's failure was reported onto borys's screen");
+});
