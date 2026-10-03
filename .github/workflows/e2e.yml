@@ -145,6 +145,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
+      # Thirty days rather than seven. The trace, the video and the page snapshot
+      # are the only record an intermittent failure leaves, and an intermittent
+      # failure is by definition one somebody comes back to later: the checkbox
+      # flake of 2026-09-24 was diagnosed on 2026-10-03, nine days on, from the
+      # stylesheet and a reproduction rather than from its own evidence, because
+      # by then the evidence had expired.
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -152,7 +158,7 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 30
 
       - name: Upload API log
         if: failure()
@@ -161,7 +167,7 @@ jobs:
           name: api-e2e-log
           path: backend/api-e2e.log
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 30
 
       - name: Stop API
         if: always()
