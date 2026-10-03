@@ -38,10 +38,21 @@ test("student completes a quiz and sees the persisted result", async ({ page }, 
     has: page.getByText("correct", { exact: true })
   });
   await expect(correctAnswers).toHaveCount(6);
+  // The label is the hit target, not the input: styles.css gives
+  // `.answer-option input` pointer-events: none and draws the box as a sibling
+  // span, so a reader can only ever toggle an answer by clicking the label,
+  // which forwards the activation. check({ force: true }) on the input drove the
+  // one element the stylesheet declares undrivable, and `force` switched off the
+  // stability check that would have objected — so a click point computed just
+  // before the countdown above re-rendered was dispatched at stale coordinates,
+  // hit something that forwards nothing, and toggled nothing. Playwright then
+  // reported "Clicking the checkbox did not change its state", which is what
+  // this suite failed with on 2026-09-24. attempt-selection.spec.ts already
+  // clicked the label; this was the one place that did not.
   for (let index = 0; index < 6; index += 1) {
-    const checkbox = correctAnswers.nth(index).getByRole("checkbox");
-    await checkbox.check({ force: true });
-    await expect(checkbox).toBeChecked();
+    const option = correctAnswers.nth(index);
+    await option.click();
+    await expect(option.getByRole("checkbox")).toBeChecked();
   }
 
   page.once("dialog", dialog => dialog.accept());
