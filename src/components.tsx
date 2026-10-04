@@ -13,6 +13,10 @@ export type { LayoutProps, Toast } from "./components/layout.js";
 export { NotFoundPage } from "./components/not-found-page.js";
 export { Pager } from "./components/pager.js";
 export type { PagerProps } from "./components/pager.js";
-export { AdminPage } from "./features/admin/admin-page.js";
+// AdminPage is deliberately absent. It is the one page loaded on demand, and a
+// static re-export here would put it back in the entry chunk however App
+// imports it: anything this barrel names is reachable from the entry, and
+// App imports this barrel. Its props type is still safe to re-export, because a
+// type is erased and reaches no runtime graph.
 export type { AdminPageProps } from "./features/admin/admin-page.js";
 export type { AdminData, ExecuteAdmin, ResultRange } from "./features/admin/contracts.js";
