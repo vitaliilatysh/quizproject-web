@@ -9,7 +9,11 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
-import { AdminPage, type AdminPageProps, type ExecuteAdmin } from "../src/components.js";
+// Imported from the module rather than the barrel: the barrel no longer names
+// AdminPage, because naming it there would put the panel back in the entry
+// chunk it is now fetched outside of.
+import { AdminPage, type AdminPageProps } from "../src/features/admin/admin-page.js";
+import { type ExecuteAdmin } from "../src/components.js";
 import { QuizApi, type FetchLike } from "../src/api.js";
 import type {
   AdminQuestion,

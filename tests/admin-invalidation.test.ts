@@ -20,7 +20,17 @@ import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { ADMIN_INVALIDATES } from "../src/features/admin/contracts.js";
 import { fakeToken, stubApi, type StubbedApi } from "./support/api-stub.js";
-import { act, click, closeBrowser, openBrowser, render, settle, submit, type } from "./support/dom.js";
+import {
+  act,
+  click,
+  closeBrowser,
+  openBrowser,
+  render,
+  settle,
+  settleUntil,
+  submit,
+  type
+} from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
 
@@ -88,7 +98,9 @@ async function openPanel(): Promise<{
   const view = render(App);
   await settle();
   goTo("#/admin");
-  await settle();
+  // The panel is a chunk of its own, so the first test in a process to open it
+  // waits on a real import before any of its markup exists.
+  await settleUntil(() => view.findAll("input[placeholder='Новий предмет']").length > 0);
   window.confirm = () => true;
   let mark = api.calls.filter(call => call.path.startsWith("/api/v1/admin")).length;
   return {
