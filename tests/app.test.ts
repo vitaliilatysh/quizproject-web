@@ -103,8 +103,7 @@ for (const status of [200, 503]) {
       const path = "GET /api/v1/attempts/4";
       const api = stubApi({
         ...CATALOGUE,
-        "POST /api/v1/auth/login": call =>
-          loginResponse((call.body as { username: string }).username),
+        "POST /api/v1/auth/login": call => loginResponse((call.body as { username: string }).username),
         [path]: () => (++loads === 1 ? outgoing.promise : incoming.promise)
       });
       seedSession("olena");
@@ -153,9 +152,7 @@ for (const operation of ["start", "complete"] as const) {
         const outgoing = delayedResponse();
         const incoming = delayedResponse();
         const path =
-          operation === "start"
-            ? "POST /api/v1/quizzes/7/attempts"
-            : "POST /api/v1/attempts/4/complete";
+          operation === "start" ? "POST /api/v1/quizzes/7/attempts" : "POST /api/v1/attempts/4/complete";
         let mutations = 0;
         const api = stubApi({
           ...CATALOGUE,
@@ -172,8 +169,7 @@ for (const operation of ["start", "complete"] as const) {
             ]
           },
           "GET /api/v1/attempts/4": attemptBody(4),
-          "POST /api/v1/auth/login": call =>
-            loginResponse((call.body as { username: string }).username),
+          "POST /api/v1/auth/login": call => loginResponse((call.body as { username: string }).username),
           [path]: () => (++mutations === 1 ? outgoing.promise : incoming.promise)
         });
 
@@ -839,4 +835,3 @@ test("a handover does not leave the next reader waiting on a request that is not
   assert.match(view.text(), /Що таке JVM/, "olena's failure replaced the attempt borys was reading");
   assert.doesNotMatch(view.text(), /з’єднатися з API/, "olena's failure was reported onto borys's screen");
 });
-
