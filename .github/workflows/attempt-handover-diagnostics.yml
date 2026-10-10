@@ -24,4 +24,5 @@ jobs:
           print("FORMATTED_TEST_BASE64=" + base64.b64encode(Path("tests/app.test.ts").read_bytes()).decode())
           PY
       - name: Reproduce delayed account handovers
-        run: node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --test-name-pattern='^(start|complete|load): an old' tests/app.test.ts
+        run: |
+          node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --test-name-pattern='^(start|complete|load): an old' tests/app.test.ts
