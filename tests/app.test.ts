@@ -3,7 +3,7 @@ import test, { afterEach, beforeEach } from "node:test";
 
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
-import { fakeToken, loginResponse, stubApi } from "./support/api-stub.js";
+import { fakeToken, loginResponse, stubApi, type StubResponse } from "./support/api-stub.js";
 import { act, click, closeBrowser, openBrowser, render, settle, type, type Rendered } from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
@@ -85,6 +85,177 @@ const CATALOGUE = {
   "GET /api/v1/quizzes": { body: [] },
   "GET /api/v1/quizzes/summary": { body: { totalQuizzes: 0, totalSubjects: 0 } }
 };
+
+function delayedResponse() {
+  let resolve!: (response: StubResponse) => void;
+  const promise = new Promise<StubResponse>(done => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+for (const status of [200, 503]) {
+  for (const returnToFirst of [false, true]) {
+    test(`load: an old ${status} response cannot release the next reader's request (${returnToFirst ? "A -> B -> A" : "A -> B"})`, async () => {
+      const outgoing = delayedResponse();
+      const incoming = delayedResponse();
+      let loads = 0;
+      const path = "GET /api/v1/attempts/4";
+      const api = stubApi({
+        ...CATALOGUE,
+        "POST /api/v1/auth/login": call =>
+          loginResponse((call.body as { username: string }).username),
+        [path]: () => (++loads === 1 ? outgoing.promise : incoming.promise)
+      });
+      seedSession("olena");
+      goTo("#/attempt/4");
+      const view = render(App);
+      await settle();
+      assert.equal(api.countOf(path), 1);
+
+      goTo("#/login");
+      await signIn(view, "borys");
+      if (returnToFirst) {
+        goTo("#/login");
+        await signIn(view, "olena");
+      }
+      goTo("#/attempt/4");
+      await settle();
+      assert.equal(api.countOf(path), 2);
+
+      await act(async () => {
+        outgoing.resolve({
+          status,
+          body: status === 200 ? attemptBody(4)().body : { message: "Outgoing load failed" }
+        });
+        await settle();
+      });
+      assert.equal(api.countOf(path), 2, "the old finally block released the incoming load's guard");
+      assert.match(view.text(), /Готуємо запитання/, "the old response replaced the incoming loader");
+
+      await act(async () => {
+        incoming.resolve(attemptBody(4)());
+        await settle();
+      });
+      assert.match(view.text(), /Що таке JVM/);
+      assert.doesNotMatch(view.text(), /Outgoing load failed/);
+    });
+  }
+}
+
+// Resolve the outgoing request only after the next reader has their own request
+// in flight. Returning to the first account also matters: matching the login
+// alone would accept a response from before the intervening handover.
+for (const operation of ["start", "complete"] as const) {
+  for (const status of [200, 401, 503]) {
+    for (const returnToFirst of [false, true]) {
+      test(`${operation}: an old ${status} response stays invalid after ${returnToFirst ? "A -> B -> A" : "A -> B"}`, async () => {
+        const outgoing = delayedResponse();
+        const incoming = delayedResponse();
+        const path =
+          operation === "start"
+            ? "POST /api/v1/quizzes/7/attempts"
+            : "POST /api/v1/attempts/4/complete";
+        let mutations = 0;
+        const api = stubApi({
+          ...CATALOGUE,
+          "GET /api/v1/quizzes": {
+            body: [
+              {
+                id: 7,
+                name: "Java",
+                subject: "Програмування",
+                complexity: "medium",
+                totalQuestions: 1,
+                timeToPassMinutes: 30
+              }
+            ]
+          },
+          "GET /api/v1/attempts/4": attemptBody(4),
+          "POST /api/v1/auth/login": call =>
+            loginResponse((call.body as { username: string }).username),
+          [path]: () => (++mutations === 1 ? outgoing.promise : incoming.promise)
+        });
+
+        const route = operation === "start" ? "#/quizzes" : "#/attempt/4";
+        seedSession("olena");
+        goTo(route);
+        const view = render(App);
+        await settle();
+        window.confirm = () => true;
+        const selector = operation === "start" ? ".quiz-card button" : ".attempt-submit button";
+        click(view.find(selector));
+        await settle();
+        assert.equal(api.countOf(path), 1);
+
+        goTo("#/login");
+        await signIn(view, "borys");
+        if (returnToFirst) {
+          goTo("#/login");
+          await signIn(view, "olena");
+        }
+        goTo(route);
+        await settle();
+        if (operation === "complete") {
+          click(view.at<HTMLInputElement>("input[type=checkbox]", 1));
+          await settle();
+        }
+        click(view.find(selector));
+        await settle();
+        assert.equal(api.countOf(path), 2, "the incoming reader could not start their own request");
+
+        await act(async () => {
+          outgoing.resolve({
+            status,
+            body:
+              status !== 200
+                ? { message: "Outgoing attempt request failed" }
+                : operation === "start"
+                  ? attemptBody(4)().body
+                  : { attemptId: 4, score: 100 }
+          });
+          await settle();
+        });
+
+        const stored = JSON.parse(String(sessionStorage.getItem("quizproject.session")));
+        assert.equal(stored.username, returnToFirst ? "olena" : "borys");
+        assert.equal(window.location.hash, route, "the outgoing request changed the current route");
+        assert.doesNotMatch(view.text(), /Outgoing attempt request failed|Сесія завершилась|Ваш результат/);
+        assert.equal(
+          view.find<HTMLButtonElement>(selector).disabled,
+          true,
+          "the outgoing request cleared the incoming request's busy state"
+        );
+        if (operation === "complete") {
+          assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([102]));
+          assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 1).checked, true);
+          // Submitting the form again must still hit the incoming request's
+          // duplicate guard, even after the outgoing finally block has run.
+          act(() => {
+            view.find("form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+          });
+          await settle();
+          assert.equal(api.countOf(path), 2, "the outgoing request released the incoming guard");
+        }
+
+        await act(async () => {
+          incoming.resolve({
+            body: operation === "start" ? attemptBody(5)().body : { attemptId: 4, score: 80 }
+          });
+          await settle();
+        });
+        if (operation === "start") {
+          assert.equal(window.location.hash, "#/attempt/5");
+          assert.match(view.text(), /Тест #7/);
+        } else {
+          assert.match(view.text(), /Ваш результат/);
+          assert.equal(view.find(".completion__score strong").textContent, "80");
+          assert.equal(sessionStorage.getItem(ANSWERS(4)), null);
+        }
+      });
+    }
+  }
+}
 
 // The bug this pins had a fix, and then the fix had a bug, so both directions
 // are here. Handing the tab to a different person must drop what the last one
@@ -668,3 +839,4 @@ test("a handover does not leave the next reader waiting on a request that is not
   assert.match(view.text(), /Що таке JVM/, "olena's failure replaced the attempt borys was reading");
   assert.doesNotMatch(view.text(), /з’єднатися з API/, "olena's failure was reported onto borys's screen");
 });
+

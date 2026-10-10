@@ -1,0 +1,27 @@
+name: Attempt handover regression diagnostics
+on:
+  push:
+    branches: [codex/fix-attempt-handover-20261010]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Format regression tests
+        run: |
+          npx prettier --write tests/app.test.ts
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          print("FORMATTED_TEST_BASE64=" + base64.b64encode(Path("tests/app.test.ts").read_bytes()).decode())
+          PY
+      - name: Reproduce delayed account handovers
+        run: node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --test-name-pattern='^(start|complete|load): an old' tests/app.test.ts
