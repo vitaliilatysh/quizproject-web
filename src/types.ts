@@ -121,6 +121,22 @@ export interface Result {
   completedAt: string;
 }
 
+/**
+ * api/result/ResultSummary.java — over every completed attempt the reader has,
+ * whichever page of the list is on screen.
+ */
+export interface ResultSummary {
+  totalAttempts: number;
+  averageScore: number;
+  bestScore: number;
+}
+
+/** One page of the results list, and the totals it sits inside. They arrive together. */
+export interface ResultHistory {
+  page: Paged<Result>;
+  summary: ResultSummary;
+}
+
 // --- administration --------------------------------------------------------
 // All from api/admin/AdminModels.java.
 

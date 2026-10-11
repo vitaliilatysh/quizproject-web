@@ -17,6 +17,7 @@ import type {
   QuizRequest,
   RegisterRequest,
   Result,
+  ResultSummary,
   Subject,
   TokenResponse
 } from "./types.js";
@@ -397,14 +398,20 @@ export class QuizApi {
     });
   }
 
-  // Deliberately not paginated. The results screen shows the viewer's average
-  // and best score across every attempt, and those cannot be computed from one
-  // page — X-Total-Count answers "how many", not "what is the mean". The list
-  // is also bounded by a single user's attempts, so it grows far slower than
-  // the admin collections. Paginating it would keep the numbers on screen while
-  // silently changing what they mean.
-  results(): Promise<Result[]> {
-    return this.request<Result[]>("/api/v1/results/me", { authenticated: true });
+  // Paginated now that the aggregates have their own endpoint. Until
+  // /results/me/summary existed this fetched every attempt, on purpose: the
+  // screen shows the average and best score across all of them, which no page
+  // can supply — X-Total-Count answers "how many", not "what is the mean" — and
+  // paginating would have kept those numbers on screen while silently changing
+  // what they meant. resultSummary() is computed by the server over the whole
+  // history, so the list is free to be bounded like every other one.
+  results({ page, size }: PagingOptions = {}): Promise<Paged<Result>> {
+    const query = queryOf(withPaging(new URLSearchParams(), { page, size }));
+    return this.requestPaged<Result>(`/api/v1/results/me${query}`, { authenticated: true });
+  }
+
+  resultSummary(): Promise<ResultSummary> {
+    return this.request<ResultSummary>("/api/v1/results/me/summary", { authenticated: true });
   }
 
   adminStatus(): Promise<AdminStatus> {

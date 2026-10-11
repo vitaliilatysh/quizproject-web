@@ -472,22 +472,46 @@ test("omitting page and size leaves the request unpaginated", async () => {
   assert.equal(observed, "https://api.example.com/api/v1/admin/users");
 });
 
-test("results stays unpaginated so its averages cover every attempt", async () => {
-  let observed: string | undefined;
+// This was "results stays unpaginated so its averages cover every attempt",
+// and it was right: no page can supply a mean over the whole history. The API
+// now computes that mean itself, so the list asks for one page and the totals
+// for everything, and both halves are pinned here.
+test("results asks for one page, and the totals for the whole history", async () => {
+  const observed: string[] = [];
   const api = new QuizApi({
     baseUrl: "https://api.example.com",
     getToken: () => "student-token",
     fetchImpl: async url => {
-      observed = url;
-      return new Response(JSON.stringify([{ attemptId: 1, score: 80 }]), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
+      observed.push(url);
+      const summary = url.endsWith("/summary");
+      return new Response(
+        JSON.stringify(
+          summary ? { totalAttempts: 45, averageScore: 66.6, bestScore: 100 } : [{ attemptId: 1 }]
+        ),
+        {
+          status: 200,
+          headers: summary
+            ? { "content-type": "application/json" }
+            : {
+                "content-type": "application/json",
+                "X-Page-Number": "2",
+                "X-Page-Size": "20",
+                "X-Total-Count": "45",
+                "X-Total-Pages": "3"
+              }
+        }
+      );
     }
   });
 
-  assert.deepEqual(await api.results(), [{ attemptId: 1, score: 80 }]);
-  assert.equal(observed, "https://api.example.com/api/v1/results/me");
+  const page = await api.results({ page: 2, size: 20 });
+  assert.deepEqual(page.items, [{ attemptId: 1 }]);
+  assert.deepEqual(page.page, { number: 2, size: 20, totalCount: 45, totalPages: 3 });
+  assert.deepEqual(await api.resultSummary(), { totalAttempts: 45, averageScore: 66.6, bestScore: 100 });
+  assert.deepEqual(observed, [
+    "https://api.example.com/api/v1/results/me?page=2&size=20",
+    "https://api.example.com/api/v1/results/me/summary"
+  ]);
 });
 
 test("toInstant converts widget values and rejects unusable ones", () => {

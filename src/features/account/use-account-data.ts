@@ -3,9 +3,11 @@ import type { QuizApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { navigate } from "../../app/navigation.js";
 import { rememberReturnTo, type Session } from "../../session.js";
-import type { Profile, Result } from "../../types.js";
+import type { Profile, ResultHistory } from "../../types.js";
 
 type HandleAuthError = (error: unknown, returnTo: string) => boolean;
+
+const PAGE_SIZE = 20;
 
 export function useAccountData(
   api: QuizApi,
@@ -15,7 +17,11 @@ export function useAccountData(
   activeAccount: RefObject<string | null>,
   handleAuthError: HandleAuthError
 ) {
-  const [results, setResults] = useState<Result[] | null>(null);
+  const [results, setResults] = useState<ResultHistory | null>(null);
+  const [resultsPage, setResultsPage] = useState(0);
+  // Which page `results` holds. It trails resultsPage while the next page
+  // loads, and the difference between the two is what asks for that page.
+  const [loadedPage, setLoadedPage] = useState<number | null>(null);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultError, setResultError] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -26,13 +32,19 @@ export function useAccountData(
   const loadResults = useCallback(async (): Promise<void> => {
     if (session && !resultsRequest.current) {
       const requestedBy = session.username;
+      const page = resultsPage;
       resultsRequest.current = true;
       setResultsLoading(true);
       setResultError("");
       try {
-        const rows = await api.results();
+        // The totals do not depend on the page, so turning one reuses them.
+        const [rows, summary] = await Promise.all([
+          api.results({ page, size: PAGE_SIZE }),
+          results?.summary ?? api.resultSummary()
+        ]);
         if (activeAccount.current !== requestedBy) return;
-        setResults(rows);
+        setResults({ page: rows, summary });
+        setLoadedPage(page);
       } catch (error) {
         if (activeAccount.current !== requestedBy) return;
         if (!handleAuthError(error, "#/results")) setResultError(friendlyError(error));
@@ -41,7 +53,7 @@ export function useAccountData(
         setResultsLoading(false);
       }
     }
-  }, [activeAccount, api, handleAuthError, session]);
+  }, [activeAccount, api, handleAuthError, results, resultsPage, session]);
 
   const loadProfile = useCallback(async (): Promise<void> => {
     if (!session || profileRequest.current) return;
@@ -67,10 +79,10 @@ export function useAccountData(
     if (!session) {
       rememberReturnTo("#/results");
       navigate("#/login");
-    } else if (accessReady && results === null && !resultsLoading && !resultError) {
+    } else if (accessReady && loadedPage !== resultsPage && !resultsLoading && !resultError) {
       void loadResults();
     }
-  }, [accessReady, loadResults, resultError, results, resultsLoading, routeName, session]);
+  }, [accessReady, loadResults, loadedPage, resultError, resultsLoading, resultsPage, routeName, session]);
 
   useEffect(() => {
     if (routeName !== "profile") return;
@@ -82,15 +94,23 @@ export function useAccountData(
     }
   }, [accessReady, loadProfile, profile, profileError, profileLoading, routeName, session]);
 
-  const invalidateResults = useCallback(() => setResults(null), []);
+  // A completed attempt changes the totals and lands first in the list, which
+  // is ordered newest first, so the screen goes back to the page that shows it.
+  const invalidateResults = useCallback(() => {
+    setResults(null);
+    setLoadedPage(null);
+    setResultsPage(0);
+  }, []);
 
   // Both errors, not just both collections. The load effects will not ask
-  // again while one is set — `results === null && !resultsLoading &&
+  // again while one is set — `loadedPage !== resultsPage && !resultsLoading &&
   // !resultError` — so an error left behind by the previous reader is not a
   // stale message, it is a screen that never loads. use-attempts and
   // use-admin-questions already clear theirs here; these two did not.
   const reset = useCallback(() => {
     setResults(null);
+    setLoadedPage(null);
+    setResultsPage(0);
     setProfile(null);
     setResultError("");
     setProfileError("");
@@ -100,6 +120,7 @@ export function useAccountData(
     results,
     resultsLoading,
     resultError,
+    setResultsPage,
     profile,
     profileLoading,
     profileError,

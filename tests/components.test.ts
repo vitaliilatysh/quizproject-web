@@ -22,7 +22,16 @@ import {
 } from "../src/components.js";
 import { resetServerClock } from "../src/clock.js";
 import type { Session } from "../src/session.js";
-import type { Attempt, AttemptCompletion, Profile, Quiz } from "../src/types.js";
+import type {
+  Attempt,
+  AttemptCompletion,
+  PageMeta,
+  Profile,
+  Quiz,
+  Result,
+  ResultHistory,
+  ResultSummary
+} from "../src/types.js";
 import { click, closeBrowser, openBrowser, render, submit as submitForm, type } from "./support/dom.js";
 
 // A signed-in reader, complete enough to be a real Session. Only `username` and
@@ -341,26 +350,60 @@ test("signing out is offered only to someone signed in, and reports the press", 
   assert.equal(view.findAll("button").filter(b => b.textContent === "Вийти").length, 0);
 });
 
-test("results are averaged over every attempt, and the best is the best", () => {
+function history(
+  items: Result[],
+  summary: Partial<ResultSummary> = {},
+  page: PageMeta | null = null
+): ResultHistory {
+  return {
+    page: { items, page },
+    summary: { totalAttempts: items.length, averageScore: 0, bestScore: 0, ...summary }
+  };
+}
+
+const resultsProps = { loading: false, error: "", onRetry: () => {}, onPageChange: () => {} };
+
+// The rows are one page; the figures are the whole history. Reading them off
+// the rows was right while the screen fetched every attempt, and would now say
+// "20 completed" to a reader with 45 the moment the list became paginated.
+test("the totals come from the summary, not from the page of rows on screen", () => {
   const view = render(ResultsPage, {
-    results: [
-      { attemptId: 1, quizId: 3, quizName: "Java", score: 90, completedAt: "2026-03-01T10:00:00Z" },
-      { attemptId: 2, quizId: 3, quizName: "Java", score: 40, completedAt: "2026-03-02T10:00:00Z" },
-      { attemptId: 3, quizId: 5, quizName: "SQL", score: 71, completedAt: "2026-03-03T10:00:00Z" }
-    ],
-    loading: false,
-    error: "",
-    onRetry: () => {}
+    ...resultsProps,
+    results: history(
+      [
+        { attemptId: 1, quizId: 3, quizName: "Java", score: 90, completedAt: "2026-03-01T10:00:00Z" },
+        { attemptId: 2, quizId: 3, quizName: "Java", score: 40, completedAt: "2026-03-02T10:00:00Z" }
+      ],
+      { totalAttempts: 45, averageScore: 66.6, bestScore: 100 }
+    )
   });
 
-  assert.equal(view.at(".result-summary strong", 0).textContent, "3");
-  assert.equal(view.at(".result-summary strong", 1).textContent, "67%", "the mean of 90, 40 and 71 is 67");
-  assert.equal(view.at(".result-summary strong", 2).textContent, "90%");
-  assert.equal(view.findAll(".result-row").length, 3);
+  assert.equal(view.at(".result-summary strong", 0).textContent, "45");
+  assert.equal(view.at(".result-summary strong", 1).textContent, "67%", "66.6 rounds to 67");
+  assert.equal(view.at(".result-summary strong", 2).textContent, "100%");
+  assert.equal(view.findAll(".result-row").length, 2);
+});
+
+test("a history longer than one page offers the next one", () => {
+  const pages: number[] = [];
+  const view = render(ResultsPage, {
+    ...resultsProps,
+    onPageChange: (page: number) => pages.push(page),
+    results: history(
+      [{ attemptId: 7, quizId: 3, quizName: "Java", score: 90, completedAt: "2026-03-01T10:00:00Z" }],
+      { totalAttempts: 45 },
+      { number: 1, size: 20, totalCount: 45, totalPages: 3 }
+    )
+  });
+
+  assert.match(view.find(".pager__status").textContent ?? "", /Спроби 21–40 з 45/);
+  click(view.findAll<HTMLButtonElement>(".pager button").find(button => button.textContent === "Далі"));
+  click(view.findAll<HTMLButtonElement>(".pager button").find(button => button.textContent === "Назад"));
+  assert.deepEqual(pages, [2, 0]);
 });
 
 test("an empty history reads as empty rather than as a zero score", () => {
-  const view = render(ResultsPage, { results: [], loading: false, error: "", onRetry: () => {} });
+  const view = render(ResultsPage, { ...resultsProps, results: history([]) });
   assert.match(view.text(), /Історія ще порожня/);
   assert.equal(view.findAll(".result-row").length, 0);
 });
@@ -368,10 +411,10 @@ test("an empty history reads as empty rather than as a zero score", () => {
 test("a score is banded, and the bands do not overlap", () => {
   const at = (score: number): string => {
     const view = render(ResultsPage, {
-      results: [{ attemptId: 1, quizId: 1, quizName: "Java", score, completedAt: "2026-03-01T10:00:00Z" }],
-      loading: false,
-      error: "",
-      onRetry: () => {}
+      ...resultsProps,
+      results: history([
+        { attemptId: 1, quizId: 1, quizName: "Java", score, completedAt: "2026-03-01T10:00:00Z" }
+      ])
     });
     const badge = view.find(".score-badge").className;
     view.unmount();
@@ -838,8 +881,8 @@ test("the catalogue reports what was searched for and which difficulty was picke
 test("results that could not be loaded offer the reason and a retry", () => {
   let retried = 0;
   const view = render(ResultsPage, {
+    ...resultsProps,
     results: null,
-    loading: false,
     error: "500 Internal Server Error",
     onRetry: () => {
       retried += 1;
@@ -852,10 +895,10 @@ test("results that could not be loaded offer the reason and a retry", () => {
 
 test("a result whose quiz has no name still gets an initial rather than a blank", () => {
   const view = render(ResultsPage, {
-    results: [{ attemptId: 5, quizId: 7, quizName: "", score: 70, completedAt: "2026-03-01T09:00:00Z" }],
-    loading: false,
-    error: "",
-    onRetry: () => {}
+    ...resultsProps,
+    results: history([
+      { attemptId: 5, quizId: 7, quizName: "", score: 70, completedAt: "2026-03-01T09:00:00Z" }
+    ])
   });
   assert.equal(view.find(".result-index").textContent, "Q");
 });

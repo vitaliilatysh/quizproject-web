@@ -59,9 +59,34 @@ test("student completes a quiz and sees the persisted result", async ({ page }, 
   await page.getByRole("button", { name: "Завершити тест" }).click();
   await expect(page.locator(".completion__score")).toHaveText("100%");
 
+  // A fresh reader with exactly one attempt at 100%, so both halves of the
+  // results contract have a known answer against the real backend. The list
+  // must be asked for one page and answer with page headers the browser can
+  // read — they reach it only through Access-Control-Expose-Headers, which curl
+  // never needs — and the totals must come from /summary and agree with them.
+  const listResponse = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/results/me"
+  );
+  const summaryResponse = page.waitForResponse(
+    response => new URL(response.url()).pathname === "/api/v1/results/me/summary"
+  );
   await page.getByRole("link", { name: "Історія результатів" }).click();
   const result = page.locator(".result-row").filter({ hasText: "Test1" });
   await expect(result).toContainText("100%");
+
+  const list = await listResponse;
+  expect(list.status()).toBe(200);
+  const params = new URL(list.url()).searchParams;
+  expect([params.get("page"), params.get("size")], "the list was not asked for one page").toEqual([
+    "0",
+    "20"
+  ]);
+  expect(list.headers()["x-total-count"], "the page headers did not reach the browser").toBe("1");
+
+  const summary = await summaryResponse;
+  expect(summary.status()).toBe(200);
+  expect(await summary.json()).toEqual({ totalAttempts: 1, averageScore: 100, bestScore: 100 });
+  await expect(page.locator(".result-summary strong")).toHaveText(["1", "100%", "100%"]);
 });
 
 test("administrator can create, update and delete catalog content", async ({ page }, testInfo) => {

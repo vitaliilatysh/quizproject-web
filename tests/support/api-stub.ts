@@ -18,6 +18,8 @@ export interface StubCall {
 export interface StubResponse {
   status?: number;
   body?: unknown;
+  /** Extra response headers — the X-Page-* set, for a paginated collection. */
+  headers?: Record<string, string>;
 }
 
 export type StubHandler = StubResponse | ((call: StubCall) => StubResponse | Promise<StubResponse>);
@@ -53,10 +55,10 @@ export function stubApi(routes: Record<string, StubHandler>): StubbedApi {
     }
 
     const result = typeof handler === "function" ? await handler(calls.at(-1) as StubCall) : handler;
-    const { status = 200, body = {} } = result ?? {};
+    const { status = 200, body = {}, headers: extra = {} } = result ?? {};
     return new Response(JSON.stringify(body), {
       status,
-      headers: { "content-type": "application/json" }
+      headers: { "content-type": "application/json", ...extra }
     });
   }) as typeof globalThis.fetch;
 

@@ -332,7 +332,8 @@ test("a profile that will not load offers the reason and reloads on request", as
 test("results are loaded once for the reader, and reloaded when asked", async () => {
   seedSession("olena");
   const { view, stub } = await open("#/results", {
-    "GET /api/v1/results/me": { status: 503, body: { message: "Сервіс недоступний." } }
+    "GET /api/v1/results/me": { status: 503, body: { message: "Сервіс недоступний." } },
+    "GET /api/v1/results/me/summary": { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } }
   });
 
   assert.match(view.text(), /Сервіс недоступний/);
@@ -349,6 +350,8 @@ test("an expired session on a protected page returns the reader to it after sign
   let expired = true;
   const { view } = await open("#/results", {
     "GET /api/v1/results/me": () => (expired ? { status: 401, body: {} } : { body: [] }),
+    "GET /api/v1/results/me/summary": () =>
+      expired ? { status: 401, body: {} } : { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } },
     "POST /api/v1/auth/login": () => {
       expired = false;
       return loginResponse("olena");
@@ -671,6 +674,7 @@ test("a failed load is not retried until somebody asks for it", async () => {
       "GET /api/v1/quizzes/summary": failing,
       "GET /api/v1/users/me": failing,
       "GET /api/v1/results/me": failing,
+      "GET /api/v1/results/me/summary": failing,
       "GET /api/v1/attempts/4": failing,
       "GET /api/v1/admin/subjects": failing
     });
