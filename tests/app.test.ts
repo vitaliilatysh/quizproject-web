@@ -3,7 +3,7 @@ import test, { afterEach, beforeEach } from "node:test";
 
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
-import { fakeToken, loginResponse, stubApi, type StubResponse } from "./support/api-stub.js";
+import { fakeToken, loginResponse, stubApi, type StubCall, type StubResponse } from "./support/api-stub.js";
 import { act, click, closeBrowser, openBrowser, render, settle, type, type Rendered } from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
@@ -281,10 +281,152 @@ test("signing in as somebody else drops the previous reader's answers", async ()
   assert.equal(sessionStorage.getItem(ANSWERS(4)), null, "Borys can still see the answers Olena selected");
 });
 
+// Three pages of fifteen, each row naming the page it came from, so a test can
+// tell which page is on screen without counting rows.
+const PAGED_RESULTS = {
+  "GET /api/v1/results/me": (call: StubCall): StubResponse => {
+    const page = Number(call.query.get("page"));
+    return {
+      body: [
+        {
+          attemptId: 100 + page,
+          quizId: 7,
+          quizName: `Page ${page}`,
+          score: 50,
+          completedAt: "2026-01-01T00:00:00Z"
+        }
+      ],
+      headers: {
+        "X-Page-Number": String(page),
+        "X-Page-Size": "20",
+        "X-Total-Count": "45",
+        "X-Total-Pages": "3"
+      }
+    };
+  },
+  "GET /api/v1/results/me/summary": { body: { totalAttempts: 45, averageScore: 61.4, bestScore: 97 } }
+};
+
+const nextPage = (view: Rendered<Record<string, never>>): void =>
+  click(view.findAll<HTMLButtonElement>(".pager button").find(button => button.textContent === "Далі"));
+
+test("turning a page asks for that page alone, and keeps the totals it has", async () => {
+  const api = stubApi({ ...CATALOGUE, ...PAGED_RESULTS });
+  seedSession("olena");
+  const view = render(App);
+  await settle();
+  goTo("#/results");
+  await settle();
+
+  const first = api.lastOf("GET /api/v1/results/me");
+  assert.deepEqual([first?.query.get("page"), first?.query.get("size")], ["0", "20"]);
+  assert.match(view.text(), /Page 0/);
+
+  nextPage(view);
+  await settle();
+
+  assert.equal(api.lastOf("GET /api/v1/results/me")?.query.get("page"), "1");
+  assert.match(view.text(), /Page 1/);
+  assert.equal(api.countOf("GET /api/v1/results/me/summary"), 1, "turning a page asked for the totals again");
+  assert.equal(view.at(".result-summary strong", 0).textContent, "45", "the totals changed with the page");
+});
+
+// A finished attempt is the newest, and the list is newest first: it is on the
+// first page, and it moved the totals. Staying on page two would show neither.
+test("finishing an attempt sends the results back to the page that shows it", async () => {
+  const api = stubApi({
+    ...CATALOGUE,
+    ...PAGED_RESULTS,
+    "GET /api/v1/attempts/4": attemptBody(4),
+    "POST /api/v1/attempts/4/complete": { body: { attemptId: 4, score: 100 } }
+  });
+  seedSession("olena");
+  window.confirm = () => true;
+  const view = render(App);
+  await settle();
+  goTo("#/results");
+  await settle();
+  nextPage(view);
+  await settle();
+  assert.equal(api.lastOf("GET /api/v1/results/me")?.query.get("page"), "1");
+
+  goTo("#/attempt/4");
+  await settle();
+  click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
+  click(view.find(".attempt-submit button"));
+  await settle();
+  goTo("#/results");
+  await settle();
+
+  assert.equal(
+    api.lastOf("GET /api/v1/results/me")?.query.get("page"),
+    "0",
+    "the reader was left on page two"
+  );
+  assert.equal(api.countOf("GET /api/v1/results/me/summary"), 2, "the totals the attempt changed were kept");
+});
+
+// Three pages become one between two requests: an administrator deleted a quiz,
+// and its attempts with it. Page two comes back empty and says so. That must not
+// strand the reader on "no history yet" with no pager, under 45 that are now 20.
+test("a page that emptied under the reader falls back to one that exists", async () => {
+  let shrunk = false;
+  const api = stubApi({
+    ...CATALOGUE,
+    "GET /api/v1/results/me": (call: StubCall): StubResponse => {
+      const page = Number(call.query.get("page"));
+      const total = shrunk ? 20 : 45;
+      const rows =
+        page * 20 < total
+          ? [
+              {
+                attemptId: 100 + page,
+                quizId: 7,
+                quizName: `Page ${page}`,
+                score: 50,
+                completedAt: "2026-01-01T00:00:00Z"
+              }
+            ]
+          : [];
+      return {
+        body: rows,
+        headers: {
+          "X-Page-Number": String(page),
+          "X-Page-Size": "20",
+          "X-Total-Count": String(total),
+          "X-Total-Pages": String(Math.ceil(total / 20))
+        }
+      };
+    },
+    "GET /api/v1/results/me/summary": () => ({
+      body: { totalAttempts: shrunk ? 20 : 45, averageScore: 50, bestScore: 50 }
+    })
+  });
+  seedSession("olena");
+  const view = render(App);
+  await settle();
+  goTo("#/results");
+  await settle();
+
+  shrunk = true;
+  nextPage(view);
+  await settle(6);
+
+  assert.doesNotMatch(view.text(), /Історія ще порожня/, "the reader was told their history is empty");
+  assert.match(view.text(), /Page 0/, "the reader was not taken to a page that exists");
+  assert.equal(
+    view.at(".result-summary strong", 0).textContent,
+    "20",
+    "the totals from before the deletion stayed"
+  );
+  assert.equal(api.countOf("GET /api/v1/results/me/summary"), 2);
+});
+
 test("a session that expires keeps the reader's answers for their return", async () => {
   stubApi({
     ...CATALOGUE,
-    "GET /api/v1/results/me": { status: 401, body: { message: "expired" } }
+    "GET /api/v1/results/me": { status: 401, body: { message: "expired" } },
+    "GET /api/v1/results/me/summary": { status: 401, body: { message: "expired" } }
   });
 
   seedSession("olena");
@@ -334,7 +476,8 @@ test("account data also waits for a restored session to refresh", async () => {
   const api = stubApi({
     ...CATALOGUE,
     "POST /api/v1/auth/refresh": loginResponse("olena"),
-    "GET /api/v1/results/me": { body: [] }
+    "GET /api/v1/results/me": { body: [] },
+    "GET /api/v1/results/me/summary": { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } }
   });
 
   seedSession("olena", { expiresInMs: -1_000 });
@@ -348,6 +491,12 @@ test("account data also waits for a restored session to refresh", async () => {
       .map(call => call.key)
       .slice(0, 2),
     ["POST /api/v1/auth/refresh", "GET /api/v1/results/me"]
+  );
+  // The totals are an account read too, and go out on the same refreshed token.
+  const keys = api.calls.map(call => call.key);
+  assert.ok(
+    keys.indexOf("GET /api/v1/results/me/summary") > keys.indexOf("POST /api/v1/auth/refresh"),
+    "the summary was asked for on the expired token"
   );
   assert.match(view.text(), /Історія ще порожня/);
 });
@@ -681,7 +830,8 @@ test("signing in returns the reader to the page that turned them away", async ()
   stubApi({
     ...CATALOGUE,
     "POST /api/v1/auth/login": loginResponse("olena"),
-    "GET /api/v1/results/me": { body: [] }
+    "GET /api/v1/results/me": { body: [] },
+    "GET /api/v1/results/me/summary": { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } }
   });
 
   const view = render(App);
@@ -752,7 +902,8 @@ test("a handover drops the failure the previous reader was looking at", async ()
               { attemptId: 5, quizId: 1, quizName: "Java", score: 80, completedAt: "2026-01-01T00:00:00Z" }
             ]
           };
-    }
+    },
+    "GET /api/v1/results/me/summary": { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } }
   });
 
   seedSession("olena");

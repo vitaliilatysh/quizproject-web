@@ -1,6 +1,7 @@
 import { useEffect, useState, type SubmitEvent } from "react";
-import type { Profile, Result } from "../types.js";
+import type { Profile, ResultHistory } from "../types.js";
 import { formatDate } from "../utils.js";
+import { Pager } from "./pager.js";
 
 export interface ProfilePageProps {
   profile: Profile | null;
@@ -226,10 +227,11 @@ export function SettingsPage({ apiUrl, connection, error, onSave, onTest }: Read
 }
 
 export interface ResultsPageProps {
-  results: Result[] | null;
+  results: ResultHistory | null;
   loading: boolean;
   error: string;
   onRetry: () => void;
+  onPageChange: (page: number) => void;
 }
 
 function scoreBadgeClass(score: number): string {
@@ -238,7 +240,7 @@ function scoreBadgeClass(score: number): string {
   return "";
 }
 
-export function ResultsPage({ results, loading, error, onRetry }: Readonly<ResultsPageProps>) {
+export function ResultsPage({ results, loading, error, onRetry, onPageChange }: Readonly<ResultsPageProps>) {
   if (loading && !results)
     return (
       <section className="section-pad content-page">
@@ -261,11 +263,13 @@ export function ResultsPage({ results, loading, error, onRetry }: Readonly<Resul
         </div>
       </section>
     );
-  const items = results || [];
-  const average = items.length
-    ? Math.round(items.reduce((sum, item) => sum + item.score, 0) / items.length)
-    : 0;
-  const best = items.length ? Math.max(...items.map(item => item.score)) : 0;
+  // The three figures come from the summary, never from the rows on screen: one
+  // page of twenty is not "every attempt", and the labels below say it is.
+  const items = results?.page.items ?? [];
+  const summary = results?.summary;
+  const total = summary?.totalAttempts ?? 0;
+  const average = Math.round(summary?.averageScore ?? 0);
+  const best = summary?.bestScore ?? 0;
   return (
     <>
       <section className="page-hero section-pad page-hero--results">
@@ -280,7 +284,7 @@ export function ResultsPage({ results, loading, error, onRetry }: Readonly<Resul
         <div className="result-summary">
           <div>
             <span>Завершено</span>
-            <strong>{items.length}</strong>
+            <strong>{total}</strong>
             <small>тестів</small>
           </div>
           <div>
@@ -326,6 +330,7 @@ export function ResultsPage({ results, loading, error, onRetry }: Readonly<Resul
                 <span className={`score-badge ${scoreBadgeClass(result.score)}`}>{result.score}%</span>
               </article>
             ))}
+            <Pager meta={results?.page.page ?? null} onChange={onPageChange} busy={loading} label="Спроби" />
           </div>
         ) : (
           <div className="empty-state">

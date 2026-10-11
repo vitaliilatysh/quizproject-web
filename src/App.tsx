@@ -237,6 +237,7 @@ export default function App() {
         loading={account.resultsLoading}
         error={account.resultError}
         onRetry={() => void account.loadResults()}
+        onPageChange={account.setResultsPage}
       />
     );
   } else if (route.name === "attempt") {
