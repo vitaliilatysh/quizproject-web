@@ -16,8 +16,7 @@
     "format:check": "prettier --check .",
     "test": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 tests/*.test.ts",
     "coverage": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' tests/*.test.ts",
-    "precoverage:sonar": "node -e \"require('node:fs').mkdirSync('coverage',{recursive:true})\"",
-    "coverage:sonar": "node --enable-source-maps --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info tests/*.test.ts",
+    "coverage:sonar": "rm -rf .coverage-v8 && NODE_V8_COVERAGE=.coverage-v8 node --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-functions=100 --test-coverage-branches=96 tests/*.test.ts && node scripts/coverage-lines.mts .coverage-v8 100 --lcov coverage/lcov.info",
     "coverage:check": "rm -rf .coverage-v8 && NODE_V8_COVERAGE=.coverage-v8 node --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-functions=100 --test-coverage-branches=96 tests/*.test.ts && node scripts/coverage-lines.mts .coverage-v8 100",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -29,15 +28,15 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "@types/node": "26.6.2",
+    "@types/node": "26.6.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.1.1",
+    "@vitejs/plugin-react": "6.1.2",
     "esbuild": "0.28.2",
     "happy-dom": "20.14.5",
-    "oxlint": "^1.85.0",
-    "prettier": "3.9.8",
+    "oxlint": "^1.87.0",
+    "prettier": "3.9.9",
     "typescript": "7.0.2",
-    "vite": "8.3.0"
+    "vite": "8.3.3"
   }
 }

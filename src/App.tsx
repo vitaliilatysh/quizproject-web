@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { pageTitle, useRoute } from "./app/navigation.js";
 import { useToasts } from "./app/use-toasts.js";
 import {
-  AdminPage,
   AttemptPage,
   HomePage,
   Layout,
@@ -22,6 +21,39 @@ import { useAuthActions } from "./features/auth/use-auth-actions.js";
 import { useAuthSession } from "./features/auth/use-auth-session.js";
 import { useQuizCatalogue } from "./features/catalogue/use-quiz-catalogue.js";
 import { useApiSettings } from "./features/settings/use-api-settings.js";
+
+/**
+ * The one page fetched on demand.
+ *
+ * It is the largest module in the application — 22.9 kB of code against 8 kB
+ * for the three admin hooks — and the only one most readers never open. The
+ * hooks stay in the entry chunk because they are called unconditionally, as
+ * hooks must be; what moves is the panel they feed.
+ *
+ * Named rather than default export, so the module is mapped to what lazy()
+ * wants instead of adding a default to the module for the loader's benefit.
+ */
+const AdminPage = lazy(async () => {
+  const module = await import("./features/admin/admin-page.js");
+  return { default: module.AdminPage };
+});
+
+/**
+ * What stands in while the panel's chunk is in flight.
+ *
+ * The same markup AdminPage shows while its own six requests are in flight, so
+ * the two waits look like one: a reader who opens administration sees one
+ * heading, not a flash of something else and then this.
+ */
+function AdminPageLoading() {
+  return (
+    <section className="section-pad content-page">
+      <p className="eyebrow">Адміністрування</p>
+      <h1>Готуємо панель…</h1>
+      <div className="result-skeleton" />
+    </section>
+  );
+}
 
 export { friendlyError } from "./app/errors.js";
 
@@ -224,23 +256,25 @@ export default function App() {
     );
   } else if (route.name === "admin") {
     page = (
-      <AdminPage
-        data={admin.data}
-        loading={admin.loading}
-        error={admin.error}
-        busy={actionBusy}
-        api={auth.api}
-        resultRange={admin.resultRange}
-        onResultRangeChange={admin.changeResultRange}
-        onUsersPageChange={admin.setUsersPage}
-        onResultsPageChange={admin.setResultsPage}
-        onRetry={() => void admin.load()}
-        onExecute={admin.execute}
-        questions={adminQuestions.questions}
-        questionLoading={adminQuestions.loading}
-        questionError={adminQuestions.error}
-        loadQuestions={adminQuestions.load}
-      />
+      <Suspense fallback={<AdminPageLoading />}>
+        <AdminPage
+          data={admin.data}
+          loading={admin.loading}
+          error={admin.error}
+          busy={actionBusy}
+          api={auth.api}
+          resultRange={admin.resultRange}
+          onResultRangeChange={admin.changeResultRange}
+          onUsersPageChange={admin.setUsersPage}
+          onResultsPageChange={admin.setResultsPage}
+          onRetry={() => void admin.load()}
+          onExecute={admin.execute}
+          questions={adminQuestions.questions}
+          questionLoading={adminQuestions.loading}
+          questionError={adminQuestions.error}
+          loadQuestions={adminQuestions.load}
+        />
+      </Suspense>
     );
   } else {
     page = <NotFoundPage />;

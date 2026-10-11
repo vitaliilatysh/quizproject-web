@@ -28,9 +28,9 @@
 // generated code ran. Lines the map never mentions are not counted at all —
 // they are not lines a test could reach. Functions and branches stay with
 // Node, which counts those per range and does not have this problem.
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { relative } from "node:path";
+import { dirname, relative } from "node:path";
 
 import { transformSync } from "esbuild";
 
@@ -136,7 +136,21 @@ function covered(ranges: V8Range[], offset: number): boolean {
 
 const coverageDir = process.argv[2];
 const threshold = Number(process.argv[3] ?? "100");
-if (!coverageDir) throw new Error("usage: coverage-lines.mts <NODE_V8_COVERAGE dir> [threshold]");
+// Where to write an LCOV report, if one is wanted. SonarCloud used to read the
+// one Node's own lcov reporter writes, and that report has the defect this
+// whole file exists because of: it marks every line the source map does not
+// reach as uncovered, so imports and comments count against a file. On this
+// repository, whose style is to explain itself, that is most of a diff — a
+// twelve-line doc comment added to App.tsx took Sonar's coverage on new code to
+// 61.4% against a required 80%, while this script read the same run as 100%.
+// Satisfying that by writing fewer comments is precisely backwards, so the
+// honest fix is one measurement feeding both gates.
+const lcovFlag = process.argv.indexOf("--lcov");
+const lcovPath = lcovFlag === -1 ? null : process.argv[lcovFlag + 1];
+if (!coverageDir) {
+  throw new Error("usage: coverage-lines.mts <NODE_V8_COVERAGE dir> [threshold] [--lcov <path>]");
+}
+if (lcovFlag !== -1 && !lcovPath) throw new Error("--lcov needs a path to write to");
 
 const root = new URL("../", import.meta.url);
 const sourcePrefix = new URL("src/", root).href;
@@ -168,6 +182,8 @@ if (rangesByUrl.size === 0) {
 let totalExecutable = 0;
 let totalCovered = 0;
 const shortfalls: string[] = [];
+/** Per file, the hit count of every line the map reaches: 1 or 0. */
+const hitsByFile = new Map<string, Map<number, number>>();
 
 for (const url of [...rangesByUrl.keys()].sort()) {
   const perProcess = rangesByUrl.get(url)!;
@@ -187,6 +203,7 @@ for (const url of [...rangesByUrl.keys()].sort()) {
   const positionsByLine = decodeMappings((JSON.parse(map) as { mappings: string }).mappings);
 
   const missed: number[] = [];
+  const hits = new Map<number, number>();
   for (const [originalLine, positions] of positionsByLine) {
     totalExecutable += 1;
     const reached = positions.some(position => {
@@ -195,9 +212,11 @@ for (const url of [...rangesByUrl.keys()].sort()) {
       const offset = lineStart + position.column;
       return perProcess.some(ranges => covered(ranges, offset));
     });
+    hits.set(originalLine + 1, reached ? 1 : 0);
     if (reached) totalCovered += 1;
     else missed.push(originalLine + 1);
   }
+  hitsByFile.set(relative(fileURLToPath(root), fileURLToPath(url)), hits);
 
   if (missed.length > 0) {
     const listed = missed.sort((a, b) => a - b).join(", ");
@@ -212,6 +231,29 @@ console.log(`line coverage ${rounded.toFixed(2)}% — ${totalCovered}/${totalExe
 if (shortfalls.length > 0) {
   console.log("lines with generated code that never ran:");
   for (const shortfall of shortfalls) console.log(shortfall);
+}
+
+if (lcovPath !== null && lcovPath !== undefined) {
+  // Lines only, no FN or BRDA records. Functions and branches stay with Node,
+  // which counts those per range and does not have the mapping problem, and
+  // they are gated separately by --test-coverage-functions and
+  // --test-coverage-branches. A reader of this report should know it answers
+  // one question rather than three.
+  const records = [...hitsByFile.keys()].sort().map(file => {
+    const hits = hitsByFile.get(file)!;
+    const lines = [...hits.keys()].sort((a, b) => a - b);
+    const hit = lines.filter(line => hits.get(line) === 1).length;
+    return [
+      `SF:${file}`,
+      ...lines.map(line => `DA:${line},${hits.get(line)}`),
+      `LF:${lines.length}`,
+      `LH:${hit}`,
+      "end_of_record"
+    ].join("\n");
+  });
+  await mkdir(dirname(lcovPath), { recursive: true });
+  await writeFile(lcovPath, `${records.join("\n")}\n`, "utf8");
+  console.log(`wrote ${lcovPath} — ${hitsByFile.size} files, mapped lines only`);
 }
 
 if (rounded < threshold) {

@@ -211,4 +211,25 @@ export async function settle(times = 3): Promise<void> {
   }
 }
 
+/**
+ * Settles until `ready()` answers true.
+ *
+ * Needed since the administration panel became a chunk of its own. The first
+ * test in a process to open it waits on a real dynamic import, and settle()'s
+ * three fixed rounds land before the module has arrived; every test after it
+ * sees the panel on the first round, from the module cache. A larger fixed
+ * number would be a magic one that is wrong in both directions — too small for
+ * the first, wasteful for the rest — so this waits on the condition the test
+ * actually cares about and says so when it never holds.
+ */
+export async function settleUntil(ready: () => boolean, { rounds = 25 } = {}): Promise<void> {
+  for (let index = 0; index < rounds; index += 1) {
+    if (ready()) return;
+    await settle(1);
+  }
+  if (!ready()) {
+    throw new Error(`The expected state never arrived after ${rounds} rounds of settle()`);
+  }
+}
+
 export { act };

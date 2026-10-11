@@ -57,6 +57,7 @@ export function useAttempts({
   const [completions, setCompletions] = useState<Record<number, AttemptCompletion>>({});
   const requests = useRef(new Set<number>());
   const completionRequests = useRef(new Set<number>());
+  const requestGeneration = useRef(0);
 
   const rememberAttempt = useCallback((attempt: Attempt): void => {
     setAttempts(current => ({ ...current, [attempt.attemptId]: attempt }));
@@ -68,12 +69,13 @@ export function useAttempts({
       if (!session || !Number.isInteger(attemptId) || attemptId <= 0 || requests.current.has(attemptId))
         return;
       const requestedBy = session.username;
+      const generation = requestGeneration.current;
       requests.current.add(attemptId);
       setLoading(current => ({ ...current, [attemptId]: true }));
       setErrors(current => ({ ...current, [attemptId]: "" }));
       try {
         const attempt = await api.attempt(attemptId);
-        if (activeAccount.current !== requestedBy) return;
+        if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         setAttempts(current => ({ ...current, [attemptId]: attempt }));
         // Not guarded against overwriting a selection already in state: there is
         // no way to arrive here with one. The effect below is the only caller and
@@ -84,13 +86,15 @@ export function useAttempts({
       } catch (error) {
         // The same check the success path makes. Without it the failure of a
         // request the previous reader started is written into this one's screen.
-        if (activeAccount.current !== requestedBy) return;
+        if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         if (!handleAuthError(error, `#/attempt/${attemptId}`)) {
           setErrors(current => ({ ...current, [attemptId]: friendlyError(error) }));
         }
       } finally {
-        requests.current.delete(attemptId);
-        setLoading(current => ({ ...current, [attemptId]: false }));
+        if (requestGeneration.current === generation) {
+          requests.current.delete(attemptId);
+          setLoading(current => ({ ...current, [attemptId]: false }));
+        }
       }
     },
     [activeAccount, api, handleAuthError, session]
@@ -104,15 +108,18 @@ export function useAttempts({
         navigate("#/login");
         return;
       }
+      const generation = requestGeneration.current;
       setActionBusy(`start-${quizId}`);
       try {
         const attempt = await api.startAttempt(quizId);
+        if (requestGeneration.current !== generation) return;
         rememberAttempt(attempt);
         navigate(`#/attempt/${attempt.attemptId}`);
       } catch (error) {
+        if (requestGeneration.current !== generation) return;
         if (!handleAuthError(error, "#/quizzes")) toast(friendlyError(error), "error");
       } finally {
-        setActionBusy("");
+        if (requestGeneration.current === generation) setActionBusy("");
       }
     },
     [api, handleAuthError, rememberAttempt, session, setActionBusy, toast]
@@ -141,10 +148,12 @@ export function useAttempts({
       ) {
         return;
       }
+      const generation = requestGeneration.current;
       completionRequests.current.add(attemptId);
       setActionBusy(`complete-${attemptId}`);
       try {
         const result = await api.completeAttempt(attemptId, [...selected]);
+        if (requestGeneration.current !== generation) return;
         setCompletions(current => ({ ...current, [attemptId]: result }));
         onCompletion();
         clearAnswers(attemptId);
@@ -155,10 +164,13 @@ export function useAttempts({
         });
         toast("Тест завершено. Результат збережено.");
       } catch (error) {
+        if (requestGeneration.current !== generation) return;
         if (!handleAuthError(error, `#/attempt/${attemptId}`)) toast(friendlyError(error), "error");
       } finally {
-        completionRequests.current.delete(attemptId);
-        setActionBusy("");
+        if (requestGeneration.current === generation) {
+          completionRequests.current.delete(attemptId);
+          setActionBusy("");
+        }
       }
     },
     [api, handleAuthError, onCompletion, selections, setActionBusy, toast]
@@ -218,6 +230,8 @@ export function useAttempts({
   // again, and an attempt page offers no retry button — only the way back to
   // the catalogue. The reader sat on a spinner until they reloaded the tab.
   const reset = useCallback(() => {
+    // A new generation also rejects an old response after A -> B -> A.
+    requestGeneration.current += 1;
     requests.current.clear();
     completionRequests.current.clear();
     setAttempts({});
@@ -226,7 +240,8 @@ export function useAttempts({
     setSelections({});
     setCompletions({});
     clearStoredAnswers();
-  }, []);
+    setActionBusy("");
+  }, [setActionBusy]);
 
   return {
     attempts,

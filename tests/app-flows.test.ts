@@ -19,6 +19,7 @@ import {
   openBrowser,
   render,
   settle,
+  settleUntil,
   submit,
   type,
   type Rendered
@@ -381,6 +382,9 @@ const ADMIN_ROUTES = {
 test("the administration panel loads its five collections in one pass", async () => {
   seedSession("olena", ["ROLE_ADMIN"]);
   const { view, stub } = await open("#/admin", ADMIN_ROUTES);
+  // The panel is a chunk of its own now, so the first test in a process to open
+  // it waits on a real import before any of its markup exists.
+  await settleUntil(() => /Керуйте платформою/.test(view.text()));
 
   for (const key of Object.keys(ADMIN_ROUTES)) {
     assert.equal(stub.countOf(key), 1, `${key} was requested ${stub.countOf(key)} times`);
