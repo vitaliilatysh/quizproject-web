@@ -43,6 +43,17 @@ export function useAccountData(
           results?.summary ?? api.resultSummary()
         ]);
         if (activeAccount.current !== requestedBy) return;
+        // An empty page past the first means the history shrank since the last
+        // one arrived: deleting a quiz deletes its attempts. Shown as is, it
+        // reads as an empty history with no pager to leave by, under totals that
+        // are no longer true. Go to the last page that exists and ask for the
+        // totals again. The target is always below this page, so this ends.
+        if (page > 0 && rows.items.length === 0) {
+          setResults(null);
+          setLoadedPage(null);
+          setResultsPage(Math.max(0, Math.min(page - 1, (rows.page?.totalPages ?? page) - 1)));
+          return;
+        }
         setResults({ page: rows, summary });
         setLoadedPage(page);
       } catch (error) {

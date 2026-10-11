@@ -366,6 +366,62 @@ test("finishing an attempt sends the results back to the page that shows it", as
   assert.equal(api.countOf("GET /api/v1/results/me/summary"), 2, "the totals the attempt changed were kept");
 });
 
+// Three pages become one between two requests: an administrator deleted a quiz,
+// and its attempts with it. Page two comes back empty and says so. That must not
+// strand the reader on "no history yet" with no pager, under 45 that are now 20.
+test("a page that emptied under the reader falls back to one that exists", async () => {
+  let shrunk = false;
+  const api = stubApi({
+    ...CATALOGUE,
+    "GET /api/v1/results/me": (call: StubCall): StubResponse => {
+      const page = Number(call.query.get("page"));
+      const total = shrunk ? 20 : 45;
+      const rows =
+        page * 20 < total
+          ? [
+              {
+                attemptId: 100 + page,
+                quizId: 7,
+                quizName: `Page ${page}`,
+                score: 50,
+                completedAt: "2026-01-01T00:00:00Z"
+              }
+            ]
+          : [];
+      return {
+        body: rows,
+        headers: {
+          "X-Page-Number": String(page),
+          "X-Page-Size": "20",
+          "X-Total-Count": String(total),
+          "X-Total-Pages": String(Math.ceil(total / 20))
+        }
+      };
+    },
+    "GET /api/v1/results/me/summary": () => ({
+      body: { totalAttempts: shrunk ? 20 : 45, averageScore: 50, bestScore: 50 }
+    })
+  });
+  seedSession("olena");
+  const view = render(App);
+  await settle();
+  goTo("#/results");
+  await settle();
+
+  shrunk = true;
+  nextPage(view);
+  await settle(6);
+
+  assert.doesNotMatch(view.text(), /Історія ще порожня/, "the reader was told their history is empty");
+  assert.match(view.text(), /Page 0/, "the reader was not taken to a page that exists");
+  assert.equal(
+    view.at(".result-summary strong", 0).textContent,
+    "20",
+    "the totals from before the deletion stayed"
+  );
+  assert.equal(api.countOf("GET /api/v1/results/me/summary"), 2);
+});
+
 test("a session that expires keeps the reader's answers for their return", async () => {
   stubApi({
     ...CATALOGUE,
