@@ -325,7 +325,7 @@ job пропускається, бо такі прогони не отримую
 | `e2e.yml` — **Full-stack E2E** | PR, push у `main` | Playwright проти backend, зібраного з джерел `quizproject@master`, з MySQL 8.4 і Redis 8.2 |
 | `e2e-published-image.yml` — **E2E against published API image** | щодня о 03:00 UTC і вручну | той самий набір проти опублікованого образу backend із перевіркою підпису cosign |
 | `container.yml` — **Container delivery** | PR, push у `main` | збірка образу й overlays; після `main` — публікація, SBOM, provenance і підпис |
-| `deploy.yml` — **Deploy** | після успішного delivery з `main`, або вручну | розгортання за digest у `staging`, у production — лише вручну через protected environment |
+| `deploy.yml` — **Deploy** | після успішного delivery з `main`, якщо `STAGING_AUTO_DEPLOY=true`, або вручну | розгортання за digest у `staging`, у production — лише вручну через protected environment |
 
 Node.js 24 у всіх job-ах, сторонні actions закріплені за commit SHA, а Dependabot тримає їх
 актуальними.
@@ -475,6 +475,13 @@ npm run test:e2e
 Workflow **Deploy** застосовує те, що опублікував container delivery. Він запускається сам після
 успішної публікації образу з `main` і розгортає у `staging`; production розгортається лише
 вручну (`workflow_dispatch`) і через protected environment, тобто з підтвердженням людини.
+
+Автоматичний запуск увімкнено змінною репозиторію `STAGING_AUTO_DEPLOY` (Settings → Secrets and
+variables → Actions → Variables) зі значенням `true`. Поки кластера немає, вона не задана, і job
+**пропускається**, а не падає: інакше кожен пуш закінчувався б червоним деплоєм, а перевірка,
+що червона завжди, перестає щось означати — справжня поломка поруч із нею губиться. Ручний
+`workflow_dispatch` працює незалежно від змінної. Коли кластер з'явиться, досить виставити
+змінну — змін у коді не потрібно.
 
 Розгортається **digest, а не тег**. Тег `sha-<commit>` резолвиться в digest один раз, підпис
 cosign перевіряється саме над цим digest, і всі подальші кроки посилаються тільки на нього —

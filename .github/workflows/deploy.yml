@@ -59,11 +59,19 @@ jobs:
     #
     # So: only a push (never a pull request), and only from this repository.
     # Either alone closes it; both cost nothing.
+    #
+    # The automatic run also waits for the repository variable
+    # STAGING_AUTO_DEPLOY to be "true". Without a cluster to deploy to, every
+    # push ended in a red deploy, and a check that is always red stops meaning
+    # anything: a real failure beside it goes unnoticed. Unset, this job is
+    # skipped rather than failed, and a manual dispatch still runs. Setting the
+    # variable is the whole switch; no code changes when the cluster exists.
     if: >-
       github.event_name == 'workflow_dispatch'
       || (github.event.workflow_run.conclusion == 'success'
           && github.event.workflow_run.event == 'push'
-          && github.event.workflow_run.head_repository.full_name == github.repository)
+          && github.event.workflow_run.head_repository.full_name == github.repository
+          && vars.STAGING_AUTO_DEPLOY == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The gate. Staging deploys itself; production is a protected environment,
