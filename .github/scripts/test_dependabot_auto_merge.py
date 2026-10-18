@@ -77,22 +77,7 @@ class FakeGitHub:
         target = urlsplit(url)
         path, query = target.path, parse_qs(target.query)
         if method == "GET":
-            if path == f"/repos/{REPO}/commits/main":
-                return copy.deepcopy(self.commit)
-            if path == f"/repos/{REPO}/pulls":
-                return copy.deepcopy(self.pulls if self.pulls is not None else [self.summary or self.pull])
-            if path == f"/repos/{REPO}/pulls/1":
-                self.reads += 1
-                return copy.deepcopy(self.fresh if self.fresh is not None and self.reads > 1 else self.pull)
-            if path.endswith("/actions/runs"):
-                rows = self.dispatched if query["event"] == ["workflow_dispatch"] else self.runs
-                return {"workflow_runs": copy.deepcopy(rows)}
-            if path.endswith("/check-runs"):
-                return {"check_runs": copy.deepcopy(self.checks)}
-            if path.endswith("/status"):
-                return copy.deepcopy(self.status)
-            if path.endswith("/reviews"):
-                return copy.deepcopy(self.reviews)
+            return self.get(path, query)
         if method == "PUT" and path.endswith("/merge"):
             if self.merge_error:
                 raise automation.ApiError(self.merge_error)
@@ -102,6 +87,25 @@ class FakeGitHub:
                 raise automation.ApiError(self.dispatch_error)
             return None
         raise AssertionError(f"Unexpected request: {method} {url}")
+
+    def get(self, path, query):
+        if path == f"/repos/{REPO}/commits/main":
+            return copy.deepcopy(self.commit)
+        if path == f"/repos/{REPO}/pulls":
+            return copy.deepcopy(self.pulls if self.pulls is not None else [self.summary or self.pull])
+        if path == f"/repos/{REPO}/pulls/1":
+            self.reads += 1
+            return copy.deepcopy(self.fresh if self.fresh is not None and self.reads > 1 else self.pull)
+        if path.endswith("/actions/runs"):
+            rows = self.dispatched if query["event"] == ["workflow_dispatch"] else self.runs
+            return {"workflow_runs": copy.deepcopy(rows)}
+        if path.endswith("/check-runs"):
+            return {"check_runs": copy.deepcopy(self.checks)}
+        if path.endswith("/status"):
+            return copy.deepcopy(self.status)
+        if path.endswith("/reviews"):
+            return copy.deepcopy(self.reviews)
+        raise AssertionError(f"Unexpected GET: {path}")
 
     def writes(self, method):
         return [(path, body) for verb, path, body in self.calls if verb == method]
@@ -301,9 +305,8 @@ class MergePolicyTest(unittest.TestCase):
             (REPO, "main", ["../anything.yml"], []),
             (REPO, "main", WORKFLOWS, ["unknown.yml"]),
         ):
-            with self.subTest(repo=repo, branch=branch, required=required):
-                with self.assertRaises(ValueError):
-                    automation.run(self.api, repo, branch, required, allowed)
+            with self.subTest(repo=repo, branch=branch, required=required), self.assertRaises(ValueError):
+                automation.run(self.api, repo, branch, required, allowed)
         self.assertEqual([], self.api.calls)
 
 
@@ -327,13 +330,11 @@ class GitHubClientTest(unittest.TestCase):
 
     def test_invalid_collection_and_api_errors_are_not_success(self):
         api = automation.GitHub("fixture-token")
-        with mock.patch("urllib.request.urlopen", return_value=io.BytesIO(b'{}')):
-            with self.assertRaises(ValueError):
-                list(api.items("/pulls"))
+        with mock.patch("urllib.request.urlopen", return_value=io.BytesIO(b'{}')), self.assertRaises(ValueError):
+            list(api.items("/pulls"))
         error = urllib.error.HTTPError("https://api.github.com/pulls", 403, "forbidden", {}, None)
-        with mock.patch("urllib.request.urlopen", side_effect=error):
-            with self.assertRaisesRegex(automation.ApiError, "HTTP 403"):
-                api.request("GET", "/pulls")
+        with mock.patch("urllib.request.urlopen", side_effect=error), self.assertRaisesRegex(automation.ApiError, "HTTP 403"):
+            api.request("GET", "/pulls")
 
     def test_cli_requires_token_and_surfaces_network_errors(self):
         args = ["--repo", REPO, "--branch", "main", "--workflow", "ci.yml"]
@@ -349,9 +350,14 @@ class GitHubClientTest(unittest.TestCase):
             return io.BytesIO(json.dumps(rows).encode())
 
         args = ["dependabot_auto_merge.py", "--repo", REPO, "--branch", "main", "--workflow", "ci.yml"]
-        with mock.patch.dict(os.environ, {"GH_TOKEN": "fixture-token"}), mock.patch("sys.argv", args), mock.patch("urllib.request.urlopen", response), mock.patch("sys.stdout", new_callable=io.StringIO):
-            with self.assertRaises(SystemExit) as exited:
-                runpy.run_path(str(Path(automation.__file__)), run_name="__main__")
+        with (
+            mock.patch.dict(os.environ, {"GH_TOKEN": "fixture-token"}),
+            mock.patch("sys.argv", args),
+            mock.patch("urllib.request.urlopen", response),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+            self.assertRaises(SystemExit) as exited,
+        ):
+            runpy.run_path(str(Path(automation.__file__)), run_name="__main__")
         self.assertEqual(0, exited.exception.code)
 
 
