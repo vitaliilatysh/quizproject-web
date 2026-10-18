@@ -43,6 +43,8 @@ jobs:
       - name: Merge verified Dependabot updates
         env:
           GH_TOKEN: ${{ github.token }}
+          # Workflow events inspect one head; scheduled/manual runs scan all PRs.
+          DEPENDABOT_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           python3 -B .github/scripts/dependabot_auto_merge.py \

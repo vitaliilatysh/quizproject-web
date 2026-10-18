@@ -184,17 +184,19 @@ def merge_candidate(api, repo, branch, pull, workflows):
     return True
 
 
-def validate_config(repo, branch, required, allow_skipped):
+def validate_config(repo, branch, required, allow_skipped, trigger_sha):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) or not branch:
         raise ValueError("A repository and default branch are required")
     if not required or any(not re.fullmatch(r"[A-Za-z0-9_-]+\.yml", name) for name in required):
         raise ValueError("Required workflows must be workflow filenames")
     if not set(allow_skipped).issubset(required):
         raise ValueError("Only a required workflow can explicitly allow a skipped run")
+    if trigger_sha is not None and not re.fullmatch(r"[0-9a-f]{40}", trigger_sha):
+        raise ValueError("The triggering workflow must identify an exact commit")
 
 
-def run(api, repo, branch, required, allow_skipped=()):
-    validate_config(repo, branch, required, allow_skipped)
+def run(api, repo, branch, required, allow_skipped=(), trigger_sha=None):
+    validate_config(repo, branch, required, allow_skipped, trigger_sha)
     # Repair a partial dispatch failure on the next scheduled run, even though
     # the PR has already been merged and is no longer in the open-PR collection.
     recover_dispatches(api, repo, branch, required)
@@ -203,6 +205,8 @@ def run(api, repo, branch, required, allow_skipped=()):
     merged = 0
     for summary in pulls:
         if not eligible(summary, repo, branch):
+            continue
+        if trigger_sha is not None and summary["head"]["sha"] != trigger_sha:
             continue
         pull = api.request("GET", f"/repos/{repo}/pulls/{summary['number']}")
         if not eligible(pull, repo, branch) or not ready(api, repo, branch, pull, required, allow_skipped):
@@ -224,7 +228,10 @@ def main(argv=None):
         token = os.environ.get("GH_TOKEN")
         if not token:
             raise ValueError("GH_TOKEN is required")
-        run(GitHub(token), args.repo, args.branch, args.workflow, args.allow_skipped)
+        run(
+            GitHub(token), args.repo, args.branch, args.workflow, args.allow_skipped,
+            trigger_sha=os.environ.get("DEPENDABOT_TRIGGER_SHA") or None,
+        )
         return 0
     except (ApiError, OSError, ValueError) as error:
         print(str(error), file=sys.stderr)

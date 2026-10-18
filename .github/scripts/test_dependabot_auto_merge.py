@@ -171,6 +171,17 @@ class MergePolicyTest(unittest.TestCase):
                 self.api.runs = [row for row in self.api.runs if not row["path"].endswith("/" + name)]
                 self.assert_blocked()
 
+    def test_workflow_events_only_check_the_affected_head(self):
+        self.assertEqual(0, automation.run(self.api, REPO, "main", WORKFLOWS, SKIPPABLE, trigger_sha=MERGED_SHA))
+        self.assertEqual(0, self.api.reads)
+        self.assertEqual([], self.api.writes("PUT"))
+        self.assertEqual(1, automation.run(self.api, REPO, "main", WORKFLOWS, SKIPPABLE, trigger_sha=SHA))
+
+    def test_invalid_trigger_sha_cannot_expand_or_bypass_the_scan(self):
+        with self.assertRaises(ValueError):
+            automation.run(self.api, REPO, "main", WORKFLOWS, SKIPPABLE, trigger_sha="main")
+        self.assertEqual([], self.api.calls)
+
     def test_pending_failed_cancelled_and_skipped_tests_block(self):
         for result in ("failure", "cancelled", "skipped", "neutral", "timed_out"):
             with self.subTest(result=result):
