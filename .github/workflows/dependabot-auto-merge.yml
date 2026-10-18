@@ -1,0 +1,61 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows: ["CI","SonarQube analysis","Container delivery","Full-stack E2E"]
+    types: [completed]
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/dependabot-auto-merge.yml
+      - .github/scripts/dependabot_auto_merge.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+      statuses: read
+      actions: write
+    steps:
+      # workflow_run is privileged: only the trusted default branch is checked
+      # out. No PR code, artifacts, titles or branch names are executed here.
+      - name: Check out trusted automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/heads/main
+          persist-credentials: false
+
+      - name: Merge verified Dependabot updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Workflow events inspect one head; scheduled/manual runs scan all PRs.
+          DEPENDABOT_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          python3 -B .github/scripts/dependabot_auto_merge.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --branch "$DEFAULT_BRANCH" \
+            --workflow ci.yml \
+            --workflow container.yml \
+            --workflow sonarqube.yml \
+            --workflow e2e.yml \
+            --allow-skipped sonarqube.yml
