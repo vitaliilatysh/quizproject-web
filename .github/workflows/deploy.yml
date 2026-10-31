@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   # The image is pulled here to resolve its digest. Both packages are public
   # today, so an anonymous pull works — but a private GHCR package is a
   # documented, supported configuration for this project, and under it the pull
@@ -178,6 +179,18 @@ jobs:
               '^https://github.com/vitaliilatysh/quizproject-web/\.github/workflows/container\.yml@' \
             "${DIGEST_REF}" > /dev/null
           echo "Signature verified for ${DIGEST_REF}"
+
+      - name: Require successful checks before production
+        if: env.OVERLAY == 'production'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          IMAGE_SHA="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${DIGEST_REF}")"
+          python3 .github/scripts/verify_release.py \
+            --repo "${GITHUB_REPOSITORY}" --branch main \
+            --sha "${IMAGE_SHA}" --sha "${DEPLOY_SHA}" \
+            --workflow ci.yml --workflow sonarqube.yml --workflow container.yml --workflow e2e.yml
 
       - name: Render the manifest for this digest
         shell: bash
