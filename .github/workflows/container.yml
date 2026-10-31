@@ -31,7 +31,13 @@ jobs:
           version: v1.36.1
 
       - name: Build test image
-        run: docker build --tag quizproject-web:test .
+        run: docker build --label "org.opencontainers.image.revision=${GITHUB_SHA}" --tag quizproject-web:test .
+
+      - name: Verify the image source revision
+        shell: bash
+        run: |
+          IMAGE_SHA="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' quizproject-web:test)"
+          test "${IMAGE_SHA}" = "${GITHUB_SHA}"
 
       - name: Run container smoke test
         shell: bash
@@ -150,6 +156,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:main
             ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max

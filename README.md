@@ -512,6 +512,10 @@ cosign перевіряється саме над цим digest, і всі по�
 цих двох подій: failure, skipped або відсутня перевірка блокують деплой; незавершені
 перевірки очікуються до 5 хвилин. Gate не запускає перевірки й не застосовується до staging.
 
+Container delivery записує повний SHA джерела в `org.opencontainers.image.revision`.
+Старі образи без цієї мітки production gate відхиляє: для них потрібна нова збірка
+через актуальний workflow, а не підстановка SHA із тега чи checkout.
+
 Порядок кроків: резолв digest → перевірка підпису → production gate → `kubectl apply --dry-run=server` проти
 живого кластера → `apply` → `rollout status` → перевірка, що Service має готовий endpoint.
 Якщо rollout не піднявся, workflow друкує події та логи подів і робить `rollout undo`.
