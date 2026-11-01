@@ -17,3 +17,6 @@ node_modules
 playwright-report
 test-results
 package-lock.json
+tools/openapi/package-lock.json
+# Canonical JSON written by the contract importer, not hand-formatted prose.
+contract/openapi.json
