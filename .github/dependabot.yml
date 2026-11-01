@@ -39,3 +39,15 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build"
+
+  # openapi-typescript requires TS 5; isolate it from the application's TS 7.
+  - package-ecosystem: npm
+    directory: /tools/openapi
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    groups:
+      openapi-tooling:
+        patterns: ["*"]
