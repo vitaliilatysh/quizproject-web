@@ -29,9 +29,11 @@ export function useAccountData(
   const [profileError, setProfileError] = useState("");
   const resultsRequest = useRef(false);
   const profileRequest = useRef(false);
+  const requestGeneration = useRef(0);
   const loadResults = useCallback(async (): Promise<void> => {
     if (session && !resultsRequest.current) {
       const requestedBy = session.username;
+      const generation = requestGeneration.current;
       const page = resultsPage;
       resultsRequest.current = true;
       setResultsLoading(true);
@@ -42,7 +44,7 @@ export function useAccountData(
           api.results({ page, size: PAGE_SIZE }),
           results?.summary ?? api.resultSummary()
         ]);
-        if (activeAccount.current !== requestedBy) return;
+        if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         // An empty page past the first means the history shrank since the last
         // one arrived: deleting a quiz deletes its attempts. Shown as is, it
         // reads as an empty history with no pager to leave by, under totals that
@@ -57,11 +59,13 @@ export function useAccountData(
         setResults({ page: rows, summary });
         setLoadedPage(page);
       } catch (error) {
-        if (activeAccount.current !== requestedBy) return;
+        if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         if (!handleAuthError(error, "#/results")) setResultError(friendlyError(error));
       } finally {
-        resultsRequest.current = false;
-        setResultsLoading(false);
+        if (requestGeneration.current === generation) {
+          resultsRequest.current = false;
+          setResultsLoading(false);
+        }
       }
     }
   }, [activeAccount, api, handleAuthError, results, resultsPage, session]);
@@ -69,19 +73,22 @@ export function useAccountData(
   const loadProfile = useCallback(async (): Promise<void> => {
     if (!session || profileRequest.current) return;
     const requestedBy = session.username;
+    const generation = requestGeneration.current;
     profileRequest.current = true;
     setProfileLoading(true);
     setProfileError("");
     try {
       const loaded = await api.profile();
-      if (activeAccount.current !== requestedBy) return;
+      if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
       setProfile(loaded);
     } catch (error) {
-      if (activeAccount.current !== requestedBy) return;
+      if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
       if (!handleAuthError(error, "#/profile")) setProfileError(friendlyError(error));
     } finally {
-      profileRequest.current = false;
-      setProfileLoading(false);
+      if (requestGeneration.current === generation) {
+        profileRequest.current = false;
+        setProfileLoading(false);
+      }
     }
   }, [activeAccount, api, handleAuthError, session]);
 
@@ -119,6 +126,12 @@ export function useAccountData(
   // stale message, it is a screen that never loads. use-attempts and
   // use-admin-questions already clear theirs here; these two did not.
   const reset = useCallback(() => {
+    // Identity alone cannot reject a response after A -> B -> A or a relogin.
+    requestGeneration.current += 1;
+    resultsRequest.current = false;
+    profileRequest.current = false;
+    setResultsLoading(false);
+    setProfileLoading(false);
     setResults(null);
     setLoadedPage(null);
     setResultsPage(0);

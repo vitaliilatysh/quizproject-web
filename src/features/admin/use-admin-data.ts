@@ -52,6 +52,8 @@ export function useAdminData({
   const [resultsPage, setResultsPage] = useState(0);
   const [resultRange, setResultRange] = useState<ResultRange>({ from: "", to: "" });
   const requestInFlight = useRef(false);
+  const requestGeneration = useRef(0);
+  const sessionGeneration = useRef(0);
   // What a partial load merges into. State would be the value captured when the
   // call was made; a write's answers have to land on whatever is on screen when
   // they arrive.
@@ -83,6 +85,7 @@ export function useAdminData({
     async (parts?: readonly AdminPart[]): Promise<void> => {
       if (!session || requestInFlight.current) return;
       const requestedBy = session.username;
+      const generation = requestGeneration.current;
       const whole = parts === undefined || dataRef.current === null;
       const wanted = whole ? new Set(ADMIN_PARTS) : new Set(parts);
       requestInFlight.current = true;
@@ -105,7 +108,7 @@ export function useAdminData({
               })
             : undefined
         ]);
-        if (activeAccount.current !== requestedBy) return;
+        if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         const held = dataRef.current;
         setData({
           subjects: subjects ?? held?.subjects ?? [],
@@ -117,6 +120,7 @@ export function useAdminData({
           resultsPage: results ? results.page : (held?.resultsPage ?? null)
         });
       } catch (reason) {
+        if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         if (handleAuthError(reason, "#/admin")) return;
         setError(
           reason instanceof ApiError && reason.status === 403
@@ -124,57 +128,71 @@ export function useAdminData({
             : friendlyError(reason)
         );
       } finally {
-        requestInFlight.current = false;
-        setLoading(false);
+        if (requestGeneration.current === generation) {
+          requestInFlight.current = false;
+          setLoading(false);
+        }
       }
     },
     [activeAccount, api, handleAuthError, resultRange.from, resultRange.to, resultsPage, session, usersPage]
   );
 
-  useEffect(() => {
+  const invalidate = useCallback(() => {
+    requestGeneration.current += 1;
+    requestInFlight.current = false;
+    dataRef.current = null;
     setData(null);
-    setLoading(true);
-  }, [resultRange.from, resultRange.to, resultsPage, usersPage]);
+    setLoading(false);
+    setError("");
+  }, []);
+
+  useEffect(() => {
+    invalidate();
+  }, [invalidate, resultRange.from, resultRange.to, resultsPage, usersPage]);
 
   useEffect(() => {
     if (routeName !== "admin") return;
     if (!session) {
       rememberReturnTo("#/admin");
       navigate("#/login");
-    } else if (accessReady && data === null) {
+    } else if (accessReady && data === null && !loading && !error) {
       void load();
     }
-  }, [accessReady, data, load, routeName, session]);
+  }, [accessReady, data, error, load, loading, routeName, session]);
 
   const execute = useCallback(
     async <T>(key: string, operation: () => Promise<T>, successMessage: string): Promise<T | null> => {
+      const generation = sessionGeneration.current;
       setActionBusy(`admin-${key}`);
       try {
         const result = await operation();
+        if (sessionGeneration.current !== generation) return null;
         // The key already says which action ran, so it can say what the action
         // reaches. An unmapped key refetches the panel, which is the answer for
         // an action whose reach nobody has established yet.
         await load(ADMIN_INVALIDATES[key] ?? ADMIN_PARTS);
+        if (sessionGeneration.current !== generation) return null;
         toast(successMessage);
         return result;
       } catch (reason) {
+        if (sessionGeneration.current !== generation) return null;
         if (!handleAuthError(reason, "#/admin")) toast(friendlyError(reason), "error");
         return null;
       } finally {
-        setActionBusy("");
+        if (sessionGeneration.current === generation) setActionBusy("");
       }
     },
     [handleAuthError, load, setActionBusy, toast]
   ) satisfies ExecuteAdmin;
 
-  const invalidate = useCallback(() => setData(null), []);
-
   const reset = useCallback(() => {
+    sessionGeneration.current += 1;
+    invalidate();
+    setActionBusy("");
     setUsersPage(0);
     setResultsPage(0);
     setResultRange({ from: "", to: "" });
-    setData(null);
-  }, []);
+  }, [invalidate, setActionBusy]);
 
   return {
     data,

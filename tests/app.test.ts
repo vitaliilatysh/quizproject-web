@@ -94,6 +94,67 @@ function delayedResponse() {
   return { promise, resolve };
 }
 
+for (const page of ["profile", "results", "admin"] as const) {
+  test(`${page}: relogin with the same username rejects an old 401 and loads fresh data`, async () => {
+    const outgoing = delayedResponse();
+    const incoming = delayedResponse();
+    let loads = 0;
+    const path = {
+      profile: "GET /api/v1/users/me",
+      results: "GET /api/v1/results/me",
+      admin: "GET /api/v1/admin/subjects"
+    }[page];
+    const api = stubApi({
+      ...CATALOGUE,
+      "POST /api/v1/auth/login": loginResponse("olena", { roles: ["ROLE_ADMIN"] }),
+      "POST /api/v1/auth/logout": { body: {} },
+      "GET /api/v1/results/me/summary": { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } },
+      "GET /api/v1/admin/levels": { body: [] },
+      "GET /api/v1/admin/quizzes": { body: [] },
+      "GET /api/v1/admin/users": { body: [] },
+      "GET /api/v1/admin/results": { body: [] },
+      [path]: () => (++loads === 1 ? outgoing.promise : incoming.promise)
+    });
+    seedSession("olena", { roles: ["ROLE_ADMIN"] });
+    goTo(`#/${page}`);
+    const view = render(App);
+    await settle();
+    assert.equal(api.countOf(path), 1);
+    click(view.findAll("button").find(button => button.textContent === "Вийти"));
+    await settle();
+    goTo("#/login");
+    await signIn(view, "olena");
+    goTo(`#/${page}`);
+    await settle();
+    assert.equal(api.countOf(path), 2, "the new session did not start its own load");
+    await act(async () => {
+      outgoing.resolve({ status: 401, body: { message: "OLD SESSION" } });
+      await settle();
+    });
+    assert.equal(window.location.hash, `#/${page}`);
+    assert.notEqual(sessionStorage.getItem("quizproject.session"), null);
+    assert.equal(api.countOf(path), 2);
+    await act(async () => {
+      incoming.resolve({
+        body:
+          page === "profile"
+            ? {
+                username: "olena",
+                firstName: "Олена",
+                lastName: "Нова",
+                role: "admin",
+                status: "active",
+                registeredAt: "2026-01-01T00:00:00Z",
+                lastLoginAt: null
+              }
+            : []
+      });
+      await settle();
+    });
+    assert.doesNotMatch(view.text(), /OLD SESSION|Сесія завершилась/);
+  });
+}
+
 for (const status of [200, 503]) {
   for (const returnToFirst of [false, true]) {
     test(`load: an old ${status} response cannot release the next reader's request (${returnToFirst ? "A -> B -> A" : "A -> B"})`, async () => {

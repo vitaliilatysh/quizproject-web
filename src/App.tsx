@@ -117,8 +117,10 @@ export default function App() {
 
   const resetProtectedData = useCallback(() => {
     account.reset();
-    admin.invalidate();
-  }, [account.reset, admin.invalidate]);
+    admin.reset();
+    adminQuestions.reset();
+    attempts.cancelPending();
+  }, [account.reset, admin.reset, adminQuestions.reset, attempts.cancelPending]);
   const authActions = useAuthActions({
     api: auth.api,
     apiUrl: settings.apiUrl,
@@ -133,11 +135,12 @@ export default function App() {
   // The relays always point at the latest feature callbacks while preserving a
   // stable identity for the settings/session effects that subscribe to them.
   protectedReset.current = resetProtectedData;
-  apiReset.current = external => {
+  apiReset.current = () => {
     catalogue.invalidate();
-    if (external) account.reset();
-    else account.invalidateResults();
+    account.reset();
     admin.reset();
+    adminQuestions.reset();
+    attempts.reset();
   };
 
   useEffect(() => {
@@ -148,18 +151,23 @@ export default function App() {
   // A token refresh keeps the same owner. A genuinely different login drops
   // every account-bound cache, including answers persisted outside React.
   useEffect(() => {
-    if (accountName === null || activeAccount.current === accountName) return;
+    if (accountName === null) {
+      resetProtectedData();
+      return;
+    }
+    if (activeAccount.current === accountName) return;
     activeAccount.current = accountName;
     account.reset();
     admin.reset();
     adminQuestions.reset();
     attempts.reset();
-  }, [account.reset, accountName, admin.reset, adminQuestions.reset, attempts.reset]);
+  }, [account.reset, accountName, admin.reset, adminQuestions.reset, attempts.reset, resetProtectedData]);
 
   const logout = useCallback(() => {
     authActions.clearPasswordError();
+    resetProtectedData();
     auth.logout();
-  }, [auth.logout, authActions.clearPasswordError]);
+  }, [auth.logout, authActions.clearPasswordError, resetProtectedData]);
 
   let page;
   if (route.name === "home") {
