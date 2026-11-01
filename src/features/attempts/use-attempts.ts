@@ -221,6 +221,16 @@ export function useAttempts({
     return selections[attemptId] ?? readAnswers(attemptId);
   }, [route.name, route.params, selections]);
 
+  // Signing out cancels callbacks but preserves drafts for the same reader.
+  // Only an account/API handover below discards their stored answers.
+  const cancelPending = useCallback(() => {
+    requestGeneration.current += 1;
+    requests.current.clear();
+    completionRequests.current.clear();
+    setLoading({});
+    setActionBusy("");
+  }, [setActionBusy]);
+
   // The two in-flight guards are refs, so they are not state this clears by
   // setting state — and they were the two things it left behind. A handover
   // while a request is out kept the outgoing reader's attempt id in `requests`,
@@ -231,17 +241,13 @@ export function useAttempts({
   // the catalogue. The reader sat on a spinner until they reloaded the tab.
   const reset = useCallback(() => {
     // A new generation also rejects an old response after A -> B -> A.
-    requestGeneration.current += 1;
-    requests.current.clear();
-    completionRequests.current.clear();
+    cancelPending();
     setAttempts({});
     setErrors({});
-    setLoading({});
     setSelections({});
     setCompletions({});
     clearStoredAnswers();
-    setActionBusy("");
-  }, [setActionBusy]);
+  }, [cancelPending]);
 
   return {
     attempts,
@@ -254,6 +260,7 @@ export function useAttempts({
     toggle,
     complete,
     rememberAttempt,
+    cancelPending,
     reset
   };
 }
