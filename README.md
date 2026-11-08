@@ -525,53 +525,21 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-## Розгортання
+## Розгортання на DigitalOcean
 
-Workflow **Deploy** застосовує те, що опублікував container delivery. Він запускається сам після
-успішної публікації образу з `main` і розгортає у `staging`; production розгортається лише
-вручну (`workflow_dispatch`) і через protected environment, тобто з підтвердженням людини.
+Workflow **Deploy** розгортає підписаний GHCR image за digest на DigitalOcean Droplet
+через SSH і Docker Compose. Для production збережено перевірку CI/Sonar/container
+delivery для image revision і deployment checkout; frontend також вимагає E2E.
+Розгортаємо backend першим, frontend другим. Спільний серверний lock координує
+обидва репозиторії; невдалий запуск повертає попередній release без видалення даних.
 
-Розгортається **digest, а не тег**. Тег `sha-<commit>` резолвиться в digest один раз, підпис
-cosign перевіряється саме над цим digest, і всі подальші кроки посилаються тільки на нього —
-переспрямований тег не може підмінити образ між перевіркою підпису й `kubectl apply`.
+Production запускається вручну через `workflow_dispatch`. Автоматичний staging
+вмикається лише repository variable `DO_STAGING_ENABLED=true` після окремого налаштування.
+GitHub environment потребує variables `DO_HOST`, `DO_SSH_USER`, `DO_SSH_PORT`
+та secrets `DO_SSH_KEY`, `DO_KNOWN_HOSTS`; паролі бази та JWT залишаються на сервері.
 
-До цієї роботи образ фронтенду **не підписувався**, хоча цей самий репозиторій уже перевіряв
-підпис бекенду перед E2E проти опублікованого образу. Тобто розгортання могло б перевірити
-провенанс однієї половини системи й не перевірити іншої. Тепер підписуються обидві.
-
-Перед production gate перевіряє **обидва коміти**: джерело підписаного образу (OCI label
-`org.opencontainers.image.revision`) і checkout маніфестів. Для кожного потрібні успішні
-`ci.yml`, `sonarqube.yml`, `container.yml` та `e2e.yml` у цьому репозиторії на `main`.
-Зараховуються `push` та `workflow_dispatch` (зокрема перевірки після Dependabot auto-merge),
-але не PR, fork чи scheduled runs. Вирішальним є найновіший запуск кожного workflow серед
-цих двох подій: failure, skipped або відсутня перевірка блокують деплой; незавершені
-перевірки очікуються до 5 хвилин. Gate не запускає перевірки й не застосовується до staging.
-
-Container delivery записує повний SHA джерела в `org.opencontainers.image.revision`.
-Старі образи без цієї мітки production gate відхиляє: для них потрібна нова збірка
-через актуальний workflow, а не підстановка SHA із тега чи checkout.
-
-Порядок кроків: резолв digest → перевірка підпису → production gate → `kubectl apply --dry-run=server` проти
-живого кластера → `apply` → `rollout status` → перевірка, що Service має готовий endpoint.
-Якщо rollout не піднявся, workflow друкує події та логи подів і робить `rollout undo`.
-
-### Що потрібно налаштувати один раз
-
-GitHub secrets: `OCI_CLI_USER`, `OCI_CLI_TENANCY`, `OCI_CLI_FINGERPRINT`, `OCI_CLI_KEY_CONTENT`,
-`OCI_CLI_REGION`, `OKE_CLUSTER_OCID`. Значення не зберігаються в репозиторії й не потрапляють
-у логи.
-
-GitHub environments: `staging` (без обмежень) і `production` (required reviewers — саме це
-робить розгортання в production свідомою дією).
-
-Staging живе в тому ж кластері, що й production, у namespace `quizproject-staging`, куди
-деплояться **обидва** репозиторії: Ingress фронтенду маршрутизує `/api` на Service бекенду в
-цьому ж namespace. На порожньому namespace бекенд треба розгорнути першим — інакше `/api`
-віддаватиме 503, і workflow про це попереджає, але не падає.
-
-Від production staging відрізняється лише там, де мусить: одна репліка, власний хост і
-PodDisruptionBudget із `maxUnavailable: 1` замість `minAvailable: 1` — останнє при одній
-репліці назавжди заблокувало б drain вузла, а вузли тут спільні з production.
+Повна інструкція: [DigitalOcean deployment](deploy/digitalocean/README.md). Kubernetes manifests залишаються
+доступними для окремого розгортання у Kubernetes і не використовуються цим workflow.
 
 ## Структура
 

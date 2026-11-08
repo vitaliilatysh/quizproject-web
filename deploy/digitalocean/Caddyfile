@@ -1,0 +1,14 @@
+{$SITE_ADDRESS} {
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy quiz-api:8081
+    }
+    handle {
+        reverse_proxy web:8080
+    }
+}
+
+# Container health only; this listener is never published on the host.
+http://:8082 {
+    respond /healthz 200
+}
