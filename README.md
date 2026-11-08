@@ -136,15 +136,50 @@ Frontend читає цей заголовок із відповідей API че
 ## Перевірка
 
 ```bash
+npm run api:setup
+npm run api:check
 npm test
 npm run coverage:check
 npm run build
 ```
 
-Команда `npm run check` послідовно запускає перевірку типів, перевірку форматування, лінтер,
+Команда `npm run check` послідовно перевіряє OpenAPI та генератор, типи, форматування, лінтер,
 тести з порогом покриття й production-збірку — у тому ж порядку, що й CI. Окремо:
 `npm run typecheck` — лише `tsc --noEmit`; `npm run lint` — oxlint; `npm run format` —
 Prettier, який виправляє на місці, тоді як `npm run format:check` лише повідомляє.
+
+### Типи API з OpenAPI
+
+`src/generated/api.d.ts` генерується з `contract/openapi.json`; `src/types.ts` лише дає
+цим DTO зручні назви та описує frontend-композиції й заголовки пагінації. Не редагуйте
+згенерований файл вручну. SHA backend, з якого взято експорт, записано в `contract/source.json`.
+
+Генератор має окремий lockfile у `tools/openapi`: `openapi-typescript` потребує TypeScript 5,
+а застосунок і його перевірки залишаються на TypeScript 7. `npm run api:setup` встановлює
+лише це dev-оточення; для звичайного `npm run dev` або `npm run build` воно не потрібне.
+
+Оновлення контракту після зміни backend (приклад для сусіднього checkout `quizproject`):
+
+```bash
+cd ../quizproject
+./gradlew :api:test --tests '*OpenApiExportTest' --no-daemon
+git rev-parse HEAD
+cd ../quizproject-web
+npm run api:setup
+npm run api:generate -- --schema ../quizproject/api/build/openapi/openapi.json --source <повний-SHA-з-попередньої-команди>
+npm run api:check
+npm run typecheck
+```
+
+Перегляньте diff контракту й типів та закомітьте їх разом із `contract/source.json`.
+`npm run api:generate` без аргументів відновлює типи з уже закоміченого snapshot.
+Режим `--check` нічого не перезаписує: невідповідність завершується помилкою.
+
+CI перевіряє генерацію зі snapshot та окремо експортує контракт з актуального backend
+`master` у тестовому Spring-контексті (H2, без staging). Розходження JSON-контракту або
+типів блокує CI, зокрема зміни обмежень валідації, які TypeScript не представляє.
+Перевірка з backend також запускається щодня о 06:31 UTC; production gate, як і раніше,
+приймає лише успішні `push`/`workflow_dispatch` перевірки, а не scheduled run.
 
 Prettier тримає TypeScript і більше нічого: `.prettierignore` пояснює, чому README, workflow-и
 та стилі лишилися поза ним. Доданий він після того, як один рядок JSX у панелі адміністратора

@@ -1,0 +1,14 @@
+{
+  "name": "quizproject-openapi-tooling",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "test": "node --test generate.test.mjs"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,255 +1,38 @@
-/**
- * The API's contract, as the API actually declares it.
- *
- * Every type here was transcribed from a Java record in the backend repository
- * rather than inferred from how this app happens to read the responses. The
- * source for each is named above it, so a future change on that side can be
- * followed to the type that has to move with it. Inferring them from usage
- * would have produced types that describe this frontend's habits — a field
- * nobody renders would simply be missing, and a field rendered defensively
- * would be optional for no reason the API agrees with.
- *
- * Two conventions carried over from Java:
- *
- *   - `int` and `long` are both `number`. Attempt ids are `long` on the admin
- *     results endpoint and `int` everywhere else; neither goes near 2^53.
- *   - `Instant` is serialised as an ISO-8601 string. It is `string` here, and
- *     nullable exactly where the record allows null.
- *
- * What is deliberately NOT modelled: `role`, `status` and `complexity` are
- * plain strings, not unions. The first two come from database rows the admin UI
- * can change, and `complexity` is a level label the seed data owns — the
- * frontend already treats an unrecognised value as "show it as it came", and a
- * union would turn a new database row into a compile error in a repository that
- * cannot fix it.
- */
+import type { components } from "./generated/api.js";
 
-// --- auth ------------------------------------------------------------------
+/** Wire DTOs come from the backend's exported OpenAPI, never handwritten copies. */
+type Schemas = components["schemas"];
+export type TokenResponse = Schemas["TokenResponse"];
+export type RegisterRequest = Schemas["RegisterRequest"];
+export type Profile = Schemas["ProfileResponse"];
+export type Quiz = Schemas["QuizResponse"];
+export type CatalogueSummary = Schemas["QuizCatalogueSummary"];
+export type AnswerOption = Schemas["AnswerOptionResponse"];
+export type AttemptQuestion = Schemas["AttemptQuestionResponse"];
+export type Attempt = Schemas["AttemptResponse"];
+export type AttemptCompletion = Schemas["AttemptCompletionResponse"];
+export type Result = Schemas["ResultResponse"];
+export type ResultSummary = Schemas["ResultSummary"];
+export type Subject = Schemas["AdminSubject"];
+export type Level = Schemas["AdminLevel"];
+export type AdminQuiz = Schemas["AdminQuiz"];
+export type AdminAnswer = Schemas["AdminAnswer"];
+export type AdminQuestion = Schemas["AdminQuestion"];
+export type AdminUser = Schemas["AdminUser"];
+export type AdminResult = Schemas["AdminResult"];
+export type AdminStatus = Schemas["AdminStatusResponse"];
+export type QuizRequest = Schemas["QuizRequest"];
+export type AnswerRequest = Schemas["AnswerRequest"];
+export type QuestionRequest = Schemas["QuestionRequest"];
+export type ApiErrorBody = Schemas["ApiError"];
 
-/** api/auth/TokenResponse.java */
-export interface TokenResponse {
-  accessToken: string;
-  tokenType: string;
-  expiresIn: number;
-  refreshToken: string;
-  refreshExpiresIn: number;
-}
-
-/** api/auth/RegisterRequest.java */
-export interface RegisterRequest {
-  username: string;
-  firstName: string;
-  lastName: string;
-  password: string;
-}
-
-// --- account ---------------------------------------------------------------
-
-/** api/account/ProfileResponse.java */
-export interface Profile {
-  username: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  status: string;
-  registeredAt: string;
-  lastLoginAt: string | null;
-}
-
-// --- catalogue -------------------------------------------------------------
-
-/** api/quiz/QuizResponse.java */
-export interface Quiz {
-  id: number;
-  name: string;
-  subject: string;
-  complexity: string;
-  timeToPassMinutes: number;
-  totalQuestions: number;
-}
-
-/** domain QuizCatalogueSummary.java */
-export interface CatalogueSummary {
-  totalQuizzes: number;
-  totalSubjects: number;
-}
-
-// --- attempts --------------------------------------------------------------
-
-/** api/attempt/AnswerOptionResponse.java — no `correct` flag, by design */
-export interface AnswerOption {
-  id: number;
-  text: string;
-}
-
-/** api/attempt/AttemptQuestionResponse.java */
-export interface AttemptQuestion {
-  id: number;
-  text: string;
-  answers: AnswerOption[];
-}
-
-/** api/attempt/AttemptResponse.java */
-export interface Attempt {
-  attemptId: number;
-  quizId: number;
-  startedAt: string;
-  expiresAt: string;
-  completed: boolean;
-  /** Integer, not int: null until the attempt is completed. */
-  score: number | null;
-  completedAt: string | null;
-  questions: AttemptQuestion[];
-}
-
-/** api/attempt/AttemptCompletionResponse.java */
-export interface AttemptCompletion {
-  attemptId: number;
-  quizId: number;
-  score: number;
-  completedAt: string;
-}
-
-// --- results ---------------------------------------------------------------
-
-/** api/result/ResultResponse.java */
-export interface Result {
-  attemptId: number;
-  quizId: number;
-  quizName: string;
-  score: number;
-  completedAt: string;
-}
-
-/**
- * api/result/ResultSummary.java — over every completed attempt the reader has,
- * whichever page of the list is on screen.
- */
-export interface ResultSummary {
-  totalAttempts: number;
-  averageScore: number;
-  bestScore: number;
-}
-
-/** One page of the results list, and the totals it sits inside. They arrive together. */
+// Frontend composition and HTTP-header metadata are not JSON response DTOs.
 export interface ResultHistory {
   page: Paged<Result>;
   summary: ResultSummary;
 }
 
-// --- administration --------------------------------------------------------
-// All from api/admin/AdminModels.java.
-
-export interface Subject {
-  id: number;
-  name: string;
-}
-
-export interface Level {
-  id: number;
-  name: string;
-}
-
-/**
- * Not the same shape as the public {@link Quiz}: this one carries the numeric
- * subjectId and levelId that the edit form binds its selects to, which the
- * catalogue response has no reason to expose.
- */
-export interface AdminQuiz {
-  id: number;
-  name: string;
-  timeToPassMinutes: number;
-  levelId: number;
-  complexity: string;
-  subjectId: number;
-  subject: string;
-  totalQuestions: number;
-}
-
-/** Carries `correct`, unlike the {@link AnswerOption} an attempt is shown. */
-export interface AdminAnswer {
-  id: number;
-  text: string;
-  correct: boolean;
-}
-
-export interface AdminQuestion {
-  id: number;
-  quizId: number;
-  text: string;
-  answers: AdminAnswer[];
-}
-
-export interface AdminUser {
-  id: number;
-  username: string;
-  role: string;
-  status: string;
-}
-
-export interface AdminResult {
-  attemptId: number;
-  username: string;
-  quizId: number;
-  quizName: string;
-  score: number;
-  completedAt: string;
-}
-
-export interface AdminStatus {
-  service: string;
-  access: string;
-}
-
-/** AdminModels.QuizRequest — what the quiz form sends, not what it gets back. */
-export interface QuizRequest {
-  name: string;
-  subjectId: number;
-  levelId: number;
-  timeToPassMinutes: number;
-}
-
-/**
- * AdminModels.AnswerRequest
- *
- * `id` names the stored row this is an edit of, and is what frees the API from
- * reading the order of the list as an identity. Optional because creating a
- * question has nothing to name yet — and because the API refuses a request that
- * names some rows and not others, so a partial list is worse than none.
- */
-export interface AnswerRequest {
-  id?: number;
-  text: string;
-  correct: boolean;
-}
-
-/** AdminModels.QuestionRequest — the API requires exactly four answers. */
-export interface QuestionRequest {
-  text: string;
-  answers: AnswerRequest[];
-}
-
-// --- transport -------------------------------------------------------------
-
-/**
- * api/support/ApiError.java. Only `message`, `error` and `path` are read here,
- * but the record has five fields and a partial type would misdescribe it.
- */
-export interface ApiErrorBody {
-  timestamp: string;
-  status: number;
-  error: string;
-  message: string;
-  path: string;
-}
-
-/**
- * The four X-Page-* headers, read together or not at all.
- *
- * Null rather than a synthetic single page when the response carries none: the
- * API paginates only when asked to, and "this collection was not paginated" is
- * a different fact from "it had one page".
- */
+/** The four X-Page-* headers, read together or not at all. */
 export interface PageMeta {
   number: number;
   size: number;
@@ -257,7 +40,7 @@ export interface PageMeta {
   totalPages: number;
 }
 
-/** A collection response together with whatever paging the server reported. */
+/** Null means the response did not include paging headers. */
 export interface Paged<T> {
   items: T[];
   page: PageMeta | null;
