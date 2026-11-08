@@ -112,6 +112,10 @@ jobs:
         if: always()
         run: docker rm --force quiz-web-test || true
 
+
+      - name: Smoke test DigitalOcean Compose deployment
+        run: bash .github/scripts/smoke-digitalocean.sh
+
   publish:
     name: Publish immutable image
     if: github.event_name != 'pull_request'

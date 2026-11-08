@@ -12,3 +12,4 @@ blob-report/
 outputs/
 work/
 .coverage-v8
+/deploy/digitalocean/.env
