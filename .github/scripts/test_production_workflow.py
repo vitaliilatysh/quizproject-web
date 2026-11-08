@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class ProductionWorkflowTest(unittest.TestCase):
     def test_production_gate_checks_signed_image_and_manifests_before_apply(self):
-        workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/deploy-digitalocean.yml").read_text(encoding="utf-8")
         steps = workflow.split("      - name: ")
         gate = next(step for step in steps if step.startswith("Require successful checks before production\n"))
         self.assertIn("if: env.DEPLOY_ENV == 'production'", gate)
@@ -23,7 +23,7 @@ class ProductionWorkflowTest(unittest.TestCase):
         self.assertLess(workflow.index(gate), workflow.index("Deploy the verified image over SSH"))
 
     def test_staging_trigger_keeps_its_existing_trust_boundary(self):
-        workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/deploy-digitalocean.yml").read_text(encoding="utf-8")
         self.assertIn("github.event.workflow_run.event == 'push'", workflow)
         self.assertIn("github.event.workflow_run.head_repository.full_name == github.repository", workflow)
         self.assertIn("branches: [main]", workflow)
@@ -50,7 +50,7 @@ class ProductionWorkflowTest(unittest.TestCase):
     def test_delivery_trigger_matches_the_publisher(self):
         delivery = (ROOT / ".github/workflows/container.yml").read_text(encoding="utf-8")
         name = re.search(r"^name: (.+)$", delivery, re.MULTILINE).group(1)
-        workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/deploy-digitalocean.yml").read_text(encoding="utf-8")
         self.assertIn('workflows: ["' + name + '"]', workflow)
 
     def test_ci_runs_the_policy_tests(self):
@@ -59,7 +59,7 @@ class ProductionWorkflowTest(unittest.TestCase):
 
 
     def test_digitalocean_uses_verified_ssh_and_opt_in_staging(self):
-        workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/deploy-digitalocean.yml").read_text(encoding="utf-8")
         self.assertNotIn("OCI_CLI_", workflow)
         self.assertNotIn("OKE_CLUSTER_OCID", workflow)
         self.assertNotIn("configure-kubectl-oke", workflow)
