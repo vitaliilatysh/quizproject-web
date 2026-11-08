@@ -32,11 +32,15 @@ if [[ -e "$root/current" || -L "$root/current" ]]; then
   [[ "$previous" == "$root/releases/"* && "$previous" != "$directory" ]]
 fi
 umask 077
-printf 'APP_IMAGE=%s\nDEPLOY_ENV=%s\n' "$image" "$environment" > "$directory/image.env"
+image_file=$(mktemp "$directory/.image.XXXXXXXX")
+printf 'APP_IMAGE=%s\nDEPLOY_ENV=%s\n' "$image" "$environment" > "$image_file"
+mv -Tf -- "$image_file" "$directory/image.env"
 compose() {
   local release_dir=$1
   shift
-  docker compose --project-name "quizproject-$environment-$component" \
+  env -u APP_IMAGE -u DEPLOY_ENV -u DOCKER_HOST -u DOCKER_CONTEXT \
+    -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
+    docker --host=unix:///var/run/docker.sock compose --project-name "quizproject-$environment-$component" \
     --env-file "$root/.env" --env-file "$release_dir/image.env" \
     --file "$release_dir/compose.yaml" "$@"
 }

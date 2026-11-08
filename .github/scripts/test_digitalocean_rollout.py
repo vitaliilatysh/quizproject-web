@@ -34,6 +34,7 @@ class RolloutTest(unittest.TestCase):
 import json,os,sys
 from pathlib import Path
 args=sys.argv[1:]
+if os.environ.get("FAKE_REQUIRE_CLEAN_ENV") and any(k in os.environ for k in ("APP_IMAGE","DEPLOY_ENV","DOCKER_HOST","DOCKER_CONTEXT","DOCKER_TLS","DOCKER_TLS_VERIFY","DOCKER_CERT_PATH")): sys.exit(78)
 with open(os.environ["FAKE_LOG"],"a") as handle: handle.write(json.dumps(args)+"\\n")
 release=Path(args[args.index("--file")+1]).parent.name
 command=args[args.index("--file")+2]
@@ -50,6 +51,7 @@ if release=="2-1" and command==os.environ.get("FAKE_FAIL"): sys.exit(1)
         shutil.copyfile(SOURCE,directory/"rollout.sh")
         (directory/"compose.yaml").write_text("services: {}\n")
         (directory/"image.env").write_text("APP_IMAGE="+IMAGE+"\nDEPLOY_ENV=production\n")
+        (directory/"image.env").chmod(0o644)
         return directory
 
     def run_release(self,image=IMAGE):
@@ -74,6 +76,14 @@ if release=="2-1" and command==os.environ.get("FAKE_FAIL"): sys.exit(1)
         self.assertIn("--wait",calls[2])
         self.assertNotIn("test-only-secret",result.stdout+result.stderr+json.dumps(calls))
         self.assertEqual((self.release/"image.env").stat().st_mode & 0o777,0o600)
+
+    def test_shell_variables_cannot_override_the_verified_image_or_target_daemon(self):
+        self.env.update(APP_IMAGE="unverified:latest", DEPLOY_ENV="wrong-network",
+                        DOCKER_HOST="tcp://another-host:2375", DOCKER_CONTEXT="foreign",
+                        FAKE_REQUIRE_CLEAN_ENV="true")
+        result = self.run_release()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--host=unix:///var/run/docker.sock", self.calls()[0])
 
     def test_host_lock_prevents_a_second_repository_from_mutating_the_stack(self):
         with (self.base / "production/.deploy.lock").open("w") as lock:
