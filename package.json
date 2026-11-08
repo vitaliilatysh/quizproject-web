@@ -8,6 +8,10 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "api:setup": "npm --prefix tools/openapi ci",
+    "api:generate": "node tools/openapi/generate.mjs",
+    "api:check": "node tools/openapi/generate.mjs --check",
+    "api:test": "node --test tools/openapi/generate.test.mjs",
     "dev": "vite --host 127.0.0.1 --port 4173",
     "build": "vite build && node scripts/prepare-hosting.mts",
     "typecheck": "tsc --noEmit",
@@ -20,7 +24,7 @@
     "coverage:check": "rm -rf .coverage-v8 && NODE_V8_COVERAGE=.coverage-v8 node --import ./tests/support/register.mts --test --test-timeout=30000 --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-functions=100 --test-coverage-branches=96 tests/*.test.ts && node scripts/coverage-lines.mts .coverage-v8 100",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "check": "npm run typecheck && npm run format:check && npm run lint && npm run coverage:check && npm run build"
+    "check": "npm run api:check && npm run api:test && npm run typecheck && npm run format:check && npm run lint && npm run coverage:check && npm run build"
   },
   "dependencies": {
     "react": "19.3.1",
@@ -28,15 +32,15 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.1.2",
+    "@vitejs/plugin-react": "6.2.1",
     "esbuild": "0.28.2",
     "happy-dom": "21.0.4",
-    "oxlint": "^1.89.0",
+    "oxlint": "^1.91.0",
     "prettier": "3.9.10",
     "typescript": "7.0.2",
-    "vite": "8.3.5"
+    "vite": "8.3.6"
   }
 }

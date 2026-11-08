@@ -4,7 +4,17 @@ import test, { afterEach, beforeEach } from "node:test";
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { fakeToken, loginResponse, stubApi, type StubCall, type StubResponse } from "./support/api-stub.js";
-import { act, click, closeBrowser, openBrowser, render, settle, type, type Rendered } from "./support/dom.js";
+import {
+  act,
+  click,
+  closeBrowser,
+  openBrowser,
+  render,
+  settle,
+  submit,
+  type,
+  type Rendered
+} from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
 
@@ -92,6 +102,61 @@ function delayedResponse() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+for (const scenario of [
+  { label: "saving the current URL", url: "http://localhost:8081", external: false, clears: false },
+  {
+    label: "saving an equivalent normalized URL",
+    url: " http://LOCALHOST:8081///?ignored=yes#fragment ",
+    external: false,
+    clears: false
+  },
+  {
+    label: "an equivalent URL saved by another tab",
+    url: "http://LOCALHOST:8081///?ignored=yes#fragment",
+    external: true,
+    clears: false
+  },
+  { label: "saving a different API", url: "https://other.example.com", external: false, clears: true },
+  {
+    label: "a different API saved by another tab",
+    url: "https://other.example.com",
+    external: true,
+    clears: true
+  }
+]) {
+  test(`attempt drafts: ${scenario.label}`, async () => {
+    const api = stubApi({ ...CATALOGUE, "GET /api/v1/attempts/4": attemptBody(4) });
+    seedSession("olena");
+    goTo("#/attempt/4");
+    const view = render(App);
+    await settle();
+    click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
+    await settle();
+    assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101]));
+    goTo("#/settings");
+    await settle();
+
+    if (scenario.external) {
+      localStorage.setItem("quizproject.apiUrl", scenario.url);
+      await act(async () => {
+        window.dispatchEvent(Object.assign(new window.Event("storage"), { key: "quizproject.apiUrl" }));
+      });
+      await settle();
+    } else {
+      type(view.find("input[name=apiUrl]"), scenario.url);
+      await submit(view.find("form"));
+    }
+
+    assert.equal(sessionStorage.getItem(ANSWERS(4)), scenario.clears ? null : JSON.stringify([101]));
+    if (!scenario.clears) {
+      goTo("#/attempt/4");
+      await settle();
+      assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, true);
+      assert.equal(api.countOf("GET /api/v1/attempts/4"), 1, "the unchanged API discarded the attempt cache");
+    }
+  });
 }
 
 for (const page of ["profile", "results", "admin"] as const) {
