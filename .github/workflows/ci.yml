@@ -148,3 +148,24 @@ jobs:
         run: |
           npm run api:setup
           npm run api:check -- --schema backend-contract/api/build/openapi/openapi.json
+
+  retire-legacy-deploy:
+    name: Retire legacy deployment workflow
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+    steps:
+      - name: Disable the retired deployment entry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | select(.path == ".github/workflows/deploy.yml" and .state == "active") | .id' |
+          while IFS= read -r workflow_id; do
+            [[ "$workflow_id" =~ ^[0-9]+$ ]]
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/disable"
+            echo "Disabled the legacy deployment workflow (${workflow_id})."
+          done

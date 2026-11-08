@@ -380,14 +380,17 @@ Workflow **Dependabot auto-merge** автоматично зливає онов�
 | `e2e.yml` — **Full-stack E2E** | PR, push у `main` | Playwright проти backend, зібраного з джерел `quizproject@master`, з MySQL 8.4 і Redis 8.2 |
 | `e2e-published-image.yml` — **E2E against published API image** | щодня о 03:00 UTC і вручну | той самий набір проти опублікованого образу backend із перевіркою підпису cosign |
 | `container.yml` — **Container delivery** | PR, push у `main` | збірка образу й overlays; після `main` — публікація, SBOM, provenance і підпис |
-| `deploy.yml` — **Deploy** | після успішного delivery з `main`, або вручну | розгортання за digest у `staging`, у production — лише вручну через protected environment |
+| `deploy-digitalocean.yml` — **Deploy to DigitalOcean** | після успішного delivery з `main`, або вручну | DigitalOcean за digest; staging — opt-in, production — вручну через protected environment |
 
 Node.js 24 у всіх job-ах, сторонні actions закріплені за commit SHA, а Dependabot тримає їх
 актуальними.
 
-## Docker і Kubernetes
+## Docker і довідкові Kubernetes-маніфести
 
-P12 додає production-контейнер і повний Kubernetes delivery для React frontend. Образ збирається
+Kubernetes-маніфести збережені лише для ручного використання. CI/CD не встановлює
+`kubectl` і не створює Kubernetes artifacts; деплой використовує Docker Compose на DigitalOcean.
+
+Frontend має production-контейнер для Docker Compose та опційні маніфести для ручного Kubernetes-деплою. Образ збирається
 у Node.js 24, а статичні файли віддає unprivileged NGINX на порту `8080`. Контейнер працює без
 root-прав, із read-only root filesystem, health endpoint `GET /healthz` і security headers.
 
@@ -428,12 +431,10 @@ kubectl -n quizproject create secret tls quizproject-tls --cert=tls.crt --key=tl
 kubectl apply -k deploy/kubernetes/overlays/production
 ```
 
-Workflow **Container delivery** перевіряє контейнер і обидва overlays у кожному PR. Після push у
-`main` він публікує multi-platform образи `ghcr.io/vitaliilatysh/quizproject-web:main` і
-`ghcr.io/vitaliilatysh/quizproject-web:sha-<commit>`, додає SBOM/provenance та зберігає готовий
-production manifest, зафіксований на immutable SHA, як GitHub Actions artifact. Для приватного
-GHCR package додайте `imagePullSecret` до service account `quiz-web`; для публічного package це не
-потрібно.
+Workflow **Container delivery** перевіряє контейнер і Docker Compose routing у кожному PR.
+Після push у `main` він публікує multi-platform образи
+`ghcr.io/vitaliilatysh/quizproject-web:main` і `ghcr.io/vitaliilatysh/quizproject-web:sha-<commit>`,
+додає SBOM/provenance та підписує digest. Kubernetes manifest artifacts більше не створюються.
 
 ### Каталог тестів
 
@@ -527,7 +528,7 @@ npm run test:e2e
 
 ## Розгортання на DigitalOcean
 
-Workflow **Deploy** розгортає підписаний GHCR image за digest на DigitalOcean Droplet
+Workflow **Deploy to DigitalOcean** розгортає підписаний GHCR image за digest на DigitalOcean Droplet
 через SSH і Docker Compose. Для production збережено перевірку CI/Sonar/container
 delivery для image revision і deployment checkout; frontend також вимагає E2E.
 Розгортаємо backend першим, frontend другим. Спільний серверний lock координує
