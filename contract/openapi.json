@@ -397,8 +397,6 @@
               "format": "int32",
               "type": "integer"
             },
-            "maxItems": 1000,
-            "minItems": 0,
             "type": "array",
             "uniqueItems": true
           }
