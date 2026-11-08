@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeBaseUrl, QuizApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { resetServerClock } from "../../clock.js";
@@ -8,8 +8,19 @@ type ToastMessage = (message: string, tone?: string) => void;
 
 export function useApiSettings(toast: ToastMessage, onApiChanged: (external: boolean) => void) {
   const [apiUrl, setApiUrl] = useState<string>(() => readApiUrl());
+  const currentApiUrl = useRef(normalizeBaseUrl(apiUrl));
   const [connection, setConnection] = useState("idle");
   const [error, setError] = useState("");
+
+  const updateApiUrl = useCallback(
+    (normalized: string, external: boolean) => {
+      if (normalized === currentApiUrl.current) return;
+      currentApiUrl.current = normalized;
+      setApiUrl(normalized);
+      onApiChanged(external);
+    },
+    [onApiChanged]
+  );
 
   useEffect(() => {
     resetServerClock();
@@ -18,12 +29,11 @@ export function useApiSettings(toast: ToastMessage, onApiChanged: (external: boo
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== "quizproject.apiUrl") return;
-      setApiUrl(readApiUrl());
-      onApiChanged(true);
+      updateApiUrl(normalizeBaseUrl(readApiUrl()), true);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [onApiChanged]);
+  }, [updateApiUrl]);
 
   const testConnection = useCallback(async (value: string): Promise<boolean> => {
     setConnection("checking");
@@ -45,15 +55,14 @@ export function useApiSettings(toast: ToastMessage, onApiChanged: (external: boo
       try {
         const normalized = normalizeBaseUrl(value);
         writeApiUrl(normalized);
-        setApiUrl(normalized);
-        onApiChanged(false);
+        updateApiUrl(normalized, false);
         if (await testConnection(normalized)) toast("Адресу API збережено.");
       } catch (reason) {
         setConnection("error");
         setError(reason instanceof Error ? reason.message : String(reason));
       }
     },
-    [onApiChanged, testConnection, toast]
+    [updateApiUrl, testConnection, toast]
   );
 
   return { apiUrl, connection, error, testConnection, save };

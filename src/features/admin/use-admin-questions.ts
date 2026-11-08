@@ -27,17 +27,12 @@ export function useAdminQuestions({ api, session, activeAccount, handleAuthError
   const [questions, setQuestions] = useState<AdminQuestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // The quiz the most recent call asked for. The other hooks guard with an
-  // in-flight flag, which is right when every call asks for the same thing:
-  // the second call is redundant and dropping it costs nothing. Here each call
-  // asks for a different quiz, so dropping the newer one would leave the reader
-  // looking at the quiz they just navigated away from. The answer that arrives
-  // for a quiz nobody is looking at any more is the one to drop instead.
-  const requested = useRef("");
+  // A sequence, not a quiz id: selecting 7 -> 8 -> 7 must reject the first 7.
+  const requestGeneration = useRef(0);
 
   const load = useCallback(
     async (quizId: string): Promise<void> => {
-      requested.current = quizId;
+      const generation = ++requestGeneration.current;
       if (!quizId) {
         setQuestions([]);
         setError("");
@@ -49,23 +44,23 @@ export function useAdminQuestions({ api, session, activeAccount, handleAuthError
       setError("");
       try {
         const loaded = await api.adminQuestions(quizId);
-        if (requested.current !== quizId || activeAccount.current !== requestedBy) return;
+        if (requestGeneration.current !== generation || activeAccount.current !== requestedBy) return;
         setQuestions(loaded);
       } catch (reason) {
-        if (requested.current !== quizId) return;
+        if (requestGeneration.current !== generation || activeAccount.current !== requestedBy) return;
         if (handleAuthError(reason, "#/admin")) return;
         setError(friendlyError(reason));
       } finally {
         // Only the answer still being waited on may take the spinner down; a
         // superseded one would clear it while its replacement is still in flight.
-        if (requested.current === quizId) setLoading(false);
+        if (requestGeneration.current === generation) setLoading(false);
       }
     },
     [activeAccount, api, handleAuthError, session]
   );
 
   const reset = useCallback(() => {
-    requested.current = "";
+    requestGeneration.current += 1;
     setQuestions([]);
     setError("");
     setLoading(false);

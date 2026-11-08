@@ -4,7 +4,17 @@ import test, { afterEach, beforeEach } from "node:test";
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { fakeToken, loginResponse, stubApi, type StubCall, type StubResponse } from "./support/api-stub.js";
-import { act, click, closeBrowser, openBrowser, render, settle, type, type Rendered } from "./support/dom.js";
+import {
+  act,
+  click,
+  closeBrowser,
+  openBrowser,
+  render,
+  settle,
+  submit,
+  type,
+  type Rendered
+} from "./support/dom.js";
 
 const realFetch = globalThis.fetch;
 
@@ -92,6 +102,122 @@ function delayedResponse() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+for (const scenario of [
+  { label: "saving the current URL", url: "http://localhost:8081", external: false, clears: false },
+  {
+    label: "saving an equivalent normalized URL",
+    url: " http://LOCALHOST:8081///?ignored=yes#fragment ",
+    external: false,
+    clears: false
+  },
+  {
+    label: "an equivalent URL saved by another tab",
+    url: "http://LOCALHOST:8081///?ignored=yes#fragment",
+    external: true,
+    clears: false
+  },
+  { label: "saving a different API", url: "https://other.example.com", external: false, clears: true },
+  {
+    label: "a different API saved by another tab",
+    url: "https://other.example.com",
+    external: true,
+    clears: true
+  }
+]) {
+  test(`attempt drafts: ${scenario.label}`, async () => {
+    const api = stubApi({ ...CATALOGUE, "GET /api/v1/attempts/4": attemptBody(4) });
+    seedSession("olena");
+    goTo("#/attempt/4");
+    const view = render(App);
+    await settle();
+    click(view.at<HTMLInputElement>("input[type=checkbox]", 0));
+    await settle();
+    assert.equal(sessionStorage.getItem(ANSWERS(4)), JSON.stringify([101]));
+    goTo("#/settings");
+    await settle();
+
+    if (scenario.external) {
+      localStorage.setItem("quizproject.apiUrl", scenario.url);
+      await act(async () => {
+        window.dispatchEvent(Object.assign(new window.Event("storage"), { key: "quizproject.apiUrl" }));
+      });
+      await settle();
+    } else {
+      type(view.find("input[name=apiUrl]"), scenario.url);
+      await submit(view.find("form"));
+    }
+
+    assert.equal(sessionStorage.getItem(ANSWERS(4)), scenario.clears ? null : JSON.stringify([101]));
+    if (!scenario.clears) {
+      goTo("#/attempt/4");
+      await settle();
+      assert.equal(view.at<HTMLInputElement>("input[type=checkbox]", 0).checked, true);
+      assert.equal(api.countOf("GET /api/v1/attempts/4"), 1, "the unchanged API discarded the attempt cache");
+    }
+  });
+}
+
+for (const page of ["profile", "results", "admin"] as const) {
+  test(`${page}: relogin with the same username rejects an old 401 and loads fresh data`, async () => {
+    const outgoing = delayedResponse();
+    const incoming = delayedResponse();
+    let loads = 0;
+    const path = {
+      profile: "GET /api/v1/users/me",
+      results: "GET /api/v1/results/me",
+      admin: "GET /api/v1/admin/subjects"
+    }[page];
+    const api = stubApi({
+      ...CATALOGUE,
+      "POST /api/v1/auth/login": loginResponse("olena", { roles: ["ROLE_ADMIN"] }),
+      "POST /api/v1/auth/logout": { body: {} },
+      "GET /api/v1/results/me/summary": { body: { totalAttempts: 0, averageScore: 0, bestScore: 0 } },
+      "GET /api/v1/admin/levels": { body: [] },
+      "GET /api/v1/admin/quizzes": { body: [] },
+      "GET /api/v1/admin/users": { body: [] },
+      "GET /api/v1/admin/results": { body: [] },
+      [path]: () => (++loads === 1 ? outgoing.promise : incoming.promise)
+    });
+    seedSession("olena", { roles: ["ROLE_ADMIN"] });
+    goTo(`#/${page}`);
+    const view = render(App);
+    await settle();
+    assert.equal(api.countOf(path), 1);
+    click(view.findAll("button").find(button => button.textContent === "Вийти"));
+    await settle();
+    goTo("#/login");
+    await signIn(view, "olena");
+    goTo(`#/${page}`);
+    await settle();
+    assert.equal(api.countOf(path), 2, "the new session did not start its own load");
+    await act(async () => {
+      outgoing.resolve({ status: 401, body: { message: "OLD SESSION" } });
+      await settle();
+    });
+    assert.equal(window.location.hash, `#/${page}`);
+    assert.notEqual(sessionStorage.getItem("quizproject.session"), null);
+    assert.equal(api.countOf(path), 2);
+    await act(async () => {
+      incoming.resolve({
+        body:
+          page === "profile"
+            ? {
+                username: "olena",
+                firstName: "Олена",
+                lastName: "Нова",
+                role: "admin",
+                status: "active",
+                registeredAt: "2026-01-01T00:00:00Z",
+                lastLoginAt: null
+              }
+            : []
+      });
+      await settle();
+    });
+    assert.doesNotMatch(view.text(), /OLD SESSION|Сесія завершилась/);
+  });
 }
 
 for (const status of [200, 503]) {
