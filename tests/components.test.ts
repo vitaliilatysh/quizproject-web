@@ -32,7 +32,7 @@ import type {
   ResultHistory,
   ResultSummary
 } from "../src/types.js";
-import { click, closeBrowser, openBrowser, render, submit as submitForm, type } from "./support/dom.js";
+import { act, click, closeBrowser, openBrowser, render, submit as submitForm, type } from "./support/dom.js";
 
 // A signed-in reader, complete enough to be a real Session. Only `username` and
 // `roles` are ever rendered, but a partial object would be a different type
@@ -544,6 +544,64 @@ test("submitting is announced and blocked while it is in flight", () => {
   assert.match(submit.textContent, /Перевіряємо/);
   assert.equal(submit.disabled, true, "the attempt could be submitted twice");
   assert.deepEqual(completed, []);
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+});
+
+test("an expired attempt keeps its draft visible but cannot be edited or submitted", async () => {
+  const toggles: number[] = [];
+  const completed: number[] = [];
+  const view = render(
+    AttemptPage,
+    attemptProps({
+      attempt: attempt({ expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+      selected: new Set([101]),
+      onToggle: (_attemptId, answerId) => toggles.push(answerId),
+      onComplete: id => completed.push(id)
+    })
+  );
+  assert.match(view.find("[role=status]").textContent, /Час вичерпано/);
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+  assert.equal(view.find<HTMLInputElement>("input[type=checkbox]").checked, true);
+  click(view.find("input[type=checkbox]"));
+  await submitForm(view.find("form"));
+  assert.deepEqual(toggles, []);
+  assert.deepEqual(completed, []);
+  assert.equal(view.find<HTMLButtonElement>(".attempt-submit button").disabled, true);
+});
+
+test("returning to an attempt refreshes its deadline without waiting for the next timer tick", context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  for (const [target, event] of [
+    [window, "focus"],
+    [document, "visibilitychange"]
+  ] as const) {
+    const view = render(
+      AttemptPage,
+      attemptProps({ attempt: attempt({ expiresAt: new Date(now + 10_000).toISOString() }) })
+    );
+    assert.equal(view.query("[role=status]"), null);
+    now += 11_000;
+    act(() => target.dispatchEvent(new window.Event(event)));
+    assert.match(view.find("[role=status]").textContent, /Час вичерпано/);
+    assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+    view.unmount();
+  }
+});
+
+test("a completion already in flight can still succeed after the deadline", () => {
+  const props = attemptProps({
+    attempt: attempt({ expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+    busy: true,
+    selected: new Set([101])
+  });
+  const view = render(AttemptPage, props);
+  assert.equal(view.query("[role=status]"), null);
+  assert.match(view.text(), /Надсилаємо відповіді/);
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+  view.rerender({ ...props, busy: false, completion: completionOf(100) });
+  assert.match(view.text(), /Ваш результат/);
+  assert.equal(view.find(".completion__score strong").textContent, "100");
 });
 
 test("an unreachable attempt offers a way out rather than a blank page", () => {

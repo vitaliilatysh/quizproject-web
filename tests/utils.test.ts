@@ -8,6 +8,7 @@ import {
   difficultyTone,
   formatCountdown,
   formatDate,
+  hasExpired,
   parseRoute,
   quizCountLabel,
   safeHash
@@ -27,6 +28,16 @@ test("difficultyLabel translates backend values", () => {
 test("formatCountdown never renders negative time", () => {
   assert.equal(formatCountdown("2026-01-01T00:01:05Z", Date.parse("2026-01-01T00:00:00Z")), "01:05");
   assert.equal(formatCountdown("2026-01-01T00:00:00Z", Date.parse("2026-01-01T00:01:00Z")), "00:00");
+});
+
+test("attempts expire at the deadline, using the server clock by default", () => {
+  const deadline = "2026-01-01T00:00:00Z";
+  const time = Date.parse(deadline);
+  assert.equal(hasExpired(deadline, time - 1), false);
+  assert.equal(hasExpired(deadline, time), true);
+  assert.equal(hasExpired(deadline, time + 1), true);
+  assert.equal(hasExpired("not a date", time), false);
+  assert.equal(hasExpired(new Date(Date.now() - 10_000).toISOString()), true);
 });
 
 test("safeHash rejects navigation outside the SPA", () => {

@@ -11,7 +11,7 @@ import test, { afterEach, beforeEach } from "node:test";
 
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
-import { fakeToken, loginResponse, stubApi, type StubbedApi } from "./support/api-stub.js";
+import { fakeToken, loginResponse, stubApi, type StubbedApi, type StubResponse } from "./support/api-stub.js";
 import {
   act,
   click,
@@ -828,6 +828,72 @@ test("a submission the API refuses leaves the answers where they are", async () 
   // to survive so a second try has something to send.
   assert.equal(view.findAll("input[type=checkbox]").length, 1);
   assert.equal(sessionStorage.getItem("quizproject.answers.4"), JSON.stringify([101]));
+});
+
+test("a deadline that passes between timer ticks blocks both edits and a new submission", async context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  seedSession("olena");
+  const body = { ...ATTEMPT_BODY(4)().body, expiresAt: new Date(now + 60_000).toISOString() };
+  const { view, stub } = await open("#/attempt/4", { "GET /api/v1/attempts/4": { body } });
+  click(view.find("input[type=checkbox]"));
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  now += 61_000;
+  click(view.find("input[type=checkbox]"));
+  window.confirm = () => true;
+  await submit(view.find("form"));
+  assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 0);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  act(() => window.dispatchEvent(new window.Event("focus")));
+  assert.match(view.find("[role=status]").textContent, /Час вичерпано/);
+});
+
+test("a confirmation that outlasts the deadline cannot send a late submission", async context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  seedSession("olena");
+  const body = { ...ATTEMPT_BODY(4)().body, expiresAt: new Date(now + 60_000).toISOString() };
+  const { view, stub } = await open("#/attempt/4", { "GET /api/v1/attempts/4": { body } });
+  click(view.find("input[type=checkbox]"));
+  window.confirm = () => {
+    now += 61_000;
+    return true;
+  };
+  await submit(view.find("form"));
+  assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 0);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+});
+
+test("pending completion freezes answers and accepts a successful result after the deadline", async context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  seedSession("olena");
+  const body = { ...ATTEMPT_BODY(4)().body, expiresAt: new Date(now + 60_000).toISOString() };
+  let finish!: (response: StubResponse) => void;
+  const pending = new Promise<StubResponse>(resolve => {
+    finish = resolve;
+  });
+  const { view, stub } = await open("#/attempt/4", {
+    "GET /api/v1/attempts/4": { body },
+    "POST /api/v1/attempts/4/complete": () => pending
+  });
+  click(view.find("input[type=checkbox]"));
+  window.confirm = () => true;
+  click(view.find(".attempt-submit button"));
+  await settle();
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+  click(view.find("input[type=checkbox]"));
+  now += 61_000;
+  act(() => document.dispatchEvent(new window.Event("visibilitychange")));
+  assert.equal(view.query("[role=status]"), null);
+  assert.match(view.text(), /Надсилаємо відповіді/);
+  assert.deepEqual(stub.lastOf("POST /api/v1/attempts/4/complete")?.body, { answerIds: [101] });
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  finish({ body: { attemptId: 4, quizId: 7, score: 100, completedAt: new Date(now).toISOString() } });
+  await settle();
+  assert.match(view.text(), /Ваш результат/);
+  assert.equal(view.find(".completion__score strong").textContent, "100");
+  assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 1);
 });
 
 test("an address with nothing behind it is reported as no connection", async () => {

@@ -111,6 +111,10 @@ export function quizCountLabel(count: number): string {
 // of the attempt, which is the price of not losing the whole thing.
 export const AUTO_SUBMIT_LEAD_MS = 3_000;
 
+export function hasExpired(expiresAt: string, now: number = serverNow()): boolean {
+  return Date.parse(expiresAt) <= now;
+}
+
 /**
  * How long to wait before submitting an attempt on the reader's behalf, or null
  * when there is nothing worth waiting for.
