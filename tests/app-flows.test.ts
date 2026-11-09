@@ -90,6 +90,33 @@ const fill = (view: AppView, values: Record<string, string>): void => {
 
 const alertText = (view: AppView): string => view.query("[role=alert]")?.textContent ?? "";
 
+test("an empty quiz cannot start or redirect to login for either a guest or a signed-in reader", async () => {
+  for (const signedIn of [false, true]) {
+    if (signedIn) seedSession("olena");
+    const { view, stub } = await open("#/quizzes", {
+      "GET /api/v1/quizzes": {
+        body: [
+          {
+            id: 7,
+            name: "Квіз у підготовці",
+            subject: "Java",
+            complexity: "low",
+            totalQuestions: 0,
+            timeToPassMinutes: 10
+          }
+        ]
+      }
+    });
+    const start = view.find<HTMLButtonElement>(".quiz-card button");
+    assert.equal(start.disabled, true);
+    click(start);
+    await settle();
+    assert.equal(window.location.hash, "#/quizzes");
+    assert.equal(stub.countOf("POST /api/v1/quizzes/7/attempts"), 0);
+    view.unmount();
+  }
+});
+
 test("a registration is checked in the browser before it costs a request", async () => {
   const { view, stub } = await open("#/signup");
 

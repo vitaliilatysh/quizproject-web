@@ -13,6 +13,7 @@ interface QuizCardProps {
 
 function QuizCard({ quiz, compact, busy, onStart }: Readonly<QuizCardProps>) {
   const tone = difficultyTone(quiz.complexity);
+  const ready = quiz.totalQuestions > 0;
   return (
     <article className={`quiz-card ${compact ? "quiz-card--compact" : ""}`}>
       <div className="quiz-card__top">
@@ -31,8 +32,14 @@ function QuizCard({ quiz, compact, busy, onStart }: Readonly<QuizCardProps>) {
           <strong>{quiz.timeToPassMinutes}</strong> хв
         </span>
       </div>
-      <button className="button button--arrow" type="button" onClick={() => onStart(quiz.id)} disabled={busy}>
-        <span>{busy ? "Створюємо спробу…" : "Розпочати тест"}</span>
+      {!ready && <p>Запитання ще готуються.</p>}
+      <button
+        className="button button--arrow"
+        type="button"
+        onClick={() => onStart(quiz.id)}
+        disabled={busy || !ready}
+      >
+        <span>{!ready ? "Квіз готується" : busy ? "Створюємо спробу…" : "Розпочати тест"}</span>
         <span aria-hidden="true">→</span>
       </button>
     </article>
@@ -168,7 +175,7 @@ export function HomePage({
           <div className="hero__stats" aria-label="Статистика каталогу">
             <div>
               <strong>{total}</strong>
-              <span>доступних тестів</span>
+              <span>тестів у каталозі</span>
             </div>
             <div>
               <strong>{subjects}</strong>

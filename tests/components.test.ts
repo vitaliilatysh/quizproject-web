@@ -123,6 +123,28 @@ test("a quiz card names its difficulty in the reader's language", () => {
 // notices a new one was seeded. Only an absent level reads as "not stated" —
 // the distinction matters, because the bug above looked exactly like the first
 // case while being the second.
+test("an empty quiz stays visible but cannot start an attempt", () => {
+  const started: number[] = [];
+  const view = render(
+    QuizCollection,
+    collection({
+      quizzes: [quiz({ id: 1, totalQuestions: 0 }), quiz({ id: 2, totalQuestions: 1 })],
+      onStart: id => started.push(id)
+    })
+  );
+  assert.equal(view.findAll(".quiz-card").length, 2);
+  const [empty, ready] = view.findAll<HTMLButtonElement>(".quiz-card button");
+  assert.ok(empty && ready);
+  assert.equal(empty.disabled, true);
+  assert.match(empty.textContent, /Квіз готується/);
+  assert.match(view.at(".quiz-card", 0).textContent, /Запитання ще готуються/);
+  click(empty);
+  assert.deepEqual(started, []);
+  assert.equal(ready.disabled, false);
+  click(ready);
+  assert.deepEqual(started, [2]);
+});
+
 test("an untranslated difficulty is shown, a missing one is named as missing", () => {
   const shown = render(QuizCollection, collection({ quizzes: [quiz({ complexity: "sudden" })] }));
   assert.equal(shown.find(".pill").textContent, "sudden");
@@ -650,6 +672,7 @@ test("the home page's totals come from the catalogue, not from what it teased", 
   });
 
   assert.equal(view.at(".hero__stats strong", 0).textContent, "137");
+  assert.equal(view.at(".hero__stats span", 0).textContent, "тестів у каталозі");
   assert.equal(view.at(".hero__stats strong", 1).textContent, "9");
 });
 
