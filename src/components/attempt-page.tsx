@@ -15,6 +15,7 @@ export interface AttemptPageProps {
   selected: ReadonlySet<number>;
   completion: AttemptCompletion | undefined;
   busy: boolean;
+  onRetry?: (() => void) | undefined;
   onToggle: (attemptId: number, answerId: number, checked: boolean) => void;
   onComplete: (attemptId: number) => void;
 }
@@ -32,6 +33,7 @@ export function AttemptPage({
   selected,
   completion,
   busy,
+  onRetry,
   onToggle,
   onComplete
 }: Readonly<AttemptPageProps>) {
@@ -65,9 +67,16 @@ export function AttemptPage({
         <h1>Спроба недоступна</h1>
         <div className="empty-state">
           <p>{error}</p>
-          <a className="button button--dark" href="#/quizzes">
-            До каталогу
-          </a>
+          <div className="button-row">
+            {onRetry && (
+              <button className="button button--dark" type="button" onClick={onRetry} disabled={loading}>
+                Спробувати ще раз
+              </button>
+            )}
+            <a className="button button--ghost" href="#/quizzes">
+              До каталогу
+            </a>
+          </div>
         </div>
       </section>
     );

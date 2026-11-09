@@ -259,6 +259,7 @@ export default function App() {
         selected={attempts.selection}
         completion={attempts.completions[attemptId]}
         busy={actionBusy === `complete-${attemptId}`}
+        onRetry={invalid ? undefined : () => void attempts.load(attemptId)}
         onToggle={attempts.toggle}
         onComplete={id => void attempts.complete(id)}
       />

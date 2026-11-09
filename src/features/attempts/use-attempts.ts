@@ -77,11 +77,8 @@ export function useAttempts({
         const attempt = await api.attempt(attemptId);
         if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         setAttempts(current => ({ ...current, [attemptId]: attempt }));
-        // Not guarded against overwriting a selection already in state: there is
-        // no way to arrive here with one. The effect below is the only caller and
-        // it refuses an attempt already loaded, rememberAttempt fills both maps
-        // together, and reset empties both. The guard that used to sit here could
-        // not run, which is how the line gate found it.
+        // Loading and manual retries restore the same persisted draft. A failed
+        // request never clears it, including a retry after a submission error.
         setSelections(current => ({ ...current, [attemptId]: readAnswers(attemptId) }));
       } catch (error) {
         // The same check the success path makes. Without it the failure of a

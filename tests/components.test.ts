@@ -485,6 +485,7 @@ const attemptProps = (over: Partial<AttemptPageProps> = {}): AttemptPageProps =>
   selected: new Set<number>(),
   completion: undefined,
   busy: false,
+  onRetry: () => {},
   onToggle: () => {},
   onComplete: () => {},
   ...over
@@ -630,6 +631,25 @@ test("an unreachable attempt offers a way out rather than a blank page", () => {
   const view = render(AttemptPage, attemptProps({ attempt: undefined, error: "Спроба не знайдена" }));
   assert.match(view.text(), /Спроба не знайдена/);
   assert.equal(view.find("a[href='#/quizzes']").textContent, "До каталогу");
+});
+
+test("an attempt load error can be retried and blocks retries while reloading", () => {
+  let retries = 0;
+  const props = attemptProps({
+    error: "Тимчасовий збій",
+    onRetry: () => {
+      retries += 1;
+    }
+  });
+  const view = render(AttemptPage, props);
+  click(view.find(".empty-state button"));
+  assert.equal(retries, 1);
+  view.rerender({ ...props, loading: true });
+  assert.equal(view.find<HTMLButtonElement>(".empty-state button").disabled, true);
+  click(view.find(".empty-state button"));
+  assert.equal(retries, 1);
+  view.rerender({ ...props, onRetry: undefined });
+  assert.equal(view.query(".empty-state button"), null);
 });
 
 test("the home page sends a stranger to sign in and a reader to their results", () => {

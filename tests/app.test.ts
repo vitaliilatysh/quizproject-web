@@ -1062,7 +1062,7 @@ test("a handover drops the failure the previous reader was looking at", async ()
 // state — and it used to leave them holding the outgoing reader's attempt id.
 // The incoming reader's load then returned at the guard without asking for
 // anything, and nothing retried: the effect's condition was already satisfied,
-// its dependencies do not change again, and an attempt page offers no retry
+// its dependencies do not change again, and the loading screen offers no retry
 // button. The reader sat on a spinner until they reloaded the tab.
 test("a handover does not leave the next reader waiting on a request that is not theirs", async () => {
   let refuseOlenasRequest!: (reason: unknown) => void;
