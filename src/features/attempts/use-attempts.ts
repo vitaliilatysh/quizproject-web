@@ -21,7 +21,7 @@ import {
   type Session
 } from "../../session.js";
 import type { Attempt, AttemptCompletion } from "../../types.js";
-import { autoSubmitDelay, type Route } from "../../utils.js";
+import { autoSubmitDelay, hasExpired, type Route } from "../../utils.js";
 
 const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
 type HandleAuthError = (error: unknown, returnTo: string) => boolean;
@@ -77,11 +77,8 @@ export function useAttempts({
         const attempt = await api.attempt(attemptId);
         if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
         setAttempts(current => ({ ...current, [attemptId]: attempt }));
-        // Not guarded against overwriting a selection already in state: there is
-        // no way to arrive here with one. The effect below is the only caller and
-        // it refuses an attempt already loaded, rememberAttempt fills both maps
-        // together, and reset empties both. The guard that used to sit here could
-        // not run, which is how the line gate found it.
+        // Loading and manual retries restore the same persisted draft. A failed
+        // request never clears it, including a retry after a submission error.
         setSelections(current => ({ ...current, [attemptId]: readAnswers(attemptId) }));
       } catch (error) {
         // The same check the success path makes. Without it the failure of a
@@ -125,14 +122,24 @@ export function useAttempts({
     [api, handleAuthError, rememberAttempt, session, setActionBusy, toast]
   );
 
-  const toggle = useCallback((attemptId: number, answerId: number, checked: boolean): void => {
-    setSelections(current => {
-      const next = new Set(current[attemptId] ?? readAnswers(attemptId));
-      if (checked) next.add(answerId);
-      else next.delete(answerId);
-      return { ...current, [attemptId]: next };
-    });
-  }, []);
+  const toggle = useCallback(
+    (attemptId: number, answerId: number, checked: boolean): void => {
+      const attempt = attempts[attemptId];
+      if (
+        completionRequests.current.has(attemptId) ||
+        attempt?.completed ||
+        (attempt && hasExpired(attempt.expiresAt))
+      )
+        return;
+      setSelections(current => {
+        const next = new Set(current[attemptId] ?? readAnswers(attemptId));
+        if (checked) next.add(answerId);
+        else next.delete(answerId);
+        return { ...current, [attemptId]: next };
+      });
+    },
+    [attempts]
+  );
 
   useEffect(() => {
     for (const [attemptId, answers] of Object.entries(selections)) writeAnswers(attemptId, answers);
@@ -140,7 +147,13 @@ export function useAttempts({
 
   const complete = useCallback(
     async (attemptId: number, { confirm = true } = {}): Promise<void> => {
-      if (completionRequests.current.has(attemptId)) return;
+      const attempt = attempts[attemptId];
+      if (
+        completionRequests.current.has(attemptId) ||
+        attempt?.completed ||
+        (attempt && hasExpired(attempt.expiresAt))
+      )
+        return;
       const selected = selections[attemptId] || readAnswers(attemptId);
       if (
         confirm &&
@@ -148,6 +161,8 @@ export function useAttempts({
       ) {
         return;
       }
+      // A confirmation dialog can remain open beyond the deadline.
+      if (attempt && hasExpired(attempt.expiresAt)) return;
       const generation = requestGeneration.current;
       completionRequests.current.add(attemptId);
       setActionBusy(`complete-${attemptId}`);
@@ -173,7 +188,7 @@ export function useAttempts({
         }
       }
     },
-    [api, handleAuthError, onCompletion, selections, setActionBusy, toast]
+    [api, attempts, handleAuthError, onCompletion, selections, setActionBusy, toast]
   );
 
   const routedAttemptId = route.name === "attempt" ? Number(route.params[0]) : null;

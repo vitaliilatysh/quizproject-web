@@ -32,7 +32,7 @@ import type {
   ResultHistory,
   ResultSummary
 } from "../src/types.js";
-import { click, closeBrowser, openBrowser, render, submit as submitForm, type } from "./support/dom.js";
+import { act, click, closeBrowser, openBrowser, render, submit as submitForm, type } from "./support/dom.js";
 
 // A signed-in reader, complete enough to be a real Session. Only `username` and
 // `roles` are ever rendered, but a partial object would be a different type
@@ -123,6 +123,28 @@ test("a quiz card names its difficulty in the reader's language", () => {
 // notices a new one was seeded. Only an absent level reads as "not stated" —
 // the distinction matters, because the bug above looked exactly like the first
 // case while being the second.
+test("an empty quiz stays visible but cannot start an attempt", () => {
+  const started: number[] = [];
+  const view = render(
+    QuizCollection,
+    collection({
+      quizzes: [quiz({ id: 1, totalQuestions: 0 }), quiz({ id: 2, totalQuestions: 1 })],
+      onStart: id => started.push(id)
+    })
+  );
+  assert.equal(view.findAll(".quiz-card").length, 2);
+  const [empty, ready] = view.findAll<HTMLButtonElement>(".quiz-card button");
+  assert.ok(empty && ready);
+  assert.equal(empty.disabled, true);
+  assert.match(empty.textContent, /Квіз готується/);
+  assert.match(view.at(".quiz-card", 0).textContent, /Запитання ще готуються/);
+  click(empty);
+  assert.deepEqual(started, []);
+  assert.equal(ready.disabled, false);
+  click(ready);
+  assert.deepEqual(started, [2]);
+});
+
 test("an untranslated difficulty is shown, a missing one is named as missing", () => {
   const shown = render(QuizCollection, collection({ quizzes: [quiz({ complexity: "sudden" })] }));
   assert.equal(shown.find(".pill").textContent, "sudden");
@@ -463,6 +485,7 @@ const attemptProps = (over: Partial<AttemptPageProps> = {}): AttemptPageProps =>
   selected: new Set<number>(),
   completion: undefined,
   busy: false,
+  onRetry: () => {},
   onToggle: () => {},
   onComplete: () => {},
   ...over
@@ -544,12 +567,89 @@ test("submitting is announced and blocked while it is in flight", () => {
   assert.match(submit.textContent, /Перевіряємо/);
   assert.equal(submit.disabled, true, "the attempt could be submitted twice");
   assert.deepEqual(completed, []);
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+});
+
+test("an expired attempt keeps its draft visible but cannot be edited or submitted", async () => {
+  const toggles: number[] = [];
+  const completed: number[] = [];
+  const view = render(
+    AttemptPage,
+    attemptProps({
+      attempt: attempt({ expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+      selected: new Set([101]),
+      onToggle: (_attemptId, answerId) => toggles.push(answerId),
+      onComplete: id => completed.push(id)
+    })
+  );
+  assert.match(view.find("output").textContent, /Час вичерпано/);
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+  assert.equal(view.find<HTMLInputElement>("input[type=checkbox]").checked, true);
+  click(view.find("input[type=checkbox]"));
+  await submitForm(view.find("form"));
+  assert.deepEqual(toggles, []);
+  assert.deepEqual(completed, []);
+  assert.equal(view.find<HTMLButtonElement>(".attempt-submit button").disabled, true);
+});
+
+test("returning to an attempt refreshes its deadline without waiting for the next timer tick", context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  for (const [target, event] of [
+    [window, "focus"],
+    [document, "visibilitychange"]
+  ] as const) {
+    const view = render(
+      AttemptPage,
+      attemptProps({ attempt: attempt({ expiresAt: new Date(now + 10_000).toISOString() }) })
+    );
+    assert.equal(view.query("output"), null);
+    now += 11_000;
+    act(() => target.dispatchEvent(new window.Event(event)));
+    assert.match(view.find("output").textContent, /Час вичерпано/);
+    assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+    view.unmount();
+  }
+});
+
+test("a completion already in flight can still succeed after the deadline", () => {
+  const props = attemptProps({
+    attempt: attempt({ expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+    busy: true,
+    selected: new Set([101])
+  });
+  const view = render(AttemptPage, props);
+  assert.equal(view.query("output"), null);
+  assert.match(view.text(), /Надсилаємо відповіді/);
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+  view.rerender({ ...props, busy: false, completion: completionOf(100) });
+  assert.match(view.text(), /Ваш результат/);
+  assert.equal(view.find(".completion__score strong").textContent, "100");
 });
 
 test("an unreachable attempt offers a way out rather than a blank page", () => {
   const view = render(AttemptPage, attemptProps({ attempt: undefined, error: "Спроба не знайдена" }));
   assert.match(view.text(), /Спроба не знайдена/);
   assert.equal(view.find("a[href='#/quizzes']").textContent, "До каталогу");
+});
+
+test("an attempt load error can be retried and blocks retries while reloading", () => {
+  let retries = 0;
+  const props = attemptProps({
+    error: "Тимчасовий збій",
+    onRetry: () => {
+      retries += 1;
+    }
+  });
+  const view = render(AttemptPage, props);
+  click(view.find(".empty-state button"));
+  assert.equal(retries, 1);
+  view.rerender({ ...props, loading: true });
+  assert.equal(view.find<HTMLButtonElement>(".empty-state button").disabled, true);
+  click(view.find(".empty-state button"));
+  assert.equal(retries, 1);
+  view.rerender({ ...props, onRetry: undefined });
+  assert.equal(view.query(".empty-state button"), null);
 });
 
 test("the home page sends a stranger to sign in and a reader to their results", () => {
@@ -592,6 +692,7 @@ test("the home page's totals come from the catalogue, not from what it teased", 
   });
 
   assert.equal(view.at(".hero__stats strong", 0).textContent, "137");
+  assert.equal(view.at(".hero__stats span", 0).textContent, "тестів у каталозі");
   assert.equal(view.at(".hero__stats strong", 1).textContent, "9");
 });
 

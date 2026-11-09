@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
 import { serverNow } from "../clock.js";
 import type { Attempt, AttemptCompletion } from "../types.js";
-import { formatCountdown } from "../utils.js";
+import { formatCountdown, hasExpired } from "../utils.js";
 
-function Countdown({ expiresAt }: { readonly expiresAt: string }) {
-  const [now, setNow] = useState(serverNow());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(serverNow()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
+function Countdown({ expiresAt, now }: { readonly expiresAt: string; readonly now: number }) {
   const urgent = new Date(expiresAt).getTime() - now < 5 * 60_000;
   return <strong className={urgent ? "is-urgent" : ""}>{formatCountdown(expiresAt, now)}</strong>;
 }
@@ -20,6 +15,7 @@ export interface AttemptPageProps {
   selected: ReadonlySet<number>;
   completion: AttemptCompletion | undefined;
   busy: boolean;
+  onRetry?: (() => void) | undefined;
   onToggle: (attemptId: number, answerId: number, checked: boolean) => void;
   onComplete: (attemptId: number) => void;
 }
@@ -37,9 +33,25 @@ export function AttemptPage({
   selected,
   completion,
   busy,
+  onRetry,
   onToggle,
   onComplete
 }: Readonly<AttemptPageProps>) {
+  const [now, setNow] = useState(serverNow);
+  useEffect(() => {
+    if (!attempt || attempt.completed || completion) return undefined;
+    const refresh = () => setNow(serverNow());
+    refresh();
+    const timer = window.setInterval(refresh, 1000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [attempt, completion]);
+
   if (loading && !attempt)
     return (
       <section className="section-pad content-page">
@@ -55,9 +67,16 @@ export function AttemptPage({
         <h1>Спроба недоступна</h1>
         <div className="empty-state">
           <p>{error}</p>
-          <a className="button button--dark" href="#/quizzes">
-            До каталогу
-          </a>
+          <div className="button-row">
+            {onRetry && (
+              <button className="button button--dark" type="button" onClick={onRetry} disabled={loading}>
+                Спробувати ще раз
+              </button>
+            )}
+            <a className="button button--ghost" href="#/quizzes">
+              До каталогу
+            </a>
+          </div>
         </div>
       </section>
     );
@@ -90,6 +109,8 @@ export function AttemptPage({
       </section>
     );
   }
+  const expired = hasExpired(attempt.expiresAt, now);
+  const locked = busy || expired;
   return (
     <>
       <section className="attempt-header section-pad">
@@ -102,20 +123,36 @@ export function AttemptPage({
         </div>
         <div className="timer-card">
           <span>Залишилось часу</span>
-          <Countdown expiresAt={attempt.expiresAt} />
-          <small>до автоматичного завершення</small>
+          <Countdown expiresAt={attempt.expiresAt} now={now} />
+          <small>{busy ? "Надсилаємо відповіді…" : "до автоматичного завершення"}</small>
         </div>
       </section>
+      {expired && !busy && (
+        <section className="empty-state">
+          <h2>
+            <output>Час вичерпано</output>
+          </h2>
+          <p>Час на проходження тесту завершився. Цю спробу вже не можна надіслати.</p>
+          <a className="button button--dark" href="#/quizzes">
+            До каталогу
+          </a>
+        </section>
+      )}
       <section className="attempt-layout section-pad">
         <form
           className="question-list"
           onSubmit={event => {
             event.preventDefault();
-            onComplete(attempt.attemptId);
+            if (!locked) onComplete(attempt.attemptId);
           }}
         >
           {(attempt.questions || []).map((question, index) => (
-            <fieldset className="question-card" id={`question-${question.id}`} key={question.id}>
+            <fieldset
+              className="question-card"
+              id={`question-${question.id}`}
+              key={question.id}
+              disabled={locked}
+            >
               <legend>
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 {question.text}
@@ -128,7 +165,9 @@ export function AttemptPage({
                       name="answer"
                       value={answer.id}
                       checked={selected.has(answer.id)}
-                      onChange={event => onToggle(attempt.attemptId, answer.id, event.target.checked)}
+                      onChange={event => {
+                        if (!locked) onToggle(attempt.attemptId, answer.id, event.target.checked);
+                      }}
                     />
                     <span className="answer-check" aria-hidden="true" />
                     <span>{answer.text}</span>
@@ -142,7 +181,7 @@ export function AttemptPage({
               <strong>Готові завершити?</strong>
               <span>Після надсилання змінити відповіді буде неможливо.</span>
             </div>
-            <button className="button button--coral button--large" type="submit" disabled={busy}>
+            <button className="button button--coral button--large" type="submit" disabled={locked}>
               {busy ? "Перевіряємо…" : "Завершити тест"} <span aria-hidden="true">→</span>
             </button>
           </div>

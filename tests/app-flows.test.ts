@@ -11,7 +11,7 @@ import test, { afterEach, beforeEach } from "node:test";
 
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
-import { fakeToken, loginResponse, stubApi, type StubbedApi } from "./support/api-stub.js";
+import { fakeToken, loginResponse, stubApi, type StubbedApi, type StubResponse } from "./support/api-stub.js";
 import {
   act,
   click,
@@ -89,6 +89,33 @@ const fill = (view: AppView, values: Record<string, string>): void => {
 };
 
 const alertText = (view: AppView): string => view.query("[role=alert]")?.textContent ?? "";
+
+test("an empty quiz cannot start or redirect to login for either a guest or a signed-in reader", async () => {
+  for (const signedIn of [false, true]) {
+    if (signedIn) seedSession("olena");
+    const { view, stub } = await open("#/quizzes", {
+      "GET /api/v1/quizzes": {
+        body: [
+          {
+            id: 7,
+            name: "Квіз у підготовці",
+            subject: "Java",
+            complexity: "low",
+            totalQuestions: 0,
+            timeToPassMinutes: 10
+          }
+        ]
+      }
+    });
+    const start = view.find<HTMLButtonElement>(".quiz-card button");
+    assert.equal(start.disabled, true);
+    click(start);
+    await settle();
+    assert.equal(window.location.hash, "#/quizzes");
+    assert.equal(stub.countOf("POST /api/v1/quizzes/7/attempts"), 0);
+    view.unmount();
+  }
+});
 
 test("a registration is checked in the browser before it costs a request", async () => {
   const { view, stub } = await open("#/signup");
@@ -655,10 +682,7 @@ test("a failed load is not retried until somebody asks for it", async () => {
     ["#/results", "GET /api/v1/results/me", true],
     ["#/quizzes", "GET /api/v1/quizzes", true],
     ["#/admin", "GET /api/v1/admin/subjects", true],
-    // The attempt page offers a way back to the catalogue rather than a retry:
-    // an attempt that cannot be loaded is usually one that is not the reader's
-    // or no longer exists.
-    ["#/attempt/4", "GET /api/v1/attempts/4", false]
+    ["#/attempt/4", "GET /api/v1/attempts/4", true]
   ];
 
   for (const [hash, key, retriable] of cases) {
@@ -709,6 +733,38 @@ const ATTEMPT_BODY = (attemptId: number) => () => ({
     expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
     questions: [{ id: 11, text: "Що таке JVM?", answers: [{ id: 101, text: "Віртуальна машина" }] }]
   }
+});
+
+test("retrying a failed attempt load restores its draft without starting a new attempt", async () => {
+  seedSession("olena");
+  sessionStorage.setItem("quizproject.answers.4", "[101]");
+  let loads = 0;
+  let resolveRetry!: (response: StubResponse) => void;
+  const pending = new Promise<StubResponse>(resolve => {
+    resolveRetry = resolve;
+  });
+  const { view, stub } = await open("#/attempt/4", {
+    "GET /api/v1/attempts/4": () => {
+      loads += 1;
+      if (loads === 1) throw new TypeError("Failed to fetch");
+      return pending;
+    }
+  });
+  assert.match(view.text(), /Спроба недоступна/);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  const retry = view.find(".empty-state button");
+  click(retry);
+  click(retry);
+  await settle();
+  assert.match(view.text(), /Готуємо запитання/);
+  assert.equal(stub.countOf("GET /api/v1/attempts/4"), 2);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  resolveRetry(ATTEMPT_BODY(4)());
+  await settle();
+  assert.equal(window.location.hash, "#/attempt/4");
+  assert.equal(view.find<HTMLInputElement>("input[type=checkbox]").checked, true);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  assert.equal(stub.countOf("POST /api/v1/quizzes/7/attempts"), 0);
 });
 
 test("a guarded page visited by a stranger remembers where they were going", async () => {
@@ -828,6 +884,72 @@ test("a submission the API refuses leaves the answers where they are", async () 
   // to survive so a second try has something to send.
   assert.equal(view.findAll("input[type=checkbox]").length, 1);
   assert.equal(sessionStorage.getItem("quizproject.answers.4"), JSON.stringify([101]));
+});
+
+test("a deadline that passes between timer ticks blocks both edits and a new submission", async context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  seedSession("olena");
+  const body = { ...ATTEMPT_BODY(4)().body, expiresAt: new Date(now + 60_000).toISOString() };
+  const { view, stub } = await open("#/attempt/4", { "GET /api/v1/attempts/4": { body } });
+  click(view.find("input[type=checkbox]"));
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  now += 61_000;
+  click(view.find("input[type=checkbox]"));
+  window.confirm = () => true;
+  await submit(view.find("form"));
+  assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 0);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  act(() => window.dispatchEvent(new window.Event("focus")));
+  assert.match(view.find("output").textContent, /Час вичерпано/);
+});
+
+test("a confirmation that outlasts the deadline cannot send a late submission", async context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  seedSession("olena");
+  const body = { ...ATTEMPT_BODY(4)().body, expiresAt: new Date(now + 60_000).toISOString() };
+  const { view, stub } = await open("#/attempt/4", { "GET /api/v1/attempts/4": { body } });
+  click(view.find("input[type=checkbox]"));
+  window.confirm = () => {
+    now += 61_000;
+    return true;
+  };
+  await submit(view.find("form"));
+  assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 0);
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+});
+
+test("pending completion freezes answers and accepts a successful result after the deadline", async context => {
+  let now = Date.now();
+  context.mock.method(Date, "now", () => now);
+  seedSession("olena");
+  const body = { ...ATTEMPT_BODY(4)().body, expiresAt: new Date(now + 60_000).toISOString() };
+  let finish!: (response: StubResponse) => void;
+  const pending = new Promise<StubResponse>(resolve => {
+    finish = resolve;
+  });
+  const { view, stub } = await open("#/attempt/4", {
+    "GET /api/v1/attempts/4": { body },
+    "POST /api/v1/attempts/4/complete": () => pending
+  });
+  click(view.find("input[type=checkbox]"));
+  window.confirm = () => true;
+  click(view.find(".attempt-submit button"));
+  await settle();
+  assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
+  click(view.find("input[type=checkbox]"));
+  now += 61_000;
+  act(() => document.dispatchEvent(new window.Event("visibilitychange")));
+  assert.equal(view.query("output"), null);
+  assert.match(view.text(), /Надсилаємо відповіді/);
+  assert.deepEqual(stub.lastOf("POST /api/v1/attempts/4/complete")?.body, { answerIds: [101] });
+  assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
+  finish({ body: { attemptId: 4, quizId: 7, score: 100, completedAt: new Date(now).toISOString() } });
+  await settle();
+  assert.match(view.text(), /Ваш результат/);
+  assert.equal(view.find(".completion__score strong").textContent, "100");
+  assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 1);
 });
 
 test("an address with nothing behind it is reported as no connection", async () => {
@@ -1053,10 +1175,8 @@ test("a password change refused as unauthorised ends the session rather than bla
   assert.equal(sessionStorage.getItem("quizproject.returnTo"), "#/profile");
 });
 
-// The other half of the guard above, and the half that makes it safe: an
-// attempt page has no retry button — it offers the way back to the catalogue —
-// so without this a transient 503 would hold a timed attempt shut until the
-// whole app was reloaded, while its clock ran.
+// Leaving and returning to a failed attempt also permits one fresh load,
+// without an automatic retry loop while the error stays on screen.
 test("coming back to an attempt that failed asks for it again", async () => {
   seedSession("olena");
   let failing = true;
