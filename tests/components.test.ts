@@ -582,7 +582,7 @@ test("an expired attempt keeps its draft visible but cannot be edited or submitt
       onComplete: id => completed.push(id)
     })
   );
-  assert.match(view.find("[role=status]").textContent, /Час вичерпано/);
+  assert.match(view.find("output").textContent, /Час вичерпано/);
   assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
   assert.equal(view.find<HTMLInputElement>("input[type=checkbox]").checked, true);
   click(view.find("input[type=checkbox]"));
@@ -603,10 +603,10 @@ test("returning to an attempt refreshes its deadline without waiting for the nex
       AttemptPage,
       attemptProps({ attempt: attempt({ expiresAt: new Date(now + 10_000).toISOString() }) })
     );
-    assert.equal(view.query("[role=status]"), null);
+    assert.equal(view.query("output"), null);
     now += 11_000;
     act(() => target.dispatchEvent(new window.Event(event)));
-    assert.match(view.find("[role=status]").textContent, /Час вичерпано/);
+    assert.match(view.find("output").textContent, /Час вичерпано/);
     assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
     view.unmount();
   }
@@ -619,7 +619,7 @@ test("a completion already in flight can still succeed after the deadline", () =
     selected: new Set([101])
   });
   const view = render(AttemptPage, props);
-  assert.equal(view.query("[role=status]"), null);
+  assert.equal(view.query("output"), null);
   assert.match(view.text(), /Надсилаємо відповіді/);
   assert.equal(view.find<HTMLFieldSetElement>("fieldset").disabled, true);
   view.rerender({ ...props, busy: false, completion: completionOf(100) });

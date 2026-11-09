@@ -14,6 +14,7 @@ interface QuizCardProps {
 function QuizCard({ quiz, compact, busy, onStart }: Readonly<QuizCardProps>) {
   const tone = difficultyTone(quiz.complexity);
   const ready = quiz.totalQuestions > 0;
+  const startLabel = busy ? "Створюємо спробу…" : "Розпочати тест";
   return (
     <article className={`quiz-card ${compact ? "quiz-card--compact" : ""}`}>
       <div className="quiz-card__top">
@@ -39,7 +40,7 @@ function QuizCard({ quiz, compact, busy, onStart }: Readonly<QuizCardProps>) {
         onClick={() => onStart(quiz.id)}
         disabled={busy || !ready}
       >
-        <span>{!ready ? "Квіз готується" : busy ? "Створюємо спробу…" : "Розпочати тест"}</span>
+        <span>{ready ? startLabel : "Квіз готується"}</span>
         <span aria-hidden="true">→</span>
       </button>
     </article>

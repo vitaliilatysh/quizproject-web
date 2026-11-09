@@ -128,8 +128,10 @@ export function AttemptPage({
         </div>
       </section>
       {expired && !busy && (
-        <section className="empty-state" role="status">
-          <h2>Час вичерпано</h2>
+        <section className="empty-state">
+          <h2>
+            <output>Час вичерпано</output>
+          </h2>
           <p>Час на проходження тесту завершився. Цю спробу вже не можна надіслати.</p>
           <a className="button button--dark" href="#/quizzes">
             До каталогу

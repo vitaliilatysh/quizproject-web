@@ -901,7 +901,7 @@ test("a deadline that passes between timer ticks blocks both edits and a new sub
   assert.equal(stub.countOf("POST /api/v1/attempts/4/complete"), 0);
   assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
   act(() => window.dispatchEvent(new window.Event("focus")));
-  assert.match(view.find("[role=status]").textContent, /Час вичерпано/);
+  assert.match(view.find("output").textContent, /Час вичерпано/);
 });
 
 test("a confirmation that outlasts the deadline cannot send a late submission", async context => {
@@ -941,7 +941,7 @@ test("pending completion freezes answers and accepts a successful result after t
   click(view.find("input[type=checkbox]"));
   now += 61_000;
   act(() => document.dispatchEvent(new window.Event("visibilitychange")));
-  assert.equal(view.query("[role=status]"), null);
+  assert.equal(view.query("output"), null);
   assert.match(view.text(), /Надсилаємо відповіді/);
   assert.deepEqual(stub.lastOf("POST /api/v1/attempts/4/complete")?.body, { answerIds: [101] });
   assert.equal(sessionStorage.getItem("quizproject.answers.4"), "[101]");
