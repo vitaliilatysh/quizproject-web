@@ -151,76 +151,32 @@ export function HomePage({
     <>
       <section className="hero section-pad">
         <div className="hero__copy">
-          <p className="eyebrow">
-            <span /> Нова навчальна платформа
-          </p>
+          <p className="eyebrow">Навчальна платформа</p>
           <h1>
             Навчайся.
             <br />
-            <em>Перевіряй</em> знання.
-            <br />
-            Зростай.
+            Перевіряй себе.
           </h1>
           <p className="hero__lead">
-            Обирай тему, проходь тест у своєму темпі та одразу бач результат. Усе необхідне — в одному
-            спокійному просторі.
+            Обирай тему, перевіряй знання та стеж за власним прогресом. Один тест — один крок уперед.
           </p>
           <div className="hero__actions">
-            <a className="button button--coral button--large" href="#/quizzes">
+            <a className="button button--primary button--large" href="#/quizzes">
               Переглянути тести <span aria-hidden="true">→</span>
             </a>
             <a className="text-link" href={session ? "#/results" : "#/login"}>
-              {session ? "Мої результати" : "Увійти до кабінету"} <span aria-hidden="true">↗</span>
+              {session ? "Мої результати" : "Увійти до кабінету"}
             </a>
           </div>
-          <div className="hero__stats" aria-label="Статистика каталогу">
-            <div>
-              <strong>{total}</strong>
-              <span>тестів у каталозі</span>
-            </div>
-            <div>
-              <strong>{subjects}</strong>
-              <span>навчальних напрямів</span>
-            </div>
-            <div>
-              <strong>100%</strong>
-              <span>уваги до прогресу</span>
-            </div>
-          </div>
         </div>
-        <div className="hero__visual" aria-label="Як працює Quiz Project">
-          <div className="orbit orbit--one" />
-          <div className="orbit orbit--two" />
-          <div className="journey-card journey-card--top">
-            <span>01</span>
-            <div>
-              <strong>Обери тест</strong>
-              <small>За темою і складністю</small>
-            </div>
+        <div className="hero__stats" aria-label="Статистика каталогу">
+          <div>
+            <strong>{total}</strong>
+            <span>тестів у каталозі</span>
           </div>
-          <div className="journey-card journey-card--middle">
-            <span>02</span>
-            <div>
-              <strong>Дай відповіді</strong>
-              <small>У зручному темпі</small>
-            </div>
-          </div>
-          <div className="score-card">
-            <small>Останній результат</small>
-            <strong>
-              92<span>%</span>
-            </strong>
-            <div className="score-line">
-              <i style={{ width: "92%" }} />
-            </div>
-            <span>Відмінний темп!</span>
-          </div>
-          <div className="journey-card journey-card--bottom">
-            <span>03</span>
-            <div>
-              <strong>Побач прогрес</strong>
-              <small>Одразу після завершення</small>
-            </div>
+          <div>
+            <strong>{subjects}</strong>
+            <span>навчальних напрямів</span>
           </div>
         </div>
       </section>
@@ -228,22 +184,22 @@ export function HomePage({
         <div>
           <span className="feature-number">01</span>
           <div>
-            <strong>Чіткий фокус</strong>
-            <p>Одне запитання — один наступний крок.</p>
+            <strong>Обери тему</strong>
+            <p>Знайди тест за предметом і складністю.</p>
           </div>
         </div>
         <div>
           <span className="feature-number">02</span>
           <div>
-            <strong>Чесний таймер</strong>
-            <p>Завжди видно, скільки часу залишилось.</p>
+            <strong>Перевір себе</strong>
+            <p>Відповідай на запитання та стеж за часом.</p>
           </div>
         </div>
         <div>
           <span className="feature-number">03</span>
           <div>
-            <strong>Історія результатів</strong>
-            <p>Усі завершені спроби в особистому кабінеті.</p>
+            <strong>Побач результат</strong>
+            <p>Повертайся до своїх спроб у кабінеті.</p>
           </div>
         </div>
       </section>
@@ -251,7 +207,7 @@ export function HomePage({
         <div className="section-heading">
           <div>
             <p className="eyebrow">Актуальний каталог</p>
-            <h2>Знайди свій наступний тест</h2>
+            <h2>З чого почнемо?</h2>
           </div>
           <a className="text-link" href="#/quizzes">
             Усі тести <span aria-hidden="true">→</span>
@@ -304,18 +260,25 @@ export function QuizzesPage({
   return (
     <>
       <section className="page-hero section-pad page-hero--catalog">
-        <p className="eyebrow">Каталог знань</p>
-        <h1>
-          Обери тему.
-          <br />
-          <em>Перевір себе.</em>
-        </h1>
-        <p>Каталог синхронізується безпосередньо зі Spring Boot API.</p>
+        <p className="eyebrow">Практика</p>
+        <h1>Каталог тестів</h1>
+        <p>Обирай тему та рівень складності. Знання починаються з практики.</p>
       </section>
       <section className="section-pad catalog-section">
         <div className="catalog-toolbar">
           <label className="search-field">
-            <span aria-hidden="true">⌕</span>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
             <input
               type="search"
               placeholder="Пошук за назвою або предметом"

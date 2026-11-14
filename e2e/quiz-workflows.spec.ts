@@ -93,7 +93,7 @@ test("administrator can create, update and delete catalog content", async ({ pag
   test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, "E2E administrator credentials are required");
   await login(page, ADMIN_USERNAME, ADMIN_PASSWORD);
   await page.getByRole("link", { name: "Адміністрування" }).click();
-  await expect(page.getByRole("heading", { name: "Керуйте платформою" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Адміністрування" })).toBeVisible();
 
   const suffix = `${Date.now().toString(36).slice(-5)}${testInfo.retry}`;
   const subjectName = `E2E ${suffix}`;

@@ -414,12 +414,12 @@ test("the administration panel loads its five collections in one pass", async ()
   const { view, stub } = await open("#/admin", ADMIN_ROUTES);
   // The panel is a chunk of its own now, so the first test in a process to open
   // it waits on a real import before any of its markup exists.
-  await settleUntil(() => /Керуйте платформою/.test(view.text()));
+  await settleUntil(() => Boolean(view.query(".admin-dashboard")));
 
   for (const key of Object.keys(ADMIN_ROUTES)) {
     assert.equal(stub.countOf(key), 1, `${key} was requested ${stub.countOf(key)} times`);
   }
-  assert.match(view.text(), /Керуйте платформою/);
+  assert.equal(view.find(".admin-hero h1").textContent, "Адміністрування");
 
   // Both paginated collections ask for the same page size the API defaults to,
   // so the first page is the same whether or not the client asked for one.

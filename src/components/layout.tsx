@@ -54,7 +54,19 @@ export function Layout({ route, session, onLogout, toasts, children }: Readonly<
             href="#/settings"
             aria-label="Налаштування API"
           >
-            ⚙
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <path d="M4 7h7m6 0h3M4 17h3m6 0h7" />
+              <circle cx="14" cy="7" r="3" />
+              <circle cx="10" cy="17" r="3" />
+            </svg>
           </a>
           {session ? (
             <>
@@ -95,13 +107,13 @@ export function Layout({ route, session, onLogout, toasts, children }: Readonly<
             </span>
             <span>Quiz Project</span>
           </span>
-          <p>Окремий React frontend для REST API — без JSP, JSTL і Bootstrap.</p>
+          <p>Тести для самостійного навчання.</p>
         </div>
         <div className="footer-links">
           <a href="#/quizzes">Каталог тестів</a>
           <a href="#/settings">Підключення API</a>
           <a href="https://github.com/vitaliilatysh/quizproject" target="_blank" rel="noreferrer">
-            Backend ↗
+            GitHub
           </a>
         </div>
       </footer>

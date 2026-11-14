@@ -278,16 +278,9 @@ export function AdminPage({
   return (
     <>
       <section className="page-hero section-pad admin-hero">
-        <p className="eyebrow">P9 · React administration</p>
-        <h1>
-          Керуйте платформою
-          <br />
-          <em>без legacy UI.</em>
-        </h1>
-        <p>
-          Предмети, тести, запитання, користувачі та результати тепер працюють через захищений Spring Boot
-          REST API.
-        </p>
+        <p className="eyebrow">Керування платформою</p>
+        <h1>Адміністрування</h1>
+        <p>Предмети, тести, запитання та облікові записи в одному місці.</p>
       </section>
       <section className="section-pad admin-dashboard">
         <div className="admin-stats">
