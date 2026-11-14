@@ -24,7 +24,7 @@ test("admin collections are requested with paging and answer with page metadata"
 
   await login(page, ADMIN_USERNAME, ADMIN_PASSWORD);
   await page.getByRole("link", { name: "Адміністрування" }).click();
-  await expect(page.getByRole("heading", { name: "Керуйте платформою" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Адміністрування" })).toBeVisible();
 
   // `as const` so the pairs stay tuples: without it the array widens to
   // (string | Promise<Response>)[][] and `pending` loses its response type.
@@ -64,7 +64,7 @@ test("the results date filter reaches the API in a format it accepts", async ({ 
 
   await login(page, ADMIN_USERNAME, ADMIN_PASSWORD);
   await page.getByRole("link", { name: "Адміністрування" }).click();
-  await expect(page.getByRole("heading", { name: "Керуйте платформою" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Адміністрування" })).toBeVisible();
 
   const filtered = page.waitForResponse(response => {
     const url = new URL(response.url());

@@ -52,11 +52,7 @@ export function ProfilePage({
     <>
       <section className="page-hero section-pad page-hero--profile">
         <p className="eyebrow">Особистий кабінет</p>
-        <h1>
-          Ваш профіль.
-          <br />
-          <em>Ваш прогрес.</em>
-        </h1>
+        <h1>Мій профіль</h1>
       </section>
       <section className="profile-layout section-pad">
         <article className="profile-card">
@@ -274,11 +270,7 @@ export function ResultsPage({ results, loading, error, onRetry, onPageChange }: 
     <>
       <section className="page-hero section-pad page-hero--results">
         <p className="eyebrow">Особистий кабінет</p>
-        <h1>
-          Ваш прогрес
-          <br />
-          <em>у цифрах.</em>
-        </h1>
+        <h1>Мої результати</h1>
       </section>
       <section className="section-pad results-section">
         <div className="result-summary">
@@ -336,7 +328,7 @@ export function ResultsPage({ results, loading, error, onRetry, onPageChange }: 
           <div className="empty-state">
             <h3>Історія ще порожня</h3>
             <p>Пройдіть перший тест — результат одразу з’явиться тут.</p>
-            <a className="button button--coral" href="#/quizzes">
+            <a className="button button--primary" href="#/quizzes">
               Обрати тест
             </a>
           </div>

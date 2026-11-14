@@ -573,7 +573,7 @@ test("a session that expires keeps the reader's answers for their return", async
     JSON.stringify([101, 102]),
     "an interrupted reader lost the answers they had already chosen"
   );
-  assert.match(view.text(), /Продовжити навчання/);
+  assert.match(view.text(), /З поверненням/);
 });
 
 test("a restored expired access token is refreshed before protected data loads", async () => {
@@ -948,7 +948,7 @@ test("a guarded route sends a stranger to sign in, and remembers where they were
   await settle();
 
   assert.equal(window.location.hash, "#/login");
-  assert.match(view.text(), /Продовжити навчання/);
+  assert.match(view.text(), /З поверненням/);
   assert.equal(sessionStorage.getItem("quizproject.returnTo"), "#/results");
 });
 

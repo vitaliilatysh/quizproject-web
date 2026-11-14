@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 // mocked fetch cannot see either.
 test("catalogue search and difficulty filter are applied by the API", async ({ page }) => {
   await page.goto("/#/quizzes");
-  await expect(page.getByRole("heading", { name: "Обери тему." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Каталог тестів" })).toBeVisible();
 
   // Difficulty first: the button click must produce a request carrying every
   // level label that button stands for.
@@ -50,7 +50,7 @@ test("catalogue search and difficulty filter are applied by the API", async ({ p
 
 test("a search matching nothing empties the catalogue instead of hanging", async ({ page }) => {
   await page.goto("/#/quizzes");
-  await expect(page.getByRole("heading", { name: "Обери тему." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Каталог тестів" })).toBeVisible();
 
   const searched = page.waitForResponse(response => {
     const url = new URL(response.url());

@@ -181,7 +181,7 @@ export function AttemptPage({
               <strong>Готові завершити?</strong>
               <span>Після надсилання змінити відповіді буде неможливо.</span>
             </div>
-            <button className="button button--coral button--large" type="submit" disabled={locked}>
+            <button className="button button--primary button--large" type="submit" disabled={locked}>
               {busy ? "Перевіряємо…" : "Завершити тест"} <span aria-hidden="true">→</span>
             </button>
           </div>
