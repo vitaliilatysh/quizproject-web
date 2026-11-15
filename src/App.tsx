@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { LoadingPage } from "./components/loading-page.js";
 import { pageTitle, useRoute } from "./app/navigation.js";
 import { useToasts } from "./app/use-toasts.js";
 import {
@@ -37,23 +38,6 @@ const AdminPage = lazy(async () => {
   const module = await import("./features/admin/admin-page.js");
   return { default: module.AdminPage };
 });
-
-/**
- * What stands in while the panel's chunk is in flight.
- *
- * The same markup AdminPage shows while its own six requests are in flight, so
- * the two waits look like one: a reader who opens administration sees one
- * heading, not a flash of something else and then this.
- */
-function AdminPageLoading() {
-  return (
-    <section className="section-pad content-page">
-      <p className="eyebrow">Адміністрування</p>
-      <h1>Готуємо панель…</h1>
-      <div className="result-skeleton" />
-    </section>
-  );
-}
 
 export { friendlyError } from "./app/errors.js";
 
@@ -266,7 +250,7 @@ export default function App() {
     );
   } else if (route.name === "admin") {
     page = (
-      <Suspense fallback={<AdminPageLoading />}>
+      <Suspense fallback={<LoadingPage eyebrow="Адміністрування" title="Готуємо панель…" />}>
         <AdminPage
           data={admin.data}
           loading={admin.loading}

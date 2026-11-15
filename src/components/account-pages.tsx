@@ -1,4 +1,6 @@
 import { useEffect, useState, type SubmitEvent } from "react";
+import { ErrorAlert, Field, PasswordField } from "./form-controls.js";
+import { LoadingPage } from "./loading-page.js";
 import type { Profile, ResultHistory } from "../types.js";
 import { formatDate } from "../utils.js";
 import { Pager } from "./pager.js";
@@ -23,13 +25,7 @@ export function ProfilePage({
   onPasswordChange
 }: Readonly<ProfilePageProps>) {
   if (loading && !profile) {
-    return (
-      <section className="section-pad content-page">
-        <p className="eyebrow">Особистий кабінет</p>
-        <h1>Завантажуємо профіль…</h1>
-        <div className="result-skeleton" />
-      </section>
-    );
+    return <LoadingPage eyebrow="Особистий кабінет" title="Завантажуємо профіль…" />;
   }
   if (error) {
     return (
@@ -94,44 +90,11 @@ export function ProfilePage({
             <h2>Змінити пароль</h2>
             <p>Після зміни пароля поточна сесія завершиться. Увійдіть повторно з новим паролем.</p>
           </div>
-          {passwordError && (
-            <div className="alert alert--error" role="alert">
-              {passwordError}
-            </div>
-          )}
+          <ErrorAlert message={passwordError} />
           <form className="form-stack" onSubmit={onPasswordChange}>
-            <label>
-              <span>Поточний пароль</span>
-              <input
-                name="currentPassword"
-                type="password"
-                autoComplete="current-password"
-                maxLength={128}
-                required
-              />
-            </label>
-            <label>
-              <span>Новий пароль</span>
-              <input
-                name="newPassword"
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
-                maxLength={128}
-                required
-              />
-            </label>
-            <label>
-              <span>Повторіть новий пароль</span>
-              <input
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
-                maxLength={128}
-                required
-              />
-            </label>
+            <PasswordField label="Поточний пароль" current name="currentPassword" />
+            <PasswordField label="Новий пароль" name="newPassword" />
+            <PasswordField label="Повторіть новий пароль" name="confirmPassword" />
             <button className="button button--dark button--large" type="submit" disabled={busy}>
               {busy ? "Оновлюємо…" : "Оновити пароль"}
             </button>
@@ -178,11 +141,7 @@ export function SettingsPage({ apiUrl, connection, error, onSave, onTest }: Read
           <span />
           {status}
         </div>
-        {error && (
-          <div className="alert alert--error" role="alert">
-            {error}
-          </div>
-        )}
+        <ErrorAlert message={error} />
         <form
           className="form-stack"
           onSubmit={event => {
@@ -190,17 +149,15 @@ export function SettingsPage({ apiUrl, connection, error, onSave, onTest }: Read
             onSave(value);
           }}
         >
-          <label>
-            <span>Базова адреса API</span>
-            <input
-              name="apiUrl"
-              type="url"
-              required
-              value={value}
-              onChange={event => setValue(event.target.value)}
-              placeholder="http://localhost:8081"
-            />
-          </label>
+          <Field
+            label="Базова адреса API"
+            name="apiUrl"
+            type="url"
+            required
+            value={value}
+            onChange={event => setValue(event.target.value)}
+            placeholder="http://localhost:8081"
+          />
           <div className="button-row">
             <button className="button button--dark" type="submit">
               Зберегти й перевірити
@@ -238,13 +195,7 @@ function scoreBadgeClass(score: number): string {
 
 export function ResultsPage({ results, loading, error, onRetry, onPageChange }: Readonly<ResultsPageProps>) {
   if (loading && !results)
-    return (
-      <section className="section-pad content-page">
-        <p className="eyebrow">Особистий кабінет</p>
-        <h1>Завантажуємо результати…</h1>
-        <div className="result-skeleton" />
-      </section>
-    );
+    return <LoadingPage eyebrow="Особистий кабінет" title="Завантажуємо результати…" />;
   if (error)
     return (
       <section className="section-pad content-page">
