@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LoadingPage } from "./loading-page.js";
 import { serverNow } from "../clock.js";
 import type { Attempt, AttemptCompletion } from "../types.js";
 import { formatCountdown, hasExpired } from "../utils.js";
@@ -52,14 +53,7 @@ export function AttemptPage({
     };
   }, [attempt, completion]);
 
-  if (loading && !attempt)
-    return (
-      <section className="section-pad content-page">
-        <p className="eyebrow">Тест</p>
-        <h1>Готуємо запитання…</h1>
-        <div className="result-skeleton" />
-      </section>
-    );
+  if (loading && !attempt) return <LoadingPage eyebrow="Тест" title="Готуємо запитання…" />;
   if (error)
     return (
       <section className="section-pad content-page">

@@ -1,4 +1,6 @@
 import { useEffect, useState, type SubmitEvent, type ReactNode } from "react";
+import { Field } from "../../components/form-controls.js";
+import { LoadingPage } from "../../components/loading-page.js";
 import type { AdminApi } from "../../api.js";
 import { Pager } from "../../components/pager.js";
 import type {
@@ -131,13 +133,7 @@ export function AdminPage({
   }, [loadQuestions, selectedQuizId]);
 
   if (loading && !data) {
-    return (
-      <section className="section-pad content-page">
-        <p className="eyebrow">Адміністрування</p>
-        <h1>Готуємо панель…</h1>
-        <div className="result-skeleton" />
-      </section>
-    );
+    return <LoadingPage eyebrow="Адміністрування" title="Готуємо панель…" />;
   }
   if (error || !data) {
     return (
@@ -304,16 +300,15 @@ export function AdminPage({
 
         <AdminSection eyebrow="Каталог" title="Предмети">
           <form className="admin-inline-form" onSubmit={createSubject}>
-            <label>
-              <span className="sr-only">Назва нового предмета</span>
-              <input
-                required
-                maxLength={25}
-                value={subjectName}
-                onChange={event => setSubjectName(event.target.value)}
-                placeholder="Новий предмет"
-              />
-            </label>
+            <Field
+              label="Назва нового предмета"
+              labelClassName="sr-only"
+              required
+              maxLength={25}
+              value={subjectName}
+              onChange={event => setSubjectName(event.target.value)}
+              placeholder="Новий предмет"
+            />
             <button className="button button--dark" type="submit" disabled={working}>
               Додати
             </button>
@@ -350,15 +345,13 @@ export function AdminPage({
 
         <AdminSection eyebrow="Контент" title="Тести">
           <form className="admin-grid-form" onSubmit={submitQuiz}>
-            <label>
-              <span>Назва</span>
-              <input
-                required
-                maxLength={50}
-                value={quizDraft.name}
-                onChange={event => setQuizDraft({ ...quizDraft, name: event.target.value })}
-              />
-            </label>
+            <Field
+              label="Назва"
+              required
+              maxLength={50}
+              value={quizDraft.name}
+              onChange={event => setQuizDraft({ ...quizDraft, name: event.target.value })}
+            />
             <label>
               <span>Предмет</span>
               <select
@@ -387,17 +380,15 @@ export function AdminPage({
                 ))}
               </select>
             </label>
-            <label>
-              <span>Хвилин</span>
-              <input
-                required
-                min="1"
-                max="1440"
-                type="number"
-                value={quizDraft.timeToPassMinutes}
-                onChange={event => setQuizDraft({ ...quizDraft, timeToPassMinutes: event.target.value })}
-              />
-            </label>
+            <Field
+              label="Хвилин"
+              required
+              min="1"
+              max="1440"
+              type="number"
+              value={quizDraft.timeToPassMinutes}
+              onChange={event => setQuizDraft({ ...quizDraft, timeToPassMinutes: event.target.value })}
+            />
             <div className="button-row">
               <button className="button button--dark" type="submit" disabled={working}>
                 {quizDraft.id ? "Зберегти" : "Створити тест"}
