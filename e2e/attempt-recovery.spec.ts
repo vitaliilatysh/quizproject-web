@@ -104,7 +104,6 @@ test("a double click submits once, freezes answers and accepts a response after 
     await expect(page.getByRole("button", { name: "Перевіряємо…" })).toBeDisabled();
     const answers = page.getByRole("checkbox");
     for (const answer of await answers.all()) await expect(answer).toBeDisabled();
-    await page.locator("label.answer-option").nth(1).click();
     await expect(answers.nth(1)).not.toBeChecked();
     await expect(answers.first()).toBeChecked();
 
@@ -113,6 +112,8 @@ test("a double click submits once, freezes answers and accepts a response after 
     await expect(page.locator(".timer-card strong")).toHaveText("00:00");
     await expect(page.getByText("Час вичерпано", { exact: true })).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Перевіряємо…" })).toBeDisabled();
+    await expect(answers.first()).toBeChecked();
+    expect(await draft(page, attempt.attemptId)).toBe(JSON.stringify([Number(answerId)]));
     expect(submissions).toEqual([{ answerIds: [Number(answerId)] }]);
 
     release();

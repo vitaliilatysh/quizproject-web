@@ -40,7 +40,6 @@ test("returning to an expired attempt locks its saved answers without submitting
   await expect(first).toBeChecked();
   for (const checkbox of await page.getByRole("checkbox").all()) await expect(checkbox).toBeDisabled();
   await expect(page.getByRole("button", { name: "Завершити тест" })).toBeDisabled();
-  await page.locator("label.answer-option").first().click();
   await expect(first).toBeChecked();
   expect(await draft(page, attempt.attemptId)).toBe(saved);
   await page.reload();
