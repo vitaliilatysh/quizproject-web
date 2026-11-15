@@ -39,7 +39,12 @@ export async function register(page: Page, username: string, password: string): 
   await expect(page).toHaveURL(/#\/quizzes$/);
 }
 
-export async function login(page: Page, username: string, password: string): Promise<void> {
+export async function login(
+  page: Page,
+  username: string,
+  password: string,
+  expectedHash = "#/quizzes"
+): Promise<void> {
   await page.goto("/#/login");
   await page.getByLabel("Логін", { exact: true }).fill(username);
   await page.getByLabel("Пароль", { exact: true }).fill(password);
@@ -49,5 +54,5 @@ export async function login(page: Page, username: string, password: string): Pro
     "/api/v1/auth/login",
     200
   );
-  await expect(page).toHaveURL(/#\/quizzes$/);
+  await expect(page).toHaveURL(url => url.hash === expectedHash);
 }
