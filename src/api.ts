@@ -1,6 +1,4 @@
-// Public entry point for the API client. The implementation lives in src/api/:
-// request mechanics in core.ts, one client per resource group, and the QuizApi
-// facade that keeps the flat method surface existing call sites rely on.
+// Public API entry point: shared transport and resource-specific clients.
 export {
   ApiError,
   type ApiErrorOptions,

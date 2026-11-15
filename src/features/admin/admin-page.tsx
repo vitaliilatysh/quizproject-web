@@ -1,5 +1,5 @@
 import { useEffect, useState, type SubmitEvent, type ReactNode } from "react";
-import type { QuizApi } from "../../api.js";
+import type { AdminApi } from "../../api.js";
 import { Pager } from "../../components/pager.js";
 import type {
   AdminQuestion,
@@ -70,7 +70,7 @@ export interface AdminPageProps {
   loading: boolean;
   error: string;
   busy: string;
-  api: QuizApi;
+  api: AdminApi;
   resultRange: ResultRange;
   onResultRangeChange: (patch: Partial<ResultRange>) => void;
   onUsersPageChange: (page: number) => void;

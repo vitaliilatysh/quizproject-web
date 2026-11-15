@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
 import { useAdminQuestions } from "../src/features/admin/use-admin-questions.js";
-import { ApiError, type QuizApi } from "../src/api.js";
+import { ApiError, type AdminApi } from "../src/api.js";
 import type { AdminQuestion } from "../src/types.js";
 import type { Session } from "../src/session.js";
 import { act, closeBrowser, openBrowser, render, settle } from "./support/dom.js";
@@ -36,7 +36,7 @@ type Hook = ReturnType<typeof useAdminQuestions>;
  * React has actually committed.
  */
 function mountHook(
-  api: Partial<QuizApi>,
+  api: Partial<AdminApi>,
   options: {
     session?: Session | null;
     account?: string | null;
@@ -48,7 +48,7 @@ function mountHook(
   function Probe() {
     const activeAccount = useRef<string | null>(account);
     latest = useAdminQuestions({
-      api: api as QuizApi,
+      api: api as AdminApi,
       session,
       activeAccount,
       handleAuthError: onAuthError

@@ -21,7 +21,7 @@ export function useAuthSession(apiUrl: string, toast: ToastMessage, onUnauthoriz
     [apiUrl, session?.accessToken]
   );
 
-  useSessionRefresh(api, session, setSession);
+  useSessionRefresh(api.auth, session, setSession);
 
   const handleAuthError = useCallback(
     (error: unknown, returnTo: string): boolean => {
@@ -38,7 +38,7 @@ export function useAuthSession(apiUrl: string, toast: ToastMessage, onUnauthoriz
   );
 
   const logout = useCallback((): void => {
-    void api.logout().catch(() => undefined);
+    void api.auth.logout().catch(() => undefined);
     clearSession();
     setSession(null);
     toast("Ви вийшли з облікового запису.");

@@ -7,7 +7,7 @@ import {
   type RefObject,
   type SetStateAction
 } from "react";
-import { ApiError, type QuizApi } from "../../api.js";
+import { ApiError, type AdminApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { navigate } from "../../app/navigation.js";
 import { rememberReturnTo, type Session } from "../../session.js";
@@ -25,7 +25,7 @@ type HandleAuthError = (error: unknown, returnTo: string) => boolean;
 type ToastMessage = (message: string, tone?: string) => void;
 
 interface AdminDataOptions {
-  api: QuizApi;
+  api: AdminApi;
   session: Session | null;
   accessReady: boolean;
   routeName: string;

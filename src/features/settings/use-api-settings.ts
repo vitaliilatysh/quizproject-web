@@ -40,7 +40,7 @@ export function useApiSettings(toast: ToastMessage, onApiChanged: (external: boo
     setError("");
     try {
       const probe = new QuizApi({ baseUrl: value, readsServerClock: false });
-      await probe.checkConnection();
+      await probe.catalogue.checkConnection();
       setConnection("ok");
       return true;
     } catch (reason) {
