@@ -7,90 +7,114 @@ import { complexityLabels, HOME_TEASER_SIZE } from "../../utils.js";
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
-export function useQuizCatalogue(api: CatalogueApi, routeName: string) {
-  const [quizzes, setQuizzes] = useState<Quiz[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+interface CatalogueState {
+  key: string;
+  quizzes: Quiz[] | null;
+  loading: boolean;
+  error: string;
+  pageMeta: PageMeta | null;
+  summary: CatalogueSummary | null;
+}
+
+const EMPTY: CatalogueState = {
+  key: "",
+  quizzes: null,
+  loading: true,
+  error: "",
+  pageMeta: null,
+  summary: null
+};
+
+type CatalogueSource = Pick<CatalogueApi, "baseUrl" | "quizzes" | "catalogueSummary">;
+
+export function useQuizCatalogue(api: CatalogueSource, routeName: string) {
+  const [state, setState] = useState(EMPTY);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(0);
-  const [pageMeta, setPageMeta] = useState<PageMeta | null>(null);
-  const [summary, setSummary] = useState<CatalogueSummary | null>(null);
-  const requestInFlight = useRef(false);
+  const [revision, setRevision] = useState(0);
+  const generation = useRef(0);
+  const inFlight = useRef<{ key: string; id: number } | null>(null);
+  const mounted = useRef(true);
   const catalogueRoute = routeName === "quizzes";
+  // Token rotation replaces the client, but does not change a public query.
+  const key = JSON.stringify([api.baseUrl, catalogueRoute ? [appliedSearch, filter, page] : null, revision]);
+  const current = state.key === key ? state : EMPTY;
+  const active = routeName === "home" || catalogueRoute;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const load = useCallback(async (): Promise<void> => {
-    if (requestInFlight.current) return;
-    requestInFlight.current = true;
-    setLoading(true);
-    setError("");
+    if (!mounted.current || inFlight.current?.key === key) return;
+    const id = ++generation.current;
+    inFlight.current = { key, id };
+    setState({ ...EMPTY, key });
     try {
       const request = catalogueRoute
-        ? api.quizzes({
-            search: appliedSearch,
-            complexity: complexityLabels(filter),
-            page,
-            size: PAGE_SIZE
-          })
+        ? api.quizzes({ search: appliedSearch, complexity: complexityLabels(filter), page, size: PAGE_SIZE })
         : api.quizzes({ page: 0, size: HOME_TEASER_SIZE });
-      const [{ items, page: loadedPage }, loadedSummary] = await Promise.all([
+      const [{ items, page: pageMeta }, summary] = await Promise.all([
         request,
         catalogueRoute
           ? Promise.resolve<CatalogueSummary | null>(null)
           : api.catalogueSummary().catch((): CatalogueSummary | null => null)
       ]);
-      setQuizzes(items);
-      setPageMeta(loadedPage);
-      if (!catalogueRoute) setSummary(loadedSummary);
+      if (mounted.current && generation.current === id) {
+        setState({ key, quizzes: items, pageMeta, summary, loading: false, error: "" });
+      }
     } catch (reason) {
-      setError(friendlyError(reason));
+      if (mounted.current && generation.current === id) {
+        setState({ ...EMPTY, key, loading: false, error: friendlyError(reason) });
+      }
     } finally {
-      requestInFlight.current = false;
-      setLoading(false);
+      if (inFlight.current?.id === id) inFlight.current = null;
     }
-  }, [api, appliedSearch, catalogueRoute, filter, page]);
+  }, [api, appliedSearch, catalogueRoute, filter, key, page]);
 
   useEffect(() => {
-    if (["home", "quizzes"].includes(routeName) && quizzes === null && !error) void load();
-  }, [error, load, quizzes, routeName]);
+    if (active && state.key !== key) void load();
+  }, [active, key, load, state.key]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setAppliedSearch(search), SEARCH_DEBOUNCE_MS);
+    if (search === appliedSearch) return undefined;
+    const timer = setTimeout(() => {
+      setAppliedSearch(search);
+      setPage(0);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [appliedSearch, search]);
 
-  useEffect(() => {
-    setPage(0);
-  }, [appliedSearch, filter]);
+  const changeFilter = useCallback(
+    (value: string) => {
+      if (value === filter) return;
+      setFilter(value);
+      setPage(0);
+    },
+    [filter]
+  );
 
-  useEffect(() => {
-    setQuizzes(null);
-    setPageMeta(null);
-    setError("");
-    setLoading(true);
-  }, [appliedSearch, catalogueRoute, filter, page]);
-
-  // The error goes with the quizzes, because the load effect will not run
-  // while it is set: `quizzes === null && !error`. This hook is invalidated
-  // when the API address changes, which is precisely the moment the previous
-  // address's failure stops being true — and leaving it standing meant the
-  // catalogue never reloaded against the address the reader had just fixed.
   const invalidate = useCallback(() => {
-    setQuizzes(null);
-    setError("");
+    generation.current += 1;
+    inFlight.current = null;
+    setRevision(value => value + 1);
   }, []);
 
   return {
-    quizzes,
-    loading,
-    error,
+    quizzes: current.quizzes,
+    loading: current.loading,
+    error: current.error,
+    pageMeta: current.pageMeta,
+    summary: current.summary,
     search,
     filter,
-    pageMeta,
-    summary,
     setSearch,
-    setFilter,
+    setFilter: changeFilter,
     setPage,
     load,
     invalidate

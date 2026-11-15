@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
+import { readApiUrl } from "../src/session.js";
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { fakeToken, loginResponse, stubApi, type StubbedApi, type StubResponse } from "./support/api-stub.js";
@@ -48,6 +49,7 @@ function seedSession(username: string, roles: string[] = ["ROLE_USER"]): void {
   sessionStorage.setItem(
     "quizproject.session",
     JSON.stringify({
+      apiUrl: readApiUrl(),
       accessToken: fakeToken(username, { roles }),
       tokenType: "Bearer",
       expiresAt: Date.now() + 900_000,
@@ -981,6 +983,7 @@ test("a token the API refuses to renew ends the session", async () => {
   sessionStorage.setItem(
     "quizproject.session",
     JSON.stringify({
+      apiUrl: readApiUrl(),
       accessToken: fakeToken("olena"),
       tokenType: "Bearer",
       expiresAt: Date.now() + 4_000,
@@ -1008,6 +1011,7 @@ test("a refresh that could not be made keeps the session and tries again later",
   sessionStorage.setItem(
     "quizproject.session",
     JSON.stringify({
+      apiUrl: readApiUrl(),
       accessToken: fakeToken("olena"),
       tokenType: "Bearer",
       expiresAt: Date.now() + 4_000,
@@ -1042,6 +1046,7 @@ test("a short-lived token is renewed on its own schedule, not continuously", asy
   sessionStorage.setItem(
     "quizproject.session",
     JSON.stringify({
+      apiUrl: readApiUrl(),
       accessToken: fakeToken("olena", { ttlSeconds: 4 }),
       tokenType: "Bearer",
       expiresAt: Date.now() + 4_000,

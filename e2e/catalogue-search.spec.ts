@@ -66,3 +66,62 @@ test("a search matching nothing empties the catalogue instead of hanging", async
   await expect(page.getByText("Нічого не знайдено")).toBeVisible();
   await expect(page.locator(".catalog-count")).toContainText("0");
 });
+
+test("a new filter is applied while an earlier catalogue response is still in flight", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  let firstReady!: () => void;
+  const ready = new Promise<void>(resolve => {
+    firstReady = resolve;
+  });
+  let intercepted = false;
+  let originalNames: string[] = [];
+  await page.route("**/api/v1/quizzes?*", async route => {
+    if (!intercepted) {
+      intercepted = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      originalNames = ((await response.json()) as Array<{ name: string }>).map(quiz => quiz.name);
+      firstReady();
+      await held;
+      await route.fulfill({ response });
+    } else {
+      await route.continue();
+    }
+  });
+  try {
+    await page.goto("/#/quizzes");
+    await ready;
+    const filtered = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/quizzes" && url.searchParams.getAll("complexity").includes("advanced");
+    });
+    await page.getByRole("button", { name: "Просунуті" }).click();
+    const response = await filtered;
+    expect(response.status()).toBe(200);
+    const names = ((await response.json()) as Array<{ name: string }>).map(quiz => quiz.name);
+    expect(names).not.toEqual(originalNames);
+    const cards = page.locator(".quiz-card");
+    await expect(cards).toHaveCount(names.length);
+    if (names.length) await expect(cards.getByRole("heading")).toHaveText(names);
+    else await expect(page.getByText("Нічого не знайдено")).toBeVisible();
+
+    const previous = page.waitForResponse(candidate => {
+      const url = new URL(candidate.url());
+      return url.pathname === "/api/v1/quizzes" && !url.searchParams.has("complexity");
+    });
+    release();
+    await (await previous).finished();
+    // Flush the old response's React commit before asserting the final grid.
+    await page.evaluate(
+      () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    );
+    await expect(cards).toHaveCount(names.length);
+    if (names.length) await expect(cards.getByRole("heading")).toHaveText(names);
+    await expect(page.getByRole("button", { name: "Просунуті" })).toHaveClass(/is-active/);
+  } finally {
+    release();
+  }
+});

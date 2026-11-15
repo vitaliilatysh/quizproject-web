@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { ApiError, QuizApi } from "../../api.js";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ApiError, normalizeBaseUrl, QuizApi } from "../../api.js";
 import { navigate } from "../../app/navigation.js";
 import { useSessionRefresh } from "../../app/use-session-refresh.js";
 import { clearSession, readSession, rememberReturnTo, type Session } from "../../session.js";
@@ -7,7 +7,17 @@ import { clearSession, readSession, rememberReturnTo, type Session } from "../..
 type ToastMessage = (message: string, tone?: string) => void;
 
 export function useAuthSession(apiUrl: string, toast: ToastMessage, onUnauthorized: () => void) {
-  const [session, setSession] = useState<Session | null>(() => readSession());
+  const normalizedApiUrl = normalizeBaseUrl(apiUrl);
+  const [storedSession, setSession] = useState<Session | null>(() => readSession(normalizedApiUrl));
+  // Gate credentials during render, before effects or feature loaders can use
+  // the newly selected API. Storage cleanup alone would leave that gap open.
+  const session = storedSession?.apiUrl === normalizedApiUrl ? storedSession : null;
+  useEffect(() => {
+    if (storedSession && !session) {
+      clearSession();
+      setSession(null);
+    }
+  }, [session, storedSession]);
   // A restored session may legitimately have an expired access token while its
   // refresh token still lives. Protected feature loaders must wait for the
   // refresh effect instead of racing it with a request guaranteed to answer 401.
@@ -15,10 +25,10 @@ export function useAuthSession(apiUrl: string, toast: ToastMessage, onUnauthoriz
   const api = useMemo(
     () =>
       new QuizApi({
-        baseUrl: apiUrl,
+        baseUrl: normalizedApiUrl,
         getToken: () => session?.accessToken
       }),
-    [apiUrl, session?.accessToken]
+    [normalizedApiUrl, session?.accessToken]
   );
 
   useSessionRefresh(api.auth, session, setSession);
