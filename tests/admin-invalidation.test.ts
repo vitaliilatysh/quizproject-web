@@ -16,6 +16,7 @@ import test, { afterEach, beforeEach } from "node:test";
 
 import { readFile } from "node:fs/promises";
 
+import { readApiUrl } from "../src/session.js";
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { ADMIN_INVALIDATES } from "../src/features/admin/contracts.js";
@@ -86,6 +87,7 @@ async function openPanel(): Promise<{
   sessionStorage.setItem(
     "quizproject.session",
     JSON.stringify({
+      apiUrl: readApiUrl(),
       accessToken: fakeToken("root", { roles: ["ROLE_ADMIN"] }),
       tokenType: "Bearer",
       expiresAt: Date.now() + 900_000,

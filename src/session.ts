@@ -1,4 +1,5 @@
 import type { TokenResponse } from "./types.js";
+import { normalizeBaseUrl } from "./api/core.js";
 
 const SESSION_KEY = "quizproject.session";
 const API_URL_KEY = "quizproject.apiUrl";
@@ -13,6 +14,8 @@ const ANSWERS_PREFIX = "quizproject.answers.";
  * inside the JWT, and it is what lands in sessionStorage.
  */
 export interface Session {
+  /** The normalized API base URL that issued these credentials. */
+  apiUrl: string;
   accessToken: string;
   tokenType: string;
   /** Epoch milliseconds, from the JWT's `exp` where usable, else `expiresIn`. */
@@ -69,6 +72,7 @@ function isSession(value: unknown): value is Session {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<Session>;
   return (
+    typeof candidate.apiUrl === "string" &&
     typeof candidate.accessToken === "string" &&
     typeof candidate.expiresAt === "number" &&
     typeof candidate.refreshToken === "string" &&
@@ -86,7 +90,7 @@ function isSession(value: unknown): value is Session {
   );
 }
 
-export function readSession(): Session | null {
+export function readSession(apiUrl: string): Session | null {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(SESSION_KEY) as string);
     // An expired access token is not the end of the session — it is what the
@@ -96,6 +100,7 @@ export function readSession(): Session | null {
     // form on any reload after fifteen idle minutes.
     if (
       !isSession(value) ||
+      normalizeBaseUrl(value.apiUrl) !== normalizeBaseUrl(apiUrl) ||
       !value.accessToken ||
       !value.refreshToken ||
       value.refreshExpiresAt <= Date.now()
@@ -103,19 +108,20 @@ export function readSession(): Session | null {
       clearSession();
       return null;
     }
-    return value;
+    return { ...value, apiUrl: normalizeBaseUrl(apiUrl) };
   } catch {
     clearSession();
     return null;
   }
 }
 
-export function writeSession(tokenResponse: TokenResponse, username: string): Session {
+export function writeSession(tokenResponse: TokenResponse, username: string, apiUrl: string): Session {
   const payload = decodeJwtPayload(tokenResponse.accessToken);
   const now = Date.now();
   const jwtExpiry = Number(payload.exp) * 1000;
   const ttlExpiry = now + Number(tokenResponse.expiresIn || 0) * 1000;
   const session: Session = {
+    apiUrl: normalizeBaseUrl(apiUrl),
     accessToken: tokenResponse.accessToken,
     tokenType: tokenResponse.tokenType || "Bearer",
     expiresAt: Number.isFinite(jwtExpiry) && jwtExpiry > now ? jwtExpiry : ttlExpiry,

@@ -39,6 +39,7 @@ import { act, click, closeBrowser, openBrowser, render, submit as submitForm, ty
 // from the one the app actually holds, and the point of typing the fixtures is
 // that they stand in for the real thing.
 const sessionFor = (username: string, roles: string[] = []): Session => ({
+  apiUrl: "http://localhost:8081",
   accessToken: "header.payload.signature",
   tokenType: "Bearer",
   expiresAt: Date.now() + 900_000,

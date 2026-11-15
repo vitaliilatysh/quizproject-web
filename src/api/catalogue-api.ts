@@ -11,7 +11,11 @@ import type {
 
 /** The public catalogue, and a signed-in reader's own attempts and results. */
 export class CatalogueApi {
-  constructor(private readonly core: ApiCore) {}
+  readonly baseUrl: string;
+
+  constructor(private readonly core: ApiCore) {
+    this.baseUrl = core.baseUrl;
+  }
 
   async checkConnection(): Promise<void> {
     await this.core.request<CatalogueSummary>("/api/v1/quizzes/summary");

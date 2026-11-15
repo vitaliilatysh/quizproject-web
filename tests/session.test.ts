@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { TokenResponse } from "../src/types.js";
 
+const API = "http://localhost:8081";
+
 const tokenResponse = (
   accessToken: string,
   expiresIn = 900,
@@ -61,18 +63,19 @@ test("a session that is absent, malformed or expired reads as no session", async
   const { readSession } = await import("../src/session.js");
 
   useStubStorage();
-  assert.equal(readSession(), null, "nothing stored is nobody signed in");
+  assert.equal(readSession(API), null, "nothing stored is nobody signed in");
 
   useStubStorage({ "quizproject.session": "{not json" });
-  assert.equal(readSession(), null, "a malformed entry is not a session");
+  assert.equal(readSession(API), null, "a malformed entry is not a session");
 
   // Shape, not just parseability: another tab or an older build could have left
   // something JSON-valid behind that is not a session at all.
   useStubStorage({ "quizproject.session": JSON.stringify({ accessToken: 42 }) });
-  assert.equal(readSession(), null, "a wrong-shaped entry is not a session");
+  assert.equal(readSession(API), null, "a wrong-shaped entry is not a session");
 
   useStubStorage({
     "quizproject.session": JSON.stringify({
+      apiUrl: API,
       accessToken: "x",
       tokenType: "Bearer",
       username: "olena",
@@ -82,7 +85,7 @@ test("a session that is absent, malformed or expired reads as no session", async
       refreshExpiresAt: Date.now() - 1
     })
   });
-  assert.equal(readSession(), null, "an expired session is over");
+  assert.equal(readSession(API), null, "an expired session is over");
   assert.equal(
     sessionStorage.getItem("quizproject.session"),
     null,
@@ -102,6 +105,7 @@ test("a session that is absent, malformed or expired reads as no session", async
 test("an expired access token keeps the session while the refresh token lives", async () => {
   const { readSession } = await import("../src/session.js");
   const stored = {
+    apiUrl: API,
     accessToken: "x",
     tokenType: "Bearer",
     username: "olena",
@@ -112,13 +116,14 @@ test("an expired access token keeps the session while the refresh token lives", 
   };
   useStubStorage({ "quizproject.session": JSON.stringify(stored) });
 
-  assert.deepEqual(readSession(), stored, "a week of refresh was discarded over a stale access token");
+  assert.deepEqual(readSession(API), stored, "a week of refresh was discarded over a stale access token");
   assert.ok(sessionStorage.getItem("quizproject.session"), "and the refresh token was deleted with it");
 });
 
 test("a stored session is returned whole", async () => {
   const { readSession } = await import("../src/session.js");
   const stored = {
+    apiUrl: API,
     accessToken: "header.payload.signature",
     tokenType: "Bearer",
     expiresAt: Date.now() + 60_000,
@@ -128,7 +133,7 @@ test("a stored session is returned whole", async () => {
     roles: ["ROLE_USER"]
   };
   useStubStorage({ "quizproject.session": JSON.stringify(stored) });
-  assert.deepEqual(readSession(), stored);
+  assert.deepEqual(readSession(API), stored);
 });
 
 // The JWT is read, not verified: sub and roles come from the payload, and the
@@ -141,7 +146,7 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
   const exp = Math.floor(Date.now() / 1000) + 600;
   const jwt = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: ["ROLE_ADMIN"], exp })}.sig`;
 
-  const fromClaim = writeSession(tokenResponse(jwt), "ignored");
+  const fromClaim = writeSession(tokenResponse(jwt), "ignored", API);
   assert.equal(fromClaim.username, "olena", "the token's subject wins over the typed login");
   assert.deepEqual(fromClaim.roles, ["ROLE_ADMIN"]);
   assert.equal(fromClaim.expiresAt, exp * 1000);
@@ -152,7 +157,7 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
   // A token this function cannot read at all: the decode fails, the payload is
   // empty, and both the login and the expiry come from what the API said.
   const before = Date.now();
-  const opaque = writeSession({ ...tokenResponse("not-a-jwt"), tokenType: "" }, "petro");
+  const opaque = writeSession({ ...tokenResponse("not-a-jwt"), tokenType: "" }, "petro", API);
   assert.equal(opaque.username, "petro", "with no subject to read, the typed login stands");
   assert.deepEqual(opaque.roles, []);
   assert.equal(opaque.tokenType, "Bearer", "an empty token type still authorises as Bearer");
@@ -160,15 +165,15 @@ test("writeSession prefers the token's expiry and falls back to expiresIn", asyn
 
   // An expiry already in the past is not an expiry worth keeping.
   const stale = `${encode({ alg: "none" })}.${encode({ sub: "olena", exp: 1 })}.sig`;
-  const recovered = writeSession(tokenResponse(stale, 60), "olena");
+  const recovered = writeSession(tokenResponse(stale, 60), "olena", API);
   assert.ok(recovered.expiresAt > Date.now(), "a past claim was preferred over the live lifetime");
 
   // roles that are not a list, and entries inside one that are not strings.
   const odd = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: "ROLE_USER" })}.sig`;
-  assert.deepEqual(writeSession(tokenResponse(odd, 60), "olena").roles, []);
+  assert.deepEqual(writeSession(tokenResponse(odd, 60), "olena", API).roles, []);
   const mixed = `${encode({ alg: "none" })}.${encode({ sub: "olena", roles: ["ROLE_USER", 7] })}.sig`;
   assert.deepEqual(
-    writeSession(tokenResponse(mixed, 60), "olena").roles,
+    writeSession(tokenResponse(mixed, 60), "olena", API).roles,
     ["ROLE_USER"],
     "a non-string role was carried into the session"
   );
@@ -273,11 +278,11 @@ test("a login that advertises no lifetime is a session that is over on arrival",
   // what an absent field falls back to. Either way the expiry is now. It is the
   // refresh lifetime that decides, because a dead access token alone is a state
   // the refresh flow recovers from; nothing recovers from a dead refresh token.
-  const written = writeSession(tokenResponse("opaque", 0, "opaque-refresh-token", 0), "olena");
+  const written = writeSession(tokenResponse("opaque", 0, "opaque-refresh-token", 0), "olena", API);
   assert.ok(written.expiresAt <= Date.now(), "a zero lifetime bought the token time it was not given");
   assert.ok(written.refreshExpiresAt <= Date.now(), "nor did the refresh token get time it was not given");
   assert.equal(written.username, "olena");
-  assert.equal(readSession(), null, "an already-expired session was handed back as current");
+  assert.equal(readSession(API), null, "an already-expired session was handed back as current");
 });
 
 // The field isSession was written for and used to skip. `roles` decides what the
@@ -286,6 +291,7 @@ test("a login that advertises no lifetime is a session that is over on arrival",
 test("a session whose roles are not a list of strings is not a session", async () => {
   const { readSession } = await import("../src/session.js");
   const base = {
+    apiUrl: API,
     accessToken: "header.payload.signature",
     tokenType: "Bearer",
     expiresAt: Date.now() + 900_000,
@@ -296,7 +302,7 @@ test("a session whose roles are not a list of strings is not a session", async (
 
   for (const roles of ["ROLE_ADMIN", undefined, null, 7, [1, 2], ["ROLE_USER", 7]]) {
     useStubStorage({ "quizproject.session": JSON.stringify({ ...base, roles }) });
-    assert.equal(readSession(), null, `roles=${JSON.stringify(roles)} was accepted`);
+    assert.equal(readSession(API), null, `roles=${JSON.stringify(roles)} was accepted`);
     assert.equal(
       sessionStorage.getItem("quizproject.session"),
       null,
@@ -305,5 +311,40 @@ test("a session whose roles are not a list of strings is not a session", async (
   }
 
   useStubStorage({ "quizproject.session": JSON.stringify({ ...base, roles: ["ROLE_ADMIN"] }) });
-  assert.deepEqual(readSession()?.roles, ["ROLE_ADMIN"], "a real list of roles was refused");
+  assert.deepEqual(readSession(API)?.roles, ["ROLE_ADMIN"], "a real list of roles was refused");
+});
+
+test("sessions are bound to their issuer API and equivalent URLs keep the binding", async () => {
+  const { readSession, writeSession } = await import("../src/session.js");
+  useStubStorage();
+  const session = writeSession(tokenResponse("opaque"), "olena", API);
+  assert.equal(session.apiUrl, API);
+  assert.deepEqual(readSession("http://LOCALHOST:8081///?ignored=yes#fragment"), session);
+  assert.equal(readSession("https://other.example.com"), null);
+  assert.equal(sessionStorage.getItem("quizproject.session"), null);
+});
+
+test("legacy, invalid and unrelated API bindings cannot restore credentials", async () => {
+  const { readSession, writeSession } = await import("../src/session.js");
+  useStubStorage();
+  const session = writeSession(tokenResponse("opaque"), "olena", API);
+  for (const apiUrl of [undefined, 7, "not-a-url", "https://other.example.com", `${API}/another-service`]) {
+    useStubStorage({ "quizproject.session": JSON.stringify({ ...session, apiUrl }) });
+    assert.equal(readSession(API), null, `binding ${String(apiUrl)} restored credentials`);
+    assert.equal(sessionStorage.getItem("quizproject.session"), null);
+  }
+});
+
+test("writing a session captures and normalizes the issuing URL", async () => {
+  const { writeSession } = await import("../src/session.js");
+  useStubStorage();
+  const session = writeSession(
+    tokenResponse("opaque"),
+    "olena",
+    "https://API.example.com/base///?unused=yes"
+  );
+  assert.equal(session.apiUrl, "https://api.example.com/base");
+  assert.equal(JSON.parse(String(sessionStorage.getItem("quizproject.session"))).apiUrl, session.apiUrl);
+  assert.throws(() => writeSession(tokenResponse("opaque"), "olena", "ftp://other.example.com"), TypeError);
+  assert.equal(JSON.parse(String(sessionStorage.getItem("quizproject.session"))).apiUrl, session.apiUrl);
 });

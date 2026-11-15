@@ -26,7 +26,7 @@ export function useSessionRefresh(
     async function attemptRefresh(): Promise<void> {
       try {
         const tokenResponse = await api.refresh(session!.refreshToken);
-        if (!cancelled) setSession(writeSession(tokenResponse, session!.username));
+        if (!cancelled) setSession(writeSession(tokenResponse, session!.username, session!.apiUrl));
       } catch (error) {
         if (cancelled) return;
         if (error instanceof ApiError && error.status === 401) {

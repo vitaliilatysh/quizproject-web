@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
+import { readApiUrl } from "../src/session.js";
 import App from "../src/App.js";
 import { resetServerClock } from "../src/clock.js";
 import { fakeToken, loginResponse, stubApi, type StubCall, type StubResponse } from "./support/api-stub.js";
@@ -41,6 +42,7 @@ function seedSession(
   sessionStorage.setItem(
     "quizproject.session",
     JSON.stringify({
+      apiUrl: readApiUrl(),
       accessToken: fakeToken(username, { roles }),
       tokenType: "Bearer",
       expiresAt: Date.now() + expiresInMs,
@@ -150,6 +152,15 @@ for (const scenario of [
     }
 
     assert.equal(sessionStorage.getItem(ANSWERS(4)), scenario.clears ? null : JSON.stringify([101]));
+    if (scenario.clears) {
+      assert.equal(
+        sessionStorage.getItem("quizproject.session"),
+        null,
+        "the old API session survived the change"
+      );
+    } else {
+      assert.ok(sessionStorage.getItem("quizproject.session"), "an equivalent API URL ended the session");
+    }
     if (!scenario.clears) {
       goTo("#/attempt/4");
       await settle();
