@@ -41,8 +41,8 @@ export function useAccountData(
     try {
       // The totals do not depend on the page, so turning one reuses them.
       const [rows, summary] = await Promise.all([
-        api.results({ page, size: PAGE_SIZE }),
-        results?.summary ?? api.resultSummary()
+        api.catalogue.results({ page, size: PAGE_SIZE }),
+        results?.summary ?? api.catalogue.resultSummary()
       ]);
       if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
       // An empty page past the first means the history shrank since the last
@@ -77,7 +77,7 @@ export function useAccountData(
     setProfileLoading(true);
     setProfileError("");
     try {
-      const loaded = await api.profile();
+      const loaded = await api.auth.profile();
       if (activeAccount.current !== requestedBy || requestGeneration.current !== generation) return;
       setProfile(loaded);
     } catch (error) {

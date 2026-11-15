@@ -23,7 +23,12 @@ function deferred<T>() {
 const session = { username: "olena" } as Session;
 const unauthorized = () => new ApiError("Expired", { status: 401, path: "/x" });
 
-function mountStores(api: Partial<QuizApi>) {
+type ApiStub = {
+  [Group in "auth" | "catalogue" | "admin"]?: Partial<QuizApi[Group]>;
+};
+
+function mountStores(api: ApiStub) {
+  const client = api as QuizApi;
   let account!: ReturnType<typeof useAccountData>;
   let admin!: ReturnType<typeof useAdminData>;
   let questions!: ReturnType<typeof useAdminQuestions>;
@@ -36,7 +41,7 @@ function mountStores(api: Partial<QuizApi>) {
     return true;
   };
   const options = {
-    api: api as QuizApi,
+    api: client.admin,
     session,
     accessReady: true,
     routeName: "home",
@@ -48,7 +53,7 @@ function mountStores(api: Partial<QuizApi>) {
     toast: (message: string) => messages.push(message)
   };
   function Probe() {
-    account = useAccountData(api as QuizApi, session, true, "home", activeAccount, handleAuthError);
+    account = useAccountData(client, session, true, "home", activeAccount, handleAuthError);
     admin = useAdminData(options);
     questions = useAdminQuestions(options);
     return null;
@@ -75,15 +80,19 @@ for (const kind of cases) {
         let calls = 0;
         const request = () => (++calls === 1 ? old.promise : next.promise);
         const stores = mountStores({
-          profile: request,
-          results: request,
-          resultSummary: async () => ({ totalAttempts: 0, averageScore: 0, bestScore: 0 }),
-          adminSubjects: request,
-          adminLevels: async () => [],
-          adminQuizzes: async () => [],
-          adminUsers: async () => ({ items: [], page: null }),
-          adminResults: async () => ({ items: [], page: null }),
-          adminQuestions: request
+          auth: { profile: request },
+          catalogue: {
+            results: request,
+            resultSummary: async () => ({ totalAttempts: 0, averageScore: 0, bestScore: 0 })
+          },
+          admin: {
+            adminSubjects: request,
+            adminLevels: async () => [],
+            adminQuizzes: async () => [],
+            adminUsers: async () => ({ items: [], page: null }),
+            adminResults: async () => ({ items: [], page: null }),
+            adminQuestions: request
+          }
         });
         const store = () => {
           if (kind === "profile") {
@@ -176,9 +185,11 @@ for (const outcome of ["success", "401"] as const) {
     const replacement = deferred<string>();
     let reloads = 0;
     const stores = mountStores({
-      adminSubjects: async () => {
-        reloads++;
-        return [];
+      admin: {
+        adminSubjects: async () => {
+          reloads++;
+          return [];
+        }
       }
     });
     let first!: Promise<string | null>;
@@ -212,11 +223,13 @@ for (const outcome of ["success", "401"] as const) {
 test("an admin mutation whose reload crosses a session boundary stays silent", async () => {
   const response = deferred<[]>();
   const stores = mountStores({
-    adminSubjects: () => response.promise,
-    adminLevels: async () => [],
-    adminQuizzes: async () => [],
-    adminUsers: async () => ({ items: [], page: null }),
-    adminResults: async () => ({ items: [], page: null })
+    admin: {
+      adminSubjects: () => response.promise,
+      adminLevels: async () => [],
+      adminQuizzes: async () => [],
+      adminUsers: async () => ({ items: [], page: null }),
+      adminResults: async () => ({ items: [], page: null })
+    }
   });
   let operation!: Promise<string | null>;
   await act(async () => {
@@ -233,7 +246,7 @@ test("an admin mutation whose reload crosses a session boundary stays silent", a
 test("questions: 7 -> 8 -> 7 rejects the first request even without an account change", async () => {
   const old = deferred<[]>();
   let calls = 0;
-  const stores = mountStores({ adminQuestions: async () => (++calls === 1 ? old.promise : []) });
+  const stores = mountStores({ admin: { adminQuestions: async () => (++calls === 1 ? old.promise : []) } });
   let first!: Promise<void>;
   await act(async () => {
     first = stores.questions().load("7");

@@ -14,7 +14,7 @@ import test, { afterEach, beforeEach } from "node:test";
 // chunk it is now fetched outside of.
 import { AdminPage, type AdminPageProps } from "../src/features/admin/admin-page.js";
 import { type ExecuteAdmin } from "../src/components.js";
-import { QuizApi, type FetchLike } from "../src/api.js";
+import { QuizApi, type AdminApi, type FetchLike } from "../src/api.js";
 import type {
   AdminQuestion,
   AdminQuiz,
@@ -44,7 +44,7 @@ interface DirectCall {
 }
 
 interface StubbedApi {
-  api: QuizApi;
+  api: AdminApi;
   calls: DirectCall[];
 }
 
@@ -73,7 +73,7 @@ function stubbedApi(routes: Record<string, unknown> = {}): StubbedApi {
     });
   };
   return {
-    api: new QuizApi({ baseUrl: "https://api.example.com", getToken: () => "token", fetchImpl }),
+    api: new QuizApi({ baseUrl: "https://api.example.com", getToken: () => "token", fetchImpl }).admin,
     calls
   };
 }

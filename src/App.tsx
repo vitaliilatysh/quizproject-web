@@ -74,7 +74,7 @@ export default function App() {
   const accountName = auth.session?.username ?? null;
   const activeAccount = useRef<string | null>(accountName);
 
-  const catalogue = useQuizCatalogue(auth.api, route.name);
+  const catalogue = useQuizCatalogue(auth.api.catalogue, route.name);
   const account = useAccountData(
     auth.api,
     auth.session,
@@ -84,7 +84,7 @@ export default function App() {
     auth.handleAuthError
   );
   const admin = useAdminData({
-    api: auth.api,
+    api: auth.api.admin,
     session: auth.session,
     accessReady: auth.accessReady,
     routeName: route.name,
@@ -94,7 +94,7 @@ export default function App() {
     toast
   });
   const adminQuestions = useAdminQuestions({
-    api: auth.api,
+    api: auth.api.admin,
     session: auth.session,
     activeAccount,
     handleAuthError: auth.handleAuthError
@@ -104,7 +104,7 @@ export default function App() {
     admin.invalidate();
   }, [account.invalidateResults, admin.invalidate]);
   const attempts = useAttempts({
-    api: auth.api,
+    api: auth.api.catalogue,
     session: auth.session,
     accessReady: auth.accessReady,
     route,
@@ -272,7 +272,7 @@ export default function App() {
           loading={admin.loading}
           error={admin.error}
           busy={actionBusy}
-          api={auth.api}
+          api={auth.api.admin}
           resultRange={admin.resultRange}
           onResultRangeChange={admin.changeResultRange}
           onUsersPageChange={admin.setUsersPage}

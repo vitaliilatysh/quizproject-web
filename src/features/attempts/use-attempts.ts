@@ -8,7 +8,7 @@ import {
   type RefObject,
   type SetStateAction
 } from "react";
-import type { QuizApi } from "../../api.js";
+import type { CatalogueApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import { navigate } from "../../app/navigation.js";
 import {
@@ -28,7 +28,7 @@ type HandleAuthError = (error: unknown, returnTo: string) => boolean;
 type ToastMessage = (message: string, tone?: string) => void;
 
 interface AttemptsOptions {
-  api: QuizApi;
+  api: CatalogueApi;
   session: Session | null;
   accessReady: boolean;
   route: Route;

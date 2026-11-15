@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { QuizApi } from "../../api.js";
+import type { CatalogueApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import type { CatalogueSummary, PageMeta, Quiz } from "../../types.js";
 import { complexityLabels, HOME_TEASER_SIZE } from "../../utils.js";
@@ -7,7 +7,7 @@ import { complexityLabels, HOME_TEASER_SIZE } from "../../utils.js";
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
-export function useQuizCatalogue(api: QuizApi, routeName: string) {
+export function useQuizCatalogue(api: CatalogueApi, routeName: string) {
   const [quizzes, setQuizzes] = useState<Quiz[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

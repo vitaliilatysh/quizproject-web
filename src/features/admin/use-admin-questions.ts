@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type RefObject } from "react";
-import type { QuizApi } from "../../api.js";
+import type { AdminApi } from "../../api.js";
 import { friendlyError } from "../../app/errors.js";
 import type { AdminQuestion } from "../../types.js";
 import type { Session } from "../../session.js";
@@ -7,7 +7,7 @@ import type { Session } from "../../session.js";
 type HandleAuthError = (error: unknown, returnTo: string) => boolean;
 
 interface AdminQuestionsOptions {
-  api: QuizApi;
+  api: AdminApi;
   session: Session | null;
   activeAccount: RefObject<string | null>;
   handleAuthError: HandleAuthError;

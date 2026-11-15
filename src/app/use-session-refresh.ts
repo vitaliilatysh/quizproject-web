@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import { ApiError, type QuizApi } from "../api.js";
+import { ApiError, type AuthApi } from "../api.js";
 import { clearSession, writeSession, type Session } from "../session.js";
 
 // Renew up to a minute early, but never earlier than halfway through a token's
@@ -10,7 +10,7 @@ const TOKEN_REFRESH_MARGIN_MS = 60_000;
 const TOKEN_REFRESH_RETRY_MS = 30_000;
 
 export function useSessionRefresh(
-  api: QuizApi,
+  api: AuthApi,
   session: Session | null,
   setSession: Dispatch<SetStateAction<Session | null>>
 ): void {

@@ -46,7 +46,7 @@ test("default fetch keeps the browser global as its receiver", async () => {
     };
 
     const api = new QuizApi({ baseUrl: "https://api.example.com" });
-    assert.equal(await api.checkConnection(), undefined);
+    assert.equal(await api.catalogue.checkConnection(), undefined);
     assert.equal(observedUrl, "https://api.example.com/api/v1/quizzes/summary");
   } finally {
     globalThis.fetch = originalFetch;
@@ -68,7 +68,7 @@ test("quizzes requests the public catalogue without an auth header", async () =>
 
   // The catalogue is paginated, so it reports items alongside page metadata.
   // Called with no criteria it still asks for the whole collection.
-  const result = await api.quizzes();
+  const result = await api.catalogue.quizzes();
   assert.deepEqual(result.items, [{ id: 1, name: "Java" }]);
   assert.equal(result.page, null);
   assert.equal(observed?.url, "https://api.example.com/api/v1/quizzes");
@@ -90,7 +90,7 @@ test("protected requests attach the short-lived bearer token", async () => {
     }
   });
 
-  assert.deepEqual(await api.startAttempt(7), { attemptId: 42 });
+  assert.deepEqual(await api.catalogue.startAttempt(7), { attemptId: 42 });
   assert.equal(headersOf(observed)["Authorization"], "Bearer signed-token");
   assert.equal(observed?.options.method, "POST");
 });
@@ -115,7 +115,7 @@ test("refresh exchanges an opaque refresh token without bearer authentication", 
     }
   });
 
-  assert.deepEqual(await api.refresh("opaque-refresh-token"), {
+  assert.deepEqual(await api.auth.refresh("opaque-refresh-token"), {
     accessToken: "fresh-token",
     tokenType: "Bearer",
     expiresIn: 900,
@@ -134,7 +134,10 @@ test("logout fails before fetch when the session is absent", async () => {
     getToken: () => null,
     fetchImpl: () => assert.fail("fetch must not be called")
   });
-  await assert.rejects(api.logout(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
+  await assert.rejects(
+    api.auth.logout(),
+    error => error instanceof ApiError && error.code === "AUTH_REQUIRED"
+  );
 });
 
 test("logout revokes the authenticated backend session", async () => {
@@ -148,7 +151,7 @@ test("logout revokes the authenticated backend session", async () => {
     }
   });
 
-  await api.logout();
+  await api.auth.logout();
   assert.equal(observed?.url, "https://api.example.com/api/v1/auth/logout");
   assert.equal(observed?.options.method, "POST");
   assert.equal(headersOf(observed)["Authorization"], "Bearer signed-token");
@@ -168,7 +171,7 @@ test("completeAttempt serializes selected answer IDs", async () => {
     }
   });
 
-  await api.completeAttempt(12, [2, 5]);
+  await api.catalogue.completeAttempt(12, [2, 5]);
   assert.deepEqual(JSON.parse(String(body)), { answerIds: [2, 5] });
 });
 
@@ -247,7 +250,10 @@ test("protected requests fail before fetch when the session is absent", async ()
     getToken: () => null,
     fetchImpl: () => assert.fail("fetch must not be called")
   });
-  await assert.rejects(api.results(), error => error instanceof ApiError && error.code === "AUTH_REQUIRED");
+  await assert.rejects(
+    api.catalogue.results(),
+    error => error instanceof ApiError && error.code === "AUTH_REQUIRED"
+  );
 });
 
 test("account lifecycle uses public registration and protected profile resources", async () => {
@@ -278,9 +284,14 @@ test("account lifecycle uses public registration and protected profile resources
     }
   });
 
-  await api.register({ username: "student", firstName: "Test", lastName: "User", password: "secret123" });
-  await api.profile();
-  await api.changePassword("secret123", "updated123");
+  await api.auth.register({
+    username: "student",
+    firstName: "Test",
+    lastName: "User",
+    password: "secret123"
+  });
+  await api.auth.profile();
+  await api.auth.changePassword("secret123", "updated123");
 
   assert.deepEqual(
     observed.map(call => [call.url, call.options.method]),
@@ -312,23 +323,23 @@ test("administration methods use protected REST resources and mutation verbs", a
     }
   });
 
-  await api.adminStatus();
-  await api.adminSubjects();
-  await api.createSubject("Databases");
-  await api.updateSubject(9, "SQL");
-  await api.deleteSubject(9);
-  await api.adminLevels();
-  await api.adminQuizzes();
-  await api.createQuiz({ name: "SQL", subjectId: 1, levelId: 2, timeToPassMinutes: 10 });
-  await api.updateQuiz(9, { name: "SQL 2", subjectId: 1, levelId: 2, timeToPassMinutes: 12 });
-  await api.deleteQuiz(9);
-  await api.adminQuestions(9);
-  await api.createQuestion(9, { text: "Question", answers: [] });
-  await api.updateQuestion(8, { text: "Updated", answers: [] });
-  await api.deleteQuestion(8);
-  await api.adminUsers();
-  await api.updateUserStatus(3, "blocked");
-  await api.adminResults({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T23:59:59Z" });
+  await api.admin.adminStatus();
+  await api.admin.adminSubjects();
+  await api.admin.createSubject("Databases");
+  await api.admin.updateSubject(9, "SQL");
+  await api.admin.deleteSubject(9);
+  await api.admin.adminLevels();
+  await api.admin.adminQuizzes();
+  await api.admin.createQuiz({ name: "SQL", subjectId: 1, levelId: 2, timeToPassMinutes: 10 });
+  await api.admin.updateQuiz(9, { name: "SQL 2", subjectId: 1, levelId: 2, timeToPassMinutes: 12 });
+  await api.admin.deleteQuiz(9);
+  await api.admin.adminQuestions(9);
+  await api.admin.createQuestion(9, { text: "Question", answers: [] });
+  await api.admin.updateQuestion(8, { text: "Updated", answers: [] });
+  await api.admin.deleteQuestion(8);
+  await api.admin.adminUsers();
+  await api.admin.updateUserStatus(3, "blocked");
+  await api.admin.adminResults({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T23:59:59Z" });
 
   assert.ok(observed.every(call => headersOf(call)["Authorization"] === "Bearer admin-token"));
   assert.deepEqual(
@@ -415,7 +426,7 @@ test("adminUsers sends page and size and returns items with metadata", async () 
     }
   });
 
-  const result = await api.adminUsers({ page: 1, size: 20 });
+  const result = await api.admin.adminUsers({ page: 1, size: 20 });
   assert.equal(observed?.url, "https://api.example.com/api/v1/admin/users?page=1&size=20");
   assert.deepEqual(result.items, [{ id: 7, username: "student" }]);
   assert.deepEqual(result.page, { number: 1, size: 20, totalCount: 41, totalPages: 3 });
@@ -435,7 +446,7 @@ test("adminResults combines the date range with paging in one query", async () =
     }
   });
 
-  const result = await api.adminResults({
+  const result = await api.admin.adminResults({
     from: "2026-01-01T00:00",
     to: "2026-02-01T00:00",
     page: 2,
@@ -468,7 +479,7 @@ test("omitting page and size leaves the request unpaginated", async () => {
     }
   });
 
-  await api.adminUsers();
+  await api.admin.adminUsers();
   assert.equal(observed, "https://api.example.com/api/v1/admin/users");
 });
 
@@ -504,10 +515,14 @@ test("results asks for one page, and the totals for the whole history", async ()
     }
   });
 
-  const page = await api.results({ page: 2, size: 20 });
+  const page = await api.catalogue.results({ page: 2, size: 20 });
   assert.deepEqual(page.items, [{ attemptId: 1 }]);
   assert.deepEqual(page.page, { number: 2, size: 20, totalCount: 45, totalPages: 3 });
-  assert.deepEqual(await api.resultSummary(), { totalAttempts: 45, averageScore: 66.6, bestScore: 100 });
+  assert.deepEqual(await api.catalogue.resultSummary(), {
+    totalAttempts: 45,
+    averageScore: 66.6,
+    bestScore: 100
+  });
   assert.deepEqual(observed, [
     "https://api.example.com/api/v1/results/me?page=2&size=20",
     "https://api.example.com/api/v1/results/me/summary"
@@ -536,7 +551,7 @@ test("a blank date range is omitted from the query entirely", async () => {
     }
   });
 
-  await api.adminResults({ from: "", to: "", page: 0, size: 20 });
+  await api.admin.adminResults({ from: "", to: "", page: 0, size: 20 });
   const query = new URL(String(observed)).searchParams;
   assert.equal(query.has("from"), false);
   assert.equal(query.has("to"), false);
@@ -562,7 +577,7 @@ test("quizzes sends the search term and every requested level label", async () =
     }
   });
 
-  const result = await api.quizzes({
+  const result = await api.catalogue.quizzes({
     search: "  java  ",
     complexity: ["high", "advanced", "hard"],
     page: 0,
@@ -589,7 +604,7 @@ test("quizzes omits blank criteria rather than sending empty parameters", async 
     }
   });
 
-  await api.quizzes({ search: "   ", complexity: [], page: 0, size: 20 });
+  await api.catalogue.quizzes({ search: "   ", complexity: [], page: 0, size: 20 });
   const query = new URL(String(observed)).searchParams;
   assert.equal(query.has("search"), false);
   assert.equal(query.has("complexity"), false);
@@ -609,7 +624,7 @@ test("catalogueSummary reads the totals a page cannot supply", async () => {
     }
   });
 
-  assert.deepEqual(await api.catalogueSummary(), { totalQuizzes: 42, totalSubjects: 7 });
+  assert.deepEqual(await api.catalogue.catalogueSummary(), { totalQuizzes: 42, totalSubjects: 7 });
   assert.equal(observed, "https://api.example.com/api/v1/quizzes/summary");
 });
 
@@ -626,7 +641,7 @@ test("the home page asks for only the quizzes it teases", async () => {
     }
   });
 
-  await api.quizzes({ page: 0, size: HOME_TEASER_SIZE });
+  await api.catalogue.quizzes({ page: 0, size: HOME_TEASER_SIZE });
   const query = new URL(String(observed)).searchParams;
   assert.equal(query.get("size"), String(HOME_TEASER_SIZE));
   assert.equal(query.get("page"), "0");
@@ -640,12 +655,12 @@ test("every response sets the clock, including one that failed", async () => {
     {
       status: 200,
       body: { totalQuizzes: 1, totalSubjects: 1 },
-      call: (api: QuizApi) => api.checkConnection()
+      call: (api: QuizApi) => api.catalogue.checkConnection()
     },
     {
       status: 500,
       body: { message: "boom" },
-      call: (api: QuizApi) => api.checkConnection().catch(() => null)
+      call: (api: QuizApi) => api.catalogue.checkConnection().catch(() => null)
     }
   ];
 
@@ -683,7 +698,7 @@ test("a response without a readable Date leaves the device clock alone", async (
       })
   });
 
-  await api.checkConnection();
+  await api.catalogue.checkConnection();
   assert.equal(serverClockOffset(), 0);
   assert.ok(Math.abs(serverNow() - Date.now()) < 50);
 });
@@ -701,7 +716,7 @@ test("a client that is not the app's API does not set the clock", async () => {
     });
 
   const app = new QuizApi({ baseUrl: "https://api.example.com", fetchImpl: respond });
-  await app.checkConnection();
+  await app.catalogue.checkConnection();
   const measured = serverClockOffset();
   assert.ok(measured < -119_000, "the app's own client should have set the clock");
 
@@ -715,7 +730,7 @@ test("a client that is not the app's API does not set the clock", async () => {
       }),
     readsServerClock: false
   });
-  await probe.checkConnection();
+  await probe.catalogue.checkConnection();
   assert.equal(serverClockOffset(), measured, "the probe moved the app's clock");
   resetServerClock();
 });
@@ -741,7 +756,7 @@ test("a request that never answers is abandoned rather than left hanging", async
       })
   });
 
-  const failure = await api.checkConnection().then(
+  const failure = await api.catalogue.checkConnection().then(
     () => null,
     (error: unknown) => error
   );
@@ -764,7 +779,7 @@ test("a connection that cannot be opened is reported as a network error", async 
     }
   });
 
-  const failure = await api.checkConnection().then(
+  const failure = await api.catalogue.checkConnection().then(
     () => null,
     (error: unknown) => error
   );
@@ -787,7 +802,7 @@ test("an error the backend did not send as JSON still reaches the reader", async
     baseUrl: "https://api.example.com",
     fetchImpl: respond("<h1>502 Bad Gateway</h1>", "text/html")
   });
-  const first = await plain.checkConnection().then(
+  const first = await plain.catalogue.checkConnection().then(
     () => null,
     (error: unknown) => error
   );
@@ -807,7 +822,7 @@ test("an error the backend did not send as JSON still reaches the reader", async
     baseUrl: "https://api.example.com",
     fetchImpl: respond(JSON.stringify({ message: "", error: "", path: "" }), "application/json")
   });
-  const second = await blank.checkConnection().then(
+  const second = await blank.catalogue.checkConnection().then(
     () => null,
     (error: unknown) => error
   );
@@ -835,7 +850,7 @@ test("quiz reads one quiz by id, as a number and without a token", async () => {
     }
   });
 
-  assert.deepEqual(await api.quiz("42"), { id: 42, name: "Java" });
+  assert.deepEqual(await api.catalogue.quiz("42"), { id: 42, name: "Java" });
   assert.equal(observed?.url, "https://api.example.com/api/v1/quizzes/42");
   assert.equal(
     headersOf(observed)["Authorization"],
@@ -854,7 +869,7 @@ test("a client built without a token source has no session to send", async () =>
     }
   });
 
-  const failure = await api.profile().then(
+  const failure = await api.auth.profile().then(
     () => null,
     (error: unknown) => error
   );

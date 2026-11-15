@@ -45,7 +45,7 @@ export function useAuthActions({
       const pendingQuiz = consumePendingQuiz();
       if (pendingQuiz) {
         const authenticatedApi = new QuizApi({ baseUrl: apiUrl, getToken: () => nextSession.accessToken });
-        const attempt = await authenticatedApi.startAttempt(pendingQuiz);
+        const attempt = await authenticatedApi.catalogue.startAttempt(pendingQuiz);
         rememberAttempt(attempt);
         consumeReturnTo();
         navigate(`#/attempt/${attempt.attemptId}`);
@@ -64,7 +64,7 @@ export function useAuthActions({
       setActionBusy("login");
       setLoginError("");
       try {
-        const token = await api.login(username, formText(data, "password"));
+        const token = await api.auth.login(username, formText(data, "password"));
         const nextSession = writeSession(token, username);
         setSession(nextSession);
         setPasswordError("");
@@ -106,7 +106,7 @@ export function useAuthActions({
       };
       setActionBusy("signup");
       try {
-        const token = await api.register(account);
+        const token = await api.auth.register(account);
         const nextSession = writeSession(token, account.username);
         setSession(nextSession);
         setPasswordError("");
@@ -143,7 +143,7 @@ export function useAuthActions({
       }
       setActionBusy("password");
       try {
-        await api.changePassword(currentPassword, newPassword);
+        await api.auth.changePassword(currentPassword, newPassword);
         clearSession();
         setSession(null);
         resetProtectedData();
