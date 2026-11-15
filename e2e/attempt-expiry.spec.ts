@@ -29,11 +29,9 @@ test("returning to an expired attempt locks its saved answers without submitting
   await expect
     .poll(() => Date.now(), { timeout: 75_000, intervals: [1_000] })
     .toBeGreaterThan(Date.parse(attempt.expiresAt) + 1_500);
-  const loaded = page.waitForResponse(
-    response => new URL(response.url()).pathname === `/api/v1/attempts/${attempt.attemptId}`
-  );
+  // Hash navigation reuses the in-memory attempt; a document reload below
+  // separately proves that an already-expired attempt loads from the API.
   await page.goto(`/#/attempt/${attempt.attemptId}`);
-  expect((await loaded).status()).toBe(200);
   await expect(page.getByText("Час вичерпано", { exact: true })).toBeVisible();
   await expect(page.locator(".timer-card strong")).toHaveText("00:00");
   const first = page.locator("label.answer-option").first().getByRole("checkbox");
@@ -42,7 +40,11 @@ test("returning to an expired attempt locks its saved answers without submitting
   await expect(page.getByRole("button", { name: "Завершити тест" })).toBeDisabled();
   await expect(first).toBeChecked();
   expect(await draft(page, attempt.attemptId)).toBe(saved);
+  const loaded = page.waitForResponse(
+    response => new URL(response.url()).pathname === `/api/v1/attempts/${attempt.attemptId}`
+  );
   await page.reload();
+  expect((await loaded).status()).toBe(200);
   await expect(page.getByText("Час вичерпано", { exact: true })).toBeVisible();
   await expect(first).toBeChecked();
   expect(completions).toBe(0);
