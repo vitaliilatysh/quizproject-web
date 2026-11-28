@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { login, register, uniqueUsername } from "./helpers.js";
+import { BASELINE_QUIZ_ID, BASELINE_QUIZ_NAME, login, register, uniqueUsername } from "./helpers.js";
 
 const ADMIN_USERNAME = process.env["E2E_ADMIN_USERNAME"] ?? "";
 const ADMIN_PASSWORD = process.env["E2E_ADMIN_PASSWORD"] ?? "";
@@ -29,10 +29,10 @@ test("student completes a quiz and sees the persisted result", async ({ page }, 
   const username = uniqueUsername(testInfo, "quiz");
   await register(page, username, "QuizPass123!");
 
-  const testCard = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  const testCard = page.locator(".quiz-card").filter({ hasText: BASELINE_QUIZ_NAME });
   await expect(testCard).toBeVisible();
   await testCard.getByRole("button", { name: "Розпочати тест" }).click();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
 
   const correctAnswers = page.locator("label.answer-option").filter({
     has: page.getByText("correct", { exact: true })
@@ -71,7 +71,7 @@ test("student completes a quiz and sees the persisted result", async ({ page }, 
     response => new URL(response.url()).pathname === "/api/v1/results/me/summary"
   );
   await page.getByRole("link", { name: "Історія результатів" }).click();
-  const result = page.locator(".result-row").filter({ hasText: "Test1" });
+  const result = page.locator(".result-row").filter({ hasText: BASELINE_QUIZ_NAME });
   await expect(result).toContainText("100%");
 
   const list = await listResponse;

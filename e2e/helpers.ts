@@ -1,5 +1,8 @@
 import { expect, type Locator, type Page, type Response, type TestInfo } from "@playwright/test";
 
+export const BASELINE_QUIZ_NAME = process.env["E2E_QUIZ_NAME"] ?? "";
+export const BASELINE_QUIZ_ID = Number(process.env["E2E_QUIZ_ID"]);
+
 export function uniqueUsername(testInfo: TestInfo, prefix: string): string {
   const run = Date.now().toString(36).slice(-6);
   return `${prefix}${run}${testInfo.retry}`.slice(0, 15);

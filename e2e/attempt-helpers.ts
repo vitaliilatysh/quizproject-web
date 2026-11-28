@@ -1,7 +1,8 @@
 import { expect, type Page } from "@playwright/test";
+import { BASELINE_QUIZ_NAME } from "./helpers.js";
 import type { Attempt } from "../src/types.js";
 
-export async function startAttempt(page: Page, quizName = "Test1"): Promise<Attempt> {
+export async function startAttempt(page: Page, quizName = BASELINE_QUIZ_NAME): Promise<Attempt> {
   const card = page.locator(".quiz-card").filter({ hasText: quizName });
   await expect(card).toBeVisible();
   const [response] = await Promise.all([
