@@ -1,0 +1,89 @@
+name: Configure DigitalOcean HTTPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect Caddy or enable trusted HTTPS for the production IP
+        type: choice
+        options: [inspect, enable]
+        default: inspect
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: digitalocean-production
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      DO_HOST: ${{ vars.DO_HOST }}
+      DO_SSH_USER: ${{ vars.DO_SSH_USER || 'deploy' }}
+      DO_SSH_PORT: ${{ vars.DO_SSH_PORT || '22' }}
+      MODE: ${{ inputs.mode }}
+    steps:
+      - name: Check out trusted configuration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require successful checks before changing production
+        if: inputs.mode == 'enable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/verify_release.py \
+            --repo "$GITHUB_REPOSITORY" --branch main --sha "$GITHUB_SHA" \
+            --workflow ci.yml --workflow sonarqube.yml --workflow container.yml --workflow e2e.yml
+
+      - name: Configure the existing Droplet over verified SSH
+        env:
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DO_HOST DO_SSH_USER DO_SSH_KEY DO_KNOWN_HOSTS; do
+            test -n "${!name}"
+          done
+          [[ "$DO_HOST" =~ ^[0-9.]+$ ]]
+          [[ "$DO_SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$DO_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          ((10#$DO_SSH_PORT >= 1 && 10#$DO_SSH_PORT <= 65535))
+          [[ "$MODE" == inspect || "$MODE" == enable ]]
+          umask 077
+          credentials=$(mktemp -d "$RUNNER_TEMP/quiz-https.XXXXXXXX")
+          trap 'rm -rf -- "$credentials"' EXIT
+          printf '%s\n' "$DO_SSH_KEY" > "$credentials/key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$credentials/known_hosts"
+          unset DO_SSH_KEY DO_KNOWN_HOSTS
+          remote() {
+            ssh -T -p "$DO_SSH_PORT" -i "$credentials/key" \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o "UserKnownHostsFile=$credentials/known_hosts" \
+              -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+              "$DO_SSH_USER@$DO_HOST" \
+              "python3 -B - --host '$DO_HOST' --mode '$1' --operation '$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT'" \
+              < deploy/digitalocean/configure-https.py
+          }
+          verify_public() {
+            curl --fail --silent --show-error --retry 2 --max-time 20 "https://$DO_HOST/healthz" | grep -qx ok || return 1
+            curl --fail --silent --show-error --retry 2 --max-time 20 "https://$DO_HOST/api/v1/quizzes?page=0&size=1" > "$RUNNER_TEMP/https-quizzes.json" || return 1
+            python3 -c 'import json,sys; assert isinstance(json.load(open(sys.argv[1])),list)' "$RUNNER_TEMP/https-quizzes.json" || return 1
+            status=$(curl --silent --show-error --max-time 20 --dump-header "$RUNNER_TEMP/https-redirect" --output /dev/null --write-out '%{http_code}' "http://$DO_HOST/healthz") || return 1
+            [[ "$status" == 308 ]] || return 1
+            grep -iq "^location: https://$DO_HOST/healthz" "$RUNNER_TEMP/https-redirect"
+          }
+          remote "$MODE"
+          if [[ "$MODE" == enable ]] && ! verify_public; then
+            echo '::error::Public HTTPS verification failed; restoring the previous settings.'
+            remote rollback
+            exit 1
+          fi

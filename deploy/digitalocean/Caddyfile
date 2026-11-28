@@ -1,14 +1,23 @@
+{
+	# Browsers omit SNI when connecting to an IP; use the configured public identity.
+	default_sni {$TLS_SERVER_NAME:localhost}
+	cert_issuer acme {
+		dir https://acme-v02.api.letsencrypt.org/directory
+		profile shortlived
+	}
+}
+
 {$SITE_ADDRESS} {
-    @api path /api /api/*
-    handle @api {
-        reverse_proxy quiz-api:8081
-    }
-    handle {
-        reverse_proxy web:8080
-    }
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy quiz-api:8081
+	}
+	handle {
+		reverse_proxy web:8080
+	}
 }
 
 # Container health only; this listener is never published on the host.
 http://:8082 {
-    respond /healthz 200
+	respond /healthz 200
 }

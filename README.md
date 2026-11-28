@@ -200,6 +200,7 @@ Playwright сам запускає локальний Vite; поза CI може
 | [Container delivery](.github/workflows/container.yml) | PR, push у `main`, вручну | Docker/Compose smoke-тести; публікація, SBOM/provenance і cosign |
 | [Dependabot auto-merge](.github/workflows/dependabot-auto-merge.yml) | після перевірок, кожні 15 хвилин, вручну | squash перевірених Dependabot PR |
 | [Deploy to DigitalOcean](.github/workflows/deploy-digitalocean.yml) | production вручну; staging за opt-in | release gates, перевірка підпису та rollout за digest |
+| [Configure DigitalOcean HTTPS](.github/workflows/configure-https.yml) | вручну з `main` | перевірка Caddy або ввімкнення довіреного HTTPS для публічного IP з відновленням попередніх налаштувань |
 
 SonarCloud потребує `SONAR_TOKEN`; job пропускається для запусків від `dependabot[bot]`.
 Auto-merge вимагає успішних CI, container, E2E та Sonar (з дозволеним пропуском
@@ -210,8 +211,12 @@ Sonar для Dependabot), актуального SHA, відсутності к�
 
 Production працює через Docker Compose на спільному з backend Droplet `quiz-project-prod`:
 Caddy приймає публічні запити, проксує `/api` до backend і віддає frontend через
-непривілейований nginx. Поточна публічна адреса використовує HTTP;
-HTTPS налаштовується через домен і `SITE_ADDRESS`.
+непривілейований nginx. Публічний origin визначає `SITE_ADDRESS`.
+HTTPS можна ввімкнути й без домену: Caddy 2.11+ отримує IP-сертифікат Let's Encrypt
+профілю `shortlived` і автоматично поновлює його. Після звичайного frontend deploy
+запустіть **Configure DigitalOcean HTTPS** спочатку з `mode=inspect`, потім із
+`mode=enable`. Workflow узгоджує HTTPS origin і CORS backend; публічні порти 80/443
+мають бути доступні. При переході на HTTPS потрібен повторний вхід.
 
 Ручний production deploy:
 
