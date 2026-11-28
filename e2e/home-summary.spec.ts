@@ -38,7 +38,7 @@ test("home fetches only a teaser and reads its totals from the summary", async (
   const teased = await page.locator(".quiz-card").count();
   expect(teased).toBeLessThanOrEqual(3);
 
-  // The seeded catalogue has more quizzes than the teaser shows, so the hero
+  // Global setup creates four ready quizzes, more than the teaser shows, so the hero
   // figure must exceed the number of cards. If it did not, the totals would be
   // silently reporting the teaser instead of the catalogue.
   expect(totalQuizzes).toBeGreaterThan(teased);

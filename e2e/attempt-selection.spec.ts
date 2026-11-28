@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { register, uniqueUsername } from "./helpers.js";
+import { BASELINE_QUIZ_ID, BASELINE_QUIZ_NAME, register, uniqueUsername } from "./helpers.js";
 
 // The attempt page's checkboxes are controlled by a Set held in App state. That
 // Set used to be rebuilt inline on every render whenever the state had no entry
@@ -14,10 +14,10 @@ test("a chosen answer survives a silent token refresh", async ({ page }, testInf
   const username = uniqueUsername(testInfo, "sel");
   await register(page, username, "SelectPass123!");
 
-  const testCard = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  const testCard = page.locator(".quiz-card").filter({ hasText: BASELINE_QUIZ_NAME });
   await expect(testCard).toBeVisible();
   await testCard.getByRole("button", { name: "Розпочати тест" }).click();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
 
   // The real input is visually hidden behind a styled span, which intercepts
   // pointer events. Clicking the label is what a reader actually does, and it
@@ -50,16 +50,16 @@ test("a selection survives a reload of the attempt page", async ({ page }, testI
   const username = uniqueUsername(testInfo, "reload");
   await register(page, username, "ReloadPass123!");
 
-  const testCard = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  const testCard = page.locator(".quiz-card").filter({ hasText: BASELINE_QUIZ_NAME });
   await testCard.getByRole("button", { name: "Розпочати тест" }).click();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
 
   const firstOption = page.locator("label.answer-option").first();
   await firstOption.click();
   await expect(firstOption.getByRole("checkbox")).toBeChecked();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
   // Seeded back from storage, which only works if the effect wrote it.
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 });

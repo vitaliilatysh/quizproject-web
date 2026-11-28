@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { login, register, uniqueUsername } from "./helpers.js";
+import { BASELINE_QUIZ_ID, BASELINE_QUIZ_NAME, login, register, uniqueUsername } from "./helpers.js";
 
 // Attempts, results and saved answers used to be cached under no particular
 // owner. Signing out cleared some of them and signing straight in as somebody
@@ -16,10 +16,10 @@ test("an attempt is not shown to the next reader in the same tab", async ({ page
   const second = uniqueUsername(testInfo, "swb");
 
   await register(page, first, "SwitchPassA1!");
-  const card = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  const card = page.locator(".quiz-card").filter({ hasText: BASELINE_QUIZ_NAME });
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: "Розпочати тест" }).click();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
 
   const attemptUrl = new URL(page.url()).hash;
   expect(attemptUrl).toMatch(/^#\/attempt\/\d+$/);
@@ -67,9 +67,9 @@ test("signing in over an open session does not inherit its data", async ({ page 
   const second = uniqueUsername(testInfo, "ovb");
 
   await register(page, first, "OverPassA1!");
-  const card = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  const card = page.locator(".quiz-card").filter({ hasText: BASELINE_QUIZ_NAME });
   await card.getByRole("button", { name: "Розпочати тест" }).click();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
   const attemptUrl = new URL(page.url()).hash;
 
   // #/login renders its form to a signed-in reader as well, so an account can
@@ -95,9 +95,9 @@ test("a paused quiz keeps its answers when the same reader signs back in", async
   const password = "SamePass123!";
 
   await register(page, reader, password);
-  const card = page.locator(".quiz-card").filter({ hasText: "Test1" });
+  const card = page.locator(".quiz-card").filter({ hasText: BASELINE_QUIZ_NAME });
   await card.getByRole("button", { name: "Розпочати тест" }).click();
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
   const attemptUrl = new URL(page.url()).hash;
 
   await page.locator("label.answer-option").first().click();
@@ -126,6 +126,6 @@ test("a paused quiz keeps its answers when the same reader signs back in", async
   await page.evaluate(hash => {
     globalThis.location.hash = hash;
   }, attemptUrl);
-  await expect(page.getByRole("heading", { name: "Тест #1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Тест #${BASELINE_QUIZ_ID}` })).toBeVisible();
   await expect(page.locator("label.answer-option").first().getByRole("checkbox")).toBeChecked();
 });
