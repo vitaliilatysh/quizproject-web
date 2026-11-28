@@ -27,6 +27,19 @@ docker run --detach --name "$project-api" --network "quizproject-$DEPLOY_ENV" \
   busybox:1.37.0 httpd -f -p 8081 -h /www >/dev/null
 export APP_IMAGE=quizproject-web:test
 compose up --detach --wait --wait-timeout 120
+# Adapt the real IP TLS configuration without contacting an ACME server.
+compose exec -T -e SITE_ADDRESS=https://192.0.2.10 -e TLS_SERVER_NAME=192.0.2.10 \
+  edge caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > "$temporary/ip-tls.json"
+python3 - "$temporary/ip-tls.json" <<'PY'
+import json,sys
+config=json.load(open(sys.argv[1]))
+tls=config['apps']['tls']['automation']['policies']
+issuers=[issuer for policy in tls for issuer in policy.get('issuers',[])]
+assert issuers and all(issuer['module']=='acme' and issuer['profile']=='shortlived' for issuer in issuers)
+assert all(issuer['ca']=='https://acme-v02.api.letsencrypt.org/directory' for issuer in issuers)
+servers=config['apps']['http']['servers'].values()
+assert any(policy.get('default_sni')=='192.0.2.10' for server in servers for policy in server.get('tls_connection_policies',[]))
+PY
 curl --fail --silent --show-error http://127.0.0.1:18080/healthz | grep -qx ok
 curl --fail --silent --show-error http://127.0.0.1:18080/api/v1/quizzes | grep -q compose-routing
 curl --fail --silent --show-error http://127.0.0.1:18080/runtime-config.js | grep -q 'globalThis.location.origin'
