@@ -144,6 +144,21 @@ class HttpsTest(unittest.TestCase):
         for path, old in self.before.items():
             self.assertEqual(path.read_text(), old)
 
+    def test_external_rollback_recovers_without_a_running_proxy(self):
+        with patch.object(HTTPS, "wait_tls", return_value={}):
+            self.configure()
+        self.calls.clear()
+        def unavailable_proxy(arguments):
+            if "ps" in arguments or "exec" in arguments:
+                raise RuntimeError("The proxy is unavailable")
+            self.calls.append(arguments)
+            return ""
+        with patch.object(HTTPS, "command", side_effect=unavailable_proxy):
+            self.configure(mode="rollback")
+        for path, old in self.before.items():
+            self.assertEqual(path.read_text(), old)
+        self.assertEqual([call[-1] for call in self.calls], ["api", "edge"])
+
 
 if __name__ == "__main__":
     unittest.main()

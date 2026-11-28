@@ -126,6 +126,17 @@ def configure(root, host, mode, operation):
         fcntl.flock(lock, fcntl.LOCK_EX)
         backend, backend_release, backend_args = deployment(base, "backend")
         frontend, frontend_release, frontend_args = deployment(base, "frontend")
+        # Recovery must not depend on the proxy that may have just failed.
+        if mode == "rollback":
+            backup = base / "https-backups" / operation
+            previous = {backend / ".env": read_private(backup / "backend.env"),
+                        frontend / ".env": read_private(backup / "frontend.env")}
+            for path, text in previous.items():
+                private_write(path, text)
+            restart(backend_args, "api")
+            restart(frontend_args, "edge")
+            print("Previous public settings restored after external verification failure.")
+            return
         edge = command(frontend_args + ["ps", "--quiet", "edge"])
         if not re.fullmatch(r"[0-9a-f]{12,64}", edge):
             raise ValueError("Expected one running edge container.")
@@ -136,16 +147,6 @@ def configure(root, host, mode, operation):
         if mode == "inspect":
             print(json.dumps({"caddy_version": version, "backend_release": backend_release.name,
                               "frontend_release": frontend_release.name, "host": host}))
-            return
-        if mode == "rollback":
-            backup = base / "https-backups" / operation
-            previous = {backend / ".env": read_private(backup / "backend.env"),
-                        frontend / ".env": read_private(backup / "frontend.env")}
-            for path, text in previous.items():
-                private_write(path, text)
-            restart(backend_args, "api")
-            restart(frontend_args, "edge")
-            print("Previous public settings restored after external verification failure.")
             return
         origin = "https://" + host
         old = {backend / ".env": read_private(backend / ".env"), frontend / ".env": read_private(frontend / ".env")}
