@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: vitaliilatysh/quizproject
-          ref: master
+          ref: bef72c2785d6271974ccd2d4e12713447b26aef5
           path: backend
 
       - name: Set up Java 25
