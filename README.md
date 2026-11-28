@@ -27,7 +27,7 @@ OpenAPI tooling має окремі [package.json](tools/openapi/package.json) �
 
 ## Локальний запуск
 
-Рекомендовано Node.js 24, як у CI; мінімум — 22.13 згідно з `engines`.
+Використовуйте Node.js 24 — ту саму версію, що в CI та Docker build.
 API, MySQL і Redis запускаються за [інструкцією backend](https://github.com/vitaliilatysh/quizproject#локальний-запуск).
 
 ~~~bash
@@ -161,25 +161,39 @@ npm run typecheck
 - адміністративні CRUD, пагінацію й фільтр результатів за датою.
 
 Для локального прогону потрібні окремі тестові MySQL/Redis, запущений API
-та користувач із роллю `ADMIN`. API має використовувати `JWT_TTL=PT15S`,
+та користувач із роллю `ADMIN`. База повинна містити початкові fixtures з
+Flyway V1, зокрема `Test1` із його запитаннями й відповідями: частина сценаріїв
+звертається до цих даних напряму. Тести реєструють користувачів і змінюють каталог.
+Створення локального адміністратора описане в
+[README backend](https://github.com/vitaliilatysh/quizproject#локальний-запуск).
+
+API має використовувати `JWT_TTL=PT15S`,
 `API_RATE_LIMIT_REQUESTS=1000` і `LOGIN_RATE_LIMIT_REQUESTS=100`, як у
 [Full-stack E2E](.github/workflows/e2e.yml).
-Передайте дані адміністратора через `E2E_ADMIN_USERNAME` і `E2E_ADMIN_PASSWORD`, потім:
+Передайте дані адміністратора через `E2E_ADMIN_USERNAME` і `E2E_ADMIN_PASSWORD`.
+Без них адміністративні сценарії та сценарії з timed-quiz fixture пропускаються.
+Приклад для Bash:
 
 ~~~bash
+export E2E_ADMIN_USERNAME=localadmin
+read -rsp 'Пароль localadmin: ' E2E_ADMIN_PASSWORD
+printf '\n'
+export E2E_ADMIN_PASSWORD
 npx playwright install chromium
 npm run test:e2e
 ~~~
 
-Playwright сам запускає Vite. Зовнішні адреси задаються через `E2E_WEB_URL` і
-`E2E_API_URL`. Перелік без виконання: `npm run test:e2e -- --list`.
+Для Linux без браузерних бібліотек використайте `npx playwright install --with-deps chromium`.
+Playwright сам запускає локальний Vite; поза CI може використати вже запущений сервер.
+Тестові адреси задаються через `E2E_WEB_URL` і `E2E_API_URL`.
+Перелік без виконання: `npm run test:e2e -- --list`.
 У разі помилки CI зберігає звіт із trace/відео та журнал API на 30 днів.
 
 ## CI/CD
 
 | Workflow | Запуск | Дія |
 | --- | --- | --- |
-| [CI](.github/workflows/ci.yml) | PR, push у `main`, вручну; щодня 06:31 UTC | automation/Compose, OpenAPI, типи, форматування, lint, покриття, build; звірка контракту з backend `master` |
+| [CI](.github/workflows/ci.yml) | PR, push у `main`, вручну; щодня 06:31 UTC | повна перевірка frontend та контракту; щоденний запуск перевіряє лише контракт з backend `master` |
 | [SonarQube analysis](.github/workflows/sonarqube.yml) | PR, push у `main`, вручну | LCOV, SonarCloud і блокувальний quality gate |
 | [Full-stack E2E](.github/workflows/e2e.yml) | PR, push у `main`, вручну | Playwright проти backend із джерел, MySQL і Redis |
 | [E2E against published API image](.github/workflows/e2e-published-image.yml) | щодня 03:00 UTC, вручну | той самий набір проти опублікованого backend image з перевіркою cosign |
@@ -195,7 +209,7 @@ Sonar для Dependabot), актуального SHA, відсутності к�
 ## DigitalOcean і Docker
 
 Production працює через Docker Compose на спільному з backend Droplet `quiz-project-prod`:
-Caddy приймає HTTP/HTTPS, проксує `/api` до backend і віддає frontend через
+Caddy приймає публічні запити, проксує `/api` до backend і віддає frontend через
 непривілейований nginx. Поточна публічна адреса використовує HTTP;
 HTTPS налаштовується через домен і `SITE_ADDRESS`.
 
@@ -207,14 +221,17 @@ HTTPS налаштовується через домен і `SITE_ADDRESS`.
    опублікований `sha-<commit>` вибраної версії.
 4. Якщо оновлюєте обидва компоненти, спочатку розгорніть backend, потім frontend.
 
-GitHub environment використовує variables `DO_HOST`, `DO_SSH_USER`, `DO_SSH_PORT`
-і secrets `DO_SSH_KEY`, `DO_KNOWN_HOSTS`. Staging автоматизується лише після
+У GitHub environment потрібні variable `DO_HOST` і secrets `DO_SSH_KEY`,
+`DO_KNOWN_HOSTS`; необов'язкові `DO_SSH_USER` і `DO_SSH_PORT` типово дорівнюють
+`deploy` і `22`. Staging автоматизується лише після
 окремого налаштування та `DO_STAGING_ENABLED=true`. Push у `main` публікує образ;
 production запускається вручну.
 
 Delivery публікує `ghcr.io/vitaliilatysh/quizproject-web:main` і `sha-<commit>`
 для `linux/amd64` та `linux/arm64`. Розгортання перевіряє cosign-підпис
-і CI для image revision та deployment checkout. Невдалий rollout відновлює попередній release.
+і CI для image revision та deployment checkout. При невдалому rollout скрипт
+намагається відновити попередній release і перевіряє результат відновлення.
+Для першого deployment попереднього release немає.
 
 Повні інструкції: [frontend deployment](deploy/digitalocean/README.md) і
 [спільне налаштування сервера](https://github.com/vitaliilatysh/quizproject/blob/master/docs/digitalocean-deployment.md).
@@ -226,8 +243,11 @@ docker build -t quizproject-web:local .
 docker run --rm --read-only --tmpfs /tmp -p 127.0.0.1:8080:8080 quizproject-web:local
 ~~~
 
-Статика та `/healthz` доступні на порту 8080; підключення API потребує proxy або
-окремої адреси в runtime-конфігурації.
+Статика та `/healthz` доступні на порту 8080. У Docker-образі CSP містить
+`connect-src 'self'`, тому для API потрібен proxy зі спільним origin, як у
+DigitalOcean Compose. Одна зміна адреси в runtime-конфігурації не дозволяє
+запити до іншого origin: для такого розгортання потрібно узгодити
+[CSP nginx](deploy/docker/nginx.conf) і CORS backend.
 `deploy/kubernetes` містить довідкові маніфести для окремого ручного розгортання.
 
 ## Сесії та діагностика
