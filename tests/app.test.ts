@@ -12,6 +12,7 @@ import {
   openBrowser,
   render,
   settle,
+  settleUntil,
   submit,
   type,
   type Rendered
@@ -1047,14 +1048,17 @@ test("a handover drops the failure the previous reader was looking at", async ()
   const view = render(App);
   await settle();
   goTo("#/results");
-  await settle();
+  // Response parsing and React commits need not finish in three queue turns.
+  // Observe the failure before handing the tab over, then observe the new result.
+  await settleUntil(() => view.text().includes("Сервіс недоступний"));
   assert.match(view.text(), /Сервіс недоступний/, "olena saw no failure to begin with");
 
   click(view.findAll("button").find(button => button.textContent === "Вийти"));
-  await settle();
+  await settleUntil(() => view.query("input[name=username]") !== null);
   await signIn(view, "borys");
+  await settleUntil(() => view.query(".account-name")?.textContent === "borys");
   goTo("#/results");
-  await settle();
+  await settleUntil(() => view.findAll(".result-row").some(row => row.textContent?.includes("Java")));
 
   assert.doesNotMatch(
     view.text(),
